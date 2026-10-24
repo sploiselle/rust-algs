@@ -86,8 +86,9 @@ impl<A: Ord + Clone> CausalContext<A> {
         &self.vv
     }
 
-    /// The dots known beyond the contiguous prefix: the gaps a plain vector
-    /// can't express. Empty exactly when this context is just a vector clock.
+    /// The dots known beyond the contiguous prefix, each one past a gap a plain
+    /// vector can't express. Empty exactly when this context is just a vector
+    /// clock.
     pub fn cloud(&self) -> impl Iterator<Item = Dot<A>> {
         self.cloud.iter().flat_map(|(actor, counters)| {
             counters.iter().map(move |&counter| Dot { actor: actor.clone(), counter })
@@ -138,5 +139,11 @@ mod tests {
         assert_eq!(cc.vector(), &VectorClock::from_iter([('A', 3)]));
         assert_eq!(cc.cloud().count(), 0);
         assert_eq!(cc.next_counter(&'A'), 4);
+
+        let mut other = CausalContext::new();
+        other.insert(dot('B', 2));
+        cc.merge(&other); // merging brings B's gap along
+        assert_eq!(cc.cloud().collect::<Vec<_>>(), [dot('B', 2)]);
+        assert_eq!(cc.vector(), &VectorClock::from_iter([('A', 3)]));
     }
 }

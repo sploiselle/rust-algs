@@ -12,7 +12,7 @@
 //! `cargo run -p diagrams` writes every figure into the workspace's `figures/`
 //! directory; the test in `tests/figures.rs` fails if those files are stale.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 pub mod catalog;
 pub mod label;
@@ -20,11 +20,13 @@ pub mod model;
 pub mod render;
 
 /// `<workspace>/figures`, found relative to this crate so it is the same
-/// directory whatever the working directory.
+/// directory whatever the working directory. Cargo sets `CARGO_MANIFEST_DIR`
+/// when it runs the binary or the tests, which is preferred over the path
+/// baked in at compile time in case the artifacts outlive a moved checkout.
 pub fn figures_dir() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../..")
-        .join("figures")
+    let manifest_dir = std::env::var_os("CARGO_MANIFEST_DIR")
+        .map_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")), PathBuf::from);
+    manifest_dir.join("../..").join("figures")
 }
 
 /// Every file the binary writes, as `(file name, contents)`: each catalog entry

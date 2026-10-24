@@ -2,20 +2,20 @@
 title: "Multi-value register: concurrent writes become siblings"
 ---
 sequenceDiagram
-    participant r1 as r1
-    participant r2 as r2
-    Note over r1: write<br/>A:1→"draft"
-    r1->>r2: 
-    Note over r2: sync<br/>A:1→"draft"
-    Note over r1: write<br/>A:2→"edit A"
-    Note over r2: write<br/>B:1→"edit B"
-    r1->>r2: 
-    Note over r2: sync<br/>A:2→"edit A"<br/>B:1→"edit B"
-    r2->>r1: 
-    Note over r1: sync<br/>A:2→"edit A"<br/>B:1→"edit B"
-    Note over r2: write<br/>B:2→"merged"
-    r2->>r1: 
-    Note over r1: sync<br/>B:2→"merged"
-    Note over r1: sync (stale)<br/>B:2→"merged"
-    Note over r2,r1: r1 and r2 agree: A:2 and B:1 are siblings, since neither writer was shown the other's value
-    Note over r2,r1: a copy of r2 taken here still holds A:1, but r1 has already seen that write, so "draft" is not resurrected
+    participant L0 as r1
+    participant L1 as r2
+    Note over L0: write<br/>A:1→"draft"
+    L0->>L1: #8203;
+    Note over L1: sync<br/>A:1→"draft"
+    Note over L0: write<br/>A:2→"edit A"
+    Note over L1: write<br/>B:1→"edit B"
+    L0->>L1: #8203;
+    Note over L1: sync<br/>A:2→"edit A"<br/>B:1→"edit B"
+    L1->>L0: #8203;
+    Note over L0: sync<br/>A:2→"edit A"<br/>B:1→"edit B"
+    Note over L1,L0: r1 and r2 agree: A:2 and B:1 are siblings, since neither writer was shown the other's value
+    Note over L1: write<br/>B:2→"merged"
+    L1->>L0: #8203;
+    Note over L0: sync<br/>B:2→"merged"
+    Note over L0: sync (stale)<br/>B:2→"merged"
+    Note over L1,L0: a copy of r2 taken right after its first sync still holds A:1, but r1 has already seen that write, so "draft" is not resurrected

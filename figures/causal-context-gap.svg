@@ -1,40 +1,40 @@
-<svg xmlns="http://www.w3.org/2000/svg" class="ds-figure" role="img" viewBox="0 0 612 164" width="612" height="164">
+<svg xmlns="http://www.w3.org/2000/svg" class="ds-figure" role="img" viewBox="0 0 524 164" width="524" height="164">
   <title>A causal context tracks a gap a vector clock cannot</title>
   <style>
-    .ds-figure { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; font-size: 13px; }
-    .ds-figure .lane { stroke: currentColor; stroke-width: 1; opacity: var(--ds-lane-opacity, .35); }
-    .ds-figure .lane-arrow { fill: currentColor; opacity: var(--ds-lane-opacity, .35); }
-    .ds-figure .lane-name { fill: currentColor; font-weight: 600; }
-    .ds-figure .event { fill: var(--ds-event, currentColor); }
-    .ds-figure .name, .ds-figure .label, .ds-figure .callout { fill: currentColor; }
-    .ds-figure .label { font-size: 11px; }
-    .ds-figure .annotation { font-family: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace; font-size: 11px; fill: var(--ds-annotation, currentColor); }
-    .ds-figure .message { stroke: var(--ds-message, currentColor); stroke-width: 1.5; fill: none; }
-    .ds-figure .arrow { fill: var(--ds-message, currentColor); }
-    .ds-figure .callout-ring { fill: none; stroke: var(--ds-accent, currentColor); stroke-width: 1.5; stroke-dasharray: 2 2; }
-    .ds-figure .callout-mark { fill: var(--ds-accent, currentColor); font-size: 10px; font-weight: 700; }
-    .ds-figure .dot { fill: currentColor; }
-    .ds-figure .dot.gap { fill: none; stroke: currentColor; stroke-dasharray: 3 2; }
-    .ds-figure .claim { fill: currentColor; }
-    .ds-figure .wrong { fill: var(--ds-wrong, currentColor); font-weight: 700; }
+    .ds-figure { max-width: 100%; height: auto; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; font-size: 13px; }
+    .ds-figure .ds-lane { stroke: currentColor; stroke-width: 1; opacity: var(--ds-lane-opacity, .35); }
+    .ds-figure .ds-lane-arrow { fill: currentColor; opacity: var(--ds-lane-opacity, .35); }
+    .ds-figure .ds-lane-name { fill: currentColor; font-weight: 600; }
+    .ds-figure .ds-event { fill: var(--ds-event, currentColor); }
+    .ds-figure .ds-name, .ds-figure .ds-label, .ds-figure .ds-callout { fill: currentColor; }
+    .ds-figure .ds-label { font-size: 11px; }
+    .ds-figure .ds-annotation { font-family: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace; font-size: 11px; fill: var(--ds-annotation, currentColor); }
+    .ds-figure .ds-message { stroke: var(--ds-message, currentColor); stroke-width: 1.5; fill: none; }
+    .ds-figure .ds-arrow { fill: var(--ds-message, currentColor); }
+    .ds-figure .ds-callout-ring { fill: none; stroke: var(--ds-accent, currentColor); stroke-width: 1.5; stroke-dasharray: 2 2; }
+    .ds-figure .ds-callout-mark { fill: var(--ds-accent, currentColor); font-size: 10px; font-weight: 700; }
+    .ds-figure .ds-dot { fill: currentColor; }
+    .ds-figure .ds-dot.ds-gap { fill: none; stroke: currentColor; stroke-dasharray: 3 2; }
+    .ds-figure .ds-claim { fill: currentColor; }
+    .ds-figure .ds-wrong { fill: var(--ds-wrong, currentColor); font-weight: 700; }
   </style>
-  <line class="lane" x1="128" y1="40" x2="288" y2="40"/>
-  <polygon class="lane-arrow" points="288,36 296,40 288,44"/>
-  <text class="lane-name" x="118" y="44" text-anchor="end">A</text>
-  <text class="name" x="156" y="24" text-anchor="middle">1</text>
-  <circle class="dot" cx="156" cy="40" r="7"/>
-  <text class="name" x="212" y="24" text-anchor="middle">2</text>
-  <circle class="dot gap" cx="212" cy="40" r="7"/>
-  <text class="name" x="268" y="24" text-anchor="middle">3</text>
-  <circle class="dot" cx="268" cy="40" r="7"/>
-  <text class="lane-name" x="118" y="88" text-anchor="end">CausalContext</text>
-  <circle class="claim" cx="156" cy="84" r="4"/>
-  <circle class="claim" cx="268" cy="84" r="4"/>
-  <text class="annotation" x="310" y="88">{A:1} + {A:3}</text>
-  <text class="lane-name" x="118" y="122" text-anchor="end">VectorClock</text>
-  <circle class="claim" cx="156" cy="118" r="4"/>
-  <text class="wrong" x="212" y="123" text-anchor="middle">×</text>
-  <circle class="claim" cx="268" cy="118" r="4"/>
-  <text class="annotation" x="310" y="122">{A:3}</text>
-  <text class="label" x="128" y="152">filled: dot seen · dashed: never seen · ×: claimed but never seen</text>
+  <line class="ds-lane" x1="111" y1="40" x2="271" y2="40"/>
+  <polygon class="ds-lane-arrow" points="271,36 279,40 271,44"/>
+  <text class="ds-lane-name" x="101" y="44" text-anchor="end">A</text>
+  <text class="ds-name" x="139" y="24" text-anchor="middle">1</text>
+  <circle class="ds-dot" cx="139" cy="40" r="7"/>
+  <text class="ds-name" x="195" y="24" text-anchor="middle">2</text>
+  <circle class="ds-dot ds-gap" cx="195" cy="40" r="7"/>
+  <text class="ds-name" x="251" y="24" text-anchor="middle">3</text>
+  <circle class="ds-dot" cx="251" cy="40" r="7"/>
+  <text class="ds-lane-name" x="101" y="88" text-anchor="end">CausalContext</text>
+  <circle class="ds-claim" cx="139" cy="84" r="4"/>
+  <circle class="ds-claim" cx="251" cy="84" r="4"/>
+  <text class="ds-annotation" x="293" y="88" text-anchor="start">{A:1} + dot A:3</text>
+  <text class="ds-lane-name" x="101" y="122" text-anchor="end">VectorClock</text>
+  <circle class="ds-claim" cx="139" cy="118" r="4"/>
+  <text class="ds-wrong" x="195" y="123" text-anchor="middle">×</text>
+  <circle class="ds-claim" cx="251" cy="118" r="4"/>
+  <text class="ds-annotation" x="293" y="122" text-anchor="start">{A:3}</text>
+  <text class="ds-label" x="111" y="152" text-anchor="start">filled: dot seen · dashed: never seen · ×: claimed but never seen</text>
 </svg>

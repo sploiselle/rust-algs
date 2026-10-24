@@ -2,16 +2,16 @@
 title: "Reusing an actor id after state loss: two writes share one name"
 ---
 sequenceDiagram
-    participant A as A
-    participant B as B
-    Note over A: write<br/>A:1→"x"
-    A->>B: 
-    Note over B: sync<br/>A:1→"x"
-    Note over A: state lost<br/>∅
-    Note over A: write<br/>A:1→"y"
-    A->>B: 
-    Note over B: sync<br/>A:1→"x"
-    B->>A: 
-    Note over A: sync<br/>A:1→"y"
-    Note over A: both writes are dot A:1: the reborn replica reissued a name it had already used
-    Note over B,A: B keeps "x" and A keeps "y": each believes it already holds the other's write, so they never converge
+    participant L0 as A
+    participant L1 as B
+    Note over L0: write<br/>A:1→"x"
+    L0->>L1: #8203;
+    Note over L1: sync<br/>A:1→"x"
+    Note over L0: state lost<br/>∅
+    Note over L0: write<br/>A:1→"y"
+    Note over L0: both writes are dot A:1: the reborn replica reissued a name it had already used
+    L0->>L1: #8203;
+    Note over L1: sync<br/>A:1→"x"
+    L1->>L0: #8203;
+    Note over L0: sync<br/>A:1→"y"
+    Note over L1,L0: B keeps "x" and A keeps "y": each believes it already holds the other's write, so they never converge

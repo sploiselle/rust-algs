@@ -1,9 +1,9 @@
 //! How a library value appears inside a figure: compact text.
 //!
-//! This lives here rather than as `Display` impls in `dist-sys` because a crate
-//! can't implement a foreign trait for foreign types, and because these are
-//! presentation choices (quotes around string values, `→` between a dot and
-//! its value) that don't belong in the library.
+//! These are presentation choices (quotes around string values, `→` between a
+//! dot and its value, one line per sibling) that don't belong in the library,
+//! so they live here. And since a crate can't implement a foreign trait such as
+//! `Display` for foreign types, they form a trait of this crate's own.
 
 use std::fmt::{Debug, Display};
 
@@ -12,7 +12,7 @@ use dist_sys::crdt::MvRegister;
 
 /// Compact text for a library value, for use inside a figure. May contain `\n`
 /// where a value is naturally several lines (siblings in a register); both
-/// renderers honour it.
+/// renderers honour it in every piece of text.
 pub trait Label {
     fn label(&self) -> String;
 }
@@ -32,25 +32,23 @@ impl<A: Display> Label for Dot<A> {
     }
 }
 
-/// The vector part, then the cloud if there is one: `{A:1} + {A:3}`.
+/// The vector part, then any dots known past a gap, named as dots so they
+/// can't be read as a vector: `{A:1} + dot A:3`, or `… + dots A:3, B:2`.
 impl<A: Ord + Clone + Display> Label for CausalContext<A> {
     fn label(&self) -> String {
         let cloud: Vec<String> = self.cloud().map(|d| d.label()).collect();
-        if cloud.is_empty() {
-            self.vector().label()
-        } else {
-            format!("{} + {{{}}}", self.vector().label(), cloud.join(", "))
+        match cloud.len() {
+            0 => self.vector().label(),
+            1 => format!("{} + dot {}", self.vector().label(), cloud[0]),
+            _ => format!("{} + dots {}", self.vector().label(), cloud.join(", ")),
         }
     }
 }
 
-/// One `dot→value` line per live entry, sorted by dot so that two converged
-/// replicas print identically whatever order their entries arrived in; `∅`
-/// when empty.
+/// One `dot→value` line per live entry, in dot order; `∅` when empty.
 impl<A: Ord + Clone + Display, V: Clone + Debug> Label for MvRegister<A, V> {
     fn label(&self) -> String {
-        let mut entries: Vec<(&Dot<A>, &V)> = self.entries().collect();
-        entries.sort_by(|(x, _), (y, _)| (&x.actor, x.counter).cmp(&(&y.actor, y.counter)));
+        let entries = sorted_entries(self);
         if entries.is_empty() {
             return "∅".to_string();
         }
@@ -73,6 +71,14 @@ impl Label for Causality {
         }
         .to_string()
     }
+}
+
+/// A register's live entries sorted by dot, so that two converged replicas
+/// list them identically whatever order their entries arrived in.
+pub fn sorted_entries<A: Ord + Clone, V: Clone>(r: &MvRegister<A, V>) -> Vec<(&Dot<A>, &V)> {
+    let mut entries: Vec<(&Dot<A>, &V)> = r.entries().collect();
+    entries.sort_by(|(x, _), (y, _)| (&x.actor, x.counter).cmp(&(&y.actor, y.counter)));
+    entries
 }
 
 #[cfg(test)]
@@ -105,12 +111,21 @@ mod tests {
             actor: 'A',
             counter: 3,
         });
-        assert_eq!(cc.label(), "{A:1} + {A:3}");
+        assert_eq!(cc.label(), "{A:1} + dot A:3");
+        cc.insert(Dot {
+            actor: 'B',
+            counter: 2,
+        });
+        assert_eq!(cc.label(), "{A:1} + dots A:3, B:2");
         cc.insert(Dot {
             actor: 'A',
             counter: 2,
         });
-        assert_eq!(cc.label(), "{A:3}");
+        cc.insert(Dot {
+            actor: 'B',
+            counter: 1,
+        });
+        assert_eq!(cc.label(), "{A:3, B:2}");
     }
 
     #[test]

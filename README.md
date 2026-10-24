@@ -40,13 +40,17 @@ picture comes from running the code.
 cargo run -p diagrams
 ```
 
-That regenerates `figures/` (pass a directory to write somewhere else).
-`cargo test` fails if the committed figures are stale.
+That writes every figure into `figures/` (pass a directory to write somewhere
+else). `cargo test` fails if a committed figure is stale or no figure produces
+it any more.
 
 The `.svg` files are meant to be inlined into a page. They use `currentColor`
 and a few `--ds-*` CSS custom properties (`--ds-accent`, `--ds-message`,
 `--ds-event`, `--ds-annotation`, `--ds-wrong`, `--ds-lane-opacity`), so they
 follow the page's light or dark theme and can be recoloured from its
-stylesheet; loaded through `<img>` they render in plain black. The `.mmd` files
-are Mermaid sequence diagrams of the same scenarios, for places that render
-Mermaid. The causal-context figure is a number line, which has no Mermaid form.
+stylesheet; loaded through `<img>` they render in plain black. Every class is
+prefixed `ds-` and every rule scoped under `.ds-figure`, so the page's own
+stylesheet leaves them alone, and they shrink to fit a narrow column. The
+`.mmd` files are Mermaid sequence diagrams of the same scenarios, for places
+that render Mermaid. The causal-context figure is a number line, which has no
+Mermaid form.

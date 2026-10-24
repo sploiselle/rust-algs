@@ -1,6 +1,10 @@
 //! What a figure is, as plain data. Nothing here knows about clocks or
 //! registers: the catalog builds these from library values, the renderers draw
 //! them, and the two never meet.
+//!
+//! The collections are private and filled only through the builder methods,
+//! which check their arguments, so a renderer can rely on every message going
+//! forward in time between two different lanes.
 
 /// One actor's timeline in a [`SpaceTime`] diagram.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -48,11 +52,11 @@ pub struct Callout {
 /// were recorded in *is* the time axis.
 #[derive(Debug, Clone)]
 pub struct SpaceTime {
-    pub title: String,
-    pub lanes: Vec<Lane>,
-    pub events: Vec<Event>,
-    pub messages: Vec<Message>,
-    pub callouts: Vec<Callout>,
+    title: String,
+    lanes: Vec<Lane>,
+    events: Vec<Event>,
+    messages: Vec<Message>,
+    callouts: Vec<Callout>,
 }
 
 impl SpaceTime {
@@ -64,6 +68,26 @@ impl SpaceTime {
             messages: Vec::new(),
             callouts: Vec::new(),
         }
+    }
+
+    pub fn title(&self) -> &str {
+        &self.title
+    }
+
+    pub fn lanes(&self) -> &[Lane] {
+        &self.lanes
+    }
+
+    pub fn events(&self) -> &[Event] {
+        &self.events
+    }
+
+    pub fn messages(&self) -> &[Message] {
+        &self.messages
+    }
+
+    pub fn callouts(&self) -> &[Callout] {
+        &self.callouts
     }
 
     pub fn lane(&mut self, name: impl Into<String>) -> LaneId {
@@ -87,9 +111,9 @@ impl SpaceTime {
     }
 
     /// Panics unless `from` was recorded before `to` and on a different lane: a
-    /// message always goes forward in time and between actors. That is also
-    /// what lets a renderer draw every message left to right by construction.
+    /// message always goes forward in time and between actors.
     pub fn message(&mut self, from: EventId, to: EventId, label: impl Into<String>) {
+        assert!(to.0 < self.events.len(), "unknown event");
         assert!(from.0 < to.0, "a message must arrive after it was sent");
         assert_ne!(
             self.events[from.0].lane, self.events[to.0].lane,
@@ -103,6 +127,10 @@ impl SpaceTime {
     }
 
     pub fn callout(&mut self, a: EventId, b: EventId, text: impl Into<String>) {
+        assert!(
+            a.0 < self.events.len() && b.0 < self.events.len(),
+            "unknown event"
+        );
         self.callouts.push(Callout {
             a,
             b,
@@ -119,24 +147,75 @@ impl SpaceTime {
 /// seen, against what one or more representations *claim* to contain.
 #[derive(Debug, Clone)]
 pub struct DotLine {
-    pub title: String,
-    /// Whose counters the line shows.
-    pub actor: String,
-    /// The line shows `1..=counters`.
-    pub counters: u64,
-    /// Counters whose dot really was seen; the rest are gaps.
-    pub present: Vec<u64>,
-    pub claims: Vec<Claim>,
+    title: String,
+    actor: String,
+    counters: u64,
+    present: Vec<u64>,
+    claims: Vec<Claim>,
 }
 
 /// What one representation says it contains. A counter claimed here but absent
-/// from [`DotLine::present`] is the mistake the figure is about.
+/// from the present set is the mistake the figure is about.
 #[derive(Debug, Clone)]
 pub struct Claim {
     pub title: String,
     /// The representation itself, as text.
     pub text: String,
     pub counters: Vec<u64>,
+}
+
+impl DotLine {
+    /// The line shows `1..=counters` for `actor`; `present` are the counters
+    /// whose dot really was seen. Panics unless every present or claimed
+    /// counter is on the line, and the line is short enough to be a figure.
+    pub fn new(
+        title: impl Into<String>,
+        actor: impl Into<String>,
+        counters: u64,
+        present: Vec<u64>,
+        claims: Vec<Claim>,
+    ) -> Self {
+        assert!(
+            (1..=64).contains(&counters),
+            "a number line needs 1 to 64 counters"
+        );
+        let on_line = |c: &u64| (1..=counters).contains(c);
+        assert!(
+            present.iter().all(on_line),
+            "a present counter is off the line"
+        );
+        assert!(
+            claims.iter().all(|c| c.counters.iter().all(on_line)),
+            "a claimed counter is off the line"
+        );
+        Self {
+            title: title.into(),
+            actor: actor.into(),
+            counters,
+            present,
+            claims,
+        }
+    }
+
+    pub fn title(&self) -> &str {
+        &self.title
+    }
+
+    pub fn actor(&self) -> &str {
+        &self.actor
+    }
+
+    pub fn counters(&self) -> u64 {
+        self.counters
+    }
+
+    pub fn present(&self) -> &[u64] {
+        &self.present
+    }
+
+    pub fn claims(&self) -> &[Claim] {
+        &self.claims
+    }
 }
 
 /// Every kind of figure a backend may be asked to draw.
@@ -178,5 +257,20 @@ mod tests {
         let a1 = d.event(a, "", "");
         let a2 = d.event(a, "", "");
         d.message(a1, a2, "");
+    }
+
+    #[test]
+    #[should_panic(expected = "unknown event")]
+    fn a_callout_needs_recorded_events() {
+        let mut d = SpaceTime::new("t");
+        let a = d.lane("A");
+        let a1 = d.event(a, "", "");
+        d.callout(a1, EventId(7), "");
+    }
+
+    #[test]
+    #[should_panic(expected = "off the line")]
+    fn a_dot_line_rejects_counters_it_cannot_draw() {
+        DotLine::new("t", "A", 3, vec![0], vec![]);
     }
 }

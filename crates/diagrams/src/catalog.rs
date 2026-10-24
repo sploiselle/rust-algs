@@ -2,15 +2,15 @@
 //!
 //! Each function drives the real library API step by step, records the value
 //! after every step as that event's annotation, and asserts the claims the
-//! picture makes: the same claims the library's own tests check. [`all`] runs
-//! in both the binary and the staleness test, so if the library ever changes
-//! under a figure the assert fails loudly instead of a wrong picture being
-//! drawn.
+//! picture makes, pinned to the literal values the text relies on. [`all`]
+//! runs in both the binary and the staleness test, so if the library ever
+//! changes under a figure the assert fails loudly instead of a wrong picture
+//! being drawn.
 
 use dist_sys::clock::{CausalContext, Causality, Dot, VectorClock};
 use dist_sys::crdt::MvRegister;
 
-use crate::label::Label;
+use crate::label::{Label, sorted_entries};
 use crate::model::{Claim, Diagram, DotLine, SpaceTime};
 
 /// A figure and the file stem its renderings are written under.
@@ -29,9 +29,9 @@ pub fn all() -> Vec<Figure> {
     ]
 }
 
-/// Three processes, two messages: the scenario from the `clock::vector` docs.
-/// A3 is the last event on the wall clock yet concurrent with B3; A1 reaches
-/// C2 only through B.
+/// Three processes, two messages: the scenario in the library test
+/// `three_process_trace`. A3 is the last event on the wall clock yet
+/// concurrent with B3; A1 reaches C2 only through B.
 fn vector_clock_trace() -> Figure {
     let mut d = SpaceTime::new("Vector clocks: three processes, two messages");
     let (la, lb, lc) = (d.lane("A"), d.lane("B"), d.lane("C"));
@@ -61,12 +61,16 @@ fn vector_clock_trace() -> Figure {
     let a3 = d.event(la, "A3", va.label());
     let a3_clock = va.clone();
 
-    let expected_c2: VectorClock<char> = [(a, 2), (b, 3), (c, 2)].into_iter().collect();
-    assert_eq!(c2_clock, expected_c2);
+    assert_eq!(a1_clock, VectorClock::from_iter([(a, 1)]));
+    assert_eq!(m1, VectorClock::from_iter([(a, 2)]));
+    assert_eq!(b3_clock, VectorClock::from_iter([(a, 2), (b, 3)]));
+    assert_eq!(c2_clock, VectorClock::from_iter([(a, 2), (b, 3), (c, 2)]));
+    assert_eq!(a3_clock, VectorClock::from_iter([(a, 3)]));
     let a3_b3 = a3_clock.compare(&b3_clock);
     assert_eq!(a3_b3, Causality::Concurrent);
     let a1_c2 = a1_clock.compare(&c2_clock);
     assert_eq!(a1_c2, Causality::Before);
+    assert!(a1_clock < m2, "m2 carries A1 because B received m1 first");
     d.callout(
         a3,
         b3,
@@ -95,36 +99,72 @@ fn vector_clock_trace() -> Figure {
 
 /// Two replicas write concurrently, the writes become siblings, a write that
 /// was shown both siblings replaces them, and a stale copy can't bring the
-/// original back. The scenario from `crdt::mv_register`, with shorter values.
+/// original back. The scenario in the library test
+/// `concurrent_writes_become_siblings_until_a_write_that_was_shown_both`,
+/// with shorter values.
 fn mv_register_siblings() -> Figure {
     let mut d = SpaceTime::new("Multi-value register: concurrent writes become siblings");
     let (l1, l2) = (d.lane("r1"), d.lane("r2"));
     let (mut r1, mut r2): (MvRegister<char, &str>, MvRegister<char, &str>) =
         (MvRegister::new(), MvRegister::new());
 
-    r1.update(&'A', |_| "draft");
+    let draft = r1.update(&'A', |_| "draft");
+    assert_eq!(
+        draft,
+        Dot {
+            actor: 'A',
+            counter: 1
+        }
+    );
     let e1 = d.event(l1, "write", r1.label());
     r2.sync_from(&r1);
     let e2 = d.event(l2, "sync", r2.label());
     d.message(e1, e2, "");
     let stale = r2.clone(); // a peer that hears nothing more until the end
 
-    r1.update(&'A', |_| "edit A"); // each writer is shown only "draft"
+    // Each writer is shown only "draft", so neither write replaces the other.
+    let shown_only_draft = |shown: &[(Dot<char>, &str)]| {
+        assert_eq!(
+            shown.iter().map(|(dot, _)| dot).collect::<Vec<_>>(),
+            [&draft]
+        );
+    };
+    let a2 = r1.update(&'A', |shown| {
+        shown_only_draft(shown);
+        "edit A"
+    });
     let e3 = d.event(l1, "write", r1.label());
-    r2.update(&'B', |_| "edit B");
+    let b1 = r2.update(&'B', |shown| {
+        shown_only_draft(shown);
+        "edit B"
+    });
     d.event(l2, "write", r2.label());
+    assert_eq!(
+        (&a2, &b1),
+        (
+            &Dot {
+                actor: 'A',
+                counter: 2
+            },
+            &Dot {
+                actor: 'B',
+                counter: 1
+            }
+        )
+    );
     r2.sync_from(&r1);
     let e5 = d.event(l2, "sync", r2.label());
     d.message(e3, e5, "");
     r1.sync_from(&r2);
     let e6 = d.event(l1, "sync", r1.label());
     d.message(e5, e6, "");
-    assert_eq!(sorted_values(&r1), ["edit A", "edit B"]);
+    assert_eq!(sorted_dots(&r1), [a2.label(), b1.label()]);
     assert_eq!(r1.label(), r2.label());
-    let siblings = sorted_dots(&r1);
 
     let merged = r2.update(&'B', |shown| {
-        assert_eq!(shown.len(), 2); // the writer is handed both siblings
+        let mut dots: Vec<&Dot<char>> = shown.iter().map(|(dot, _)| dot).collect();
+        dots.sort_by_key(|dot| (dot.actor, dot.counter));
+        assert_eq!(dots, [&a2, &b1]); // the writer is handed both siblings
         "merged"
     });
     let e7 = d.event(l2, "write", r2.label());
@@ -133,24 +173,31 @@ fn mv_register_siblings() -> Figure {
     d.message(e7, e8, "");
     r1.sync_from(&stale);
     let e9 = d.event(l1, "sync (stale)", r1.label());
-    r1.sync_from(&r2); // idempotent; nothing new to draw
     let live: Vec<_> = r1.entries().map(|(dot, v)| (dot.clone(), *v)).collect();
     assert_eq!(live, [(merged, "merged")]);
+    assert!(
+        stale.entries().all(|(dot, _)| r1.seen().contains(dot)),
+        "r1 has seen every write the stale copy holds"
+    );
+    let before = r1.label();
+    r1.sync_from(&r2);
+    assert_eq!(r1.label(), before, "syncing again changes nothing");
 
     d.callout(
         e5,
         e6,
         format!(
-            "r1 and r2 agree: {} are siblings, since neither writer was shown the other's value",
-            siblings.join(" and ")
+            "r1 and r2 agree: {} and {} are siblings, since neither writer was shown the other's value",
+            a2.label(),
+            b1.label()
         ),
     );
     d.callout(
         e2,
         e9,
         format!(
-            "a copy of r2 taken here still holds {}, but r1 has already seen that write, so \"draft\" is not resurrected",
-            sorted_dots(&stale).join(", ")
+            "a copy of r2 taken right after its first sync still holds {}, but r1 has already seen that write, so \"draft\" is not resurrected",
+            draft.label()
         ),
     );
     Figure {
@@ -160,7 +207,8 @@ fn mv_register_siblings() -> Figure {
 }
 
 /// A replica loses its state and comes back under the same actor id, so it
-/// reissues a dot it already used. From `crdt::mv_register`.
+/// reissues a dot it already used. The scenario in the library test
+/// `reusing_an_actor_id_after_state_loss_corrupts_replicas`.
 fn actor_id_reuse() -> Figure {
     let mut d = SpaceTime::new("Reusing an actor id after state loss: two writes share one name");
     let (la, lb) = (d.lane("A"), d.lane("B"));
@@ -168,6 +216,13 @@ fn actor_id_reuse() -> Figure {
         (MvRegister::new(), MvRegister::new());
 
     let first = a.update(&'A', |_| "x");
+    assert_eq!(
+        first,
+        Dot {
+            actor: 'A',
+            counter: 1
+        }
+    );
     let e1 = d.event(la, "write", a.label());
     b.sync_from(&a);
     let e2 = d.event(lb, "sync", b.label());
@@ -184,8 +239,17 @@ fn actor_id_reuse() -> Figure {
     a_reborn.sync_from(&b);
     let e6 = d.event(la, "sync", a_reborn.label());
     d.message(e5, e6, "");
-    assert_eq!(sorted_values(&b), ["x"]);
-    assert_eq!(sorted_values(&a_reborn), ["y"]);
+    assert_eq!(
+        (sorted_values(&b), sorted_values(&a_reborn)),
+        (vec!["x"], vec!["y"])
+    );
+    // Another round changes nothing: they have diverged for good.
+    b.sync_from(&a_reborn);
+    a_reborn.sync_from(&b);
+    assert_eq!(
+        (sorted_values(&b), sorted_values(&a_reborn)),
+        (vec!["x"], vec!["y"])
+    );
 
     d.callout(
         e1,
@@ -207,33 +271,42 @@ fn actor_id_reuse() -> Figure {
 }
 
 /// A causal context knows (A,1) and (A,3) but not (A,2). The smallest vector
-/// clock containing (A,3) is {A:3}, which also claims (A,2). From `clock::dot`.
+/// clock containing (A,3) is {A:3}, which also claims (A,2). The scenario in
+/// the library test `causal_context_tracks_gaps_a_vector_cannot`.
 fn causal_context_gap() -> Figure {
     let dot = |counter| Dot {
         actor: 'A',
         counter,
     };
+    let inserted = [1, 3];
     let mut cc = CausalContext::new();
-    cc.insert(dot(1));
-    cc.insert(dot(3));
+    for c in inserted {
+        cc.insert(dot(c));
+    }
     let top = cc.next_counter(&'A') - 1; // the highest counter known
-    let naive: VectorClock<char> = [('A', top)].into_iter().collect(); // smallest vector containing (A,3)
+    assert_eq!(top, 3);
+    let naive: VectorClock<char> = [('A', top)].into_iter().collect(); // the smallest vector containing (A,3)
+    assert_eq!(naive, VectorClock::from_iter([('A', 3)]));
     assert!(cc.contains(&dot(1)) && !cc.contains(&dot(2)) && cc.contains(&dot(3)));
     assert_eq!(cc.vector(), &VectorClock::from_iter([('A', 1)]));
-    assert!(naive.get(&'A') >= 2, "the plain vector claims (A,2)");
-
-    let present: Vec<u64> = (1..=top).filter(|&c| cc.contains(&dot(c))).collect();
+    assert_eq!(cc.cloud().collect::<Vec<_>>(), [dot(3)]);
     let claimed_by_vector: Vec<u64> = (1..=top).filter(|&c| c <= naive.get(&'A')).collect();
-    let d = DotLine {
-        title: "A causal context tracks a gap a vector clock cannot".into(),
-        actor: "A".into(),
-        counters: top,
-        present: present.clone(),
-        claims: vec![
+    assert_eq!(
+        claimed_by_vector,
+        [1, 2, 3],
+        "the plain vector claims (A,2)"
+    );
+
+    let d = DotLine::new(
+        "A causal context tracks a gap a vector clock cannot",
+        "A",
+        top,
+        inserted.to_vec(),
+        vec![
             Claim {
                 title: "CausalContext".into(),
                 text: cc.label(),
-                counters: present,
+                counters: inserted.to_vec(),
             },
             Claim {
                 title: "VectorClock".into(),
@@ -241,7 +314,7 @@ fn causal_context_gap() -> Figure {
                 counters: claimed_by_vector,
             },
         ],
-    };
+    );
     Figure {
         stem: "causal-context-gap",
         diagram: Diagram::DotLine(d),
@@ -255,7 +328,8 @@ fn sorted_values(r: &MvRegister<char, &'static str>) -> Vec<&'static str> {
 }
 
 fn sorted_dots<V: Clone>(r: &MvRegister<char, V>) -> Vec<String> {
-    let mut dots: Vec<&Dot<char>> = r.entries().map(|(d, _)| d).collect();
-    dots.sort_by_key(|d| (d.actor, d.counter));
-    dots.into_iter().map(Label::label).collect()
+    sorted_entries(r)
+        .into_iter()
+        .map(|(dot, _)| dot.label())
+        .collect()
 }
