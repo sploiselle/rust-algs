@@ -1,0 +1,19 @@
+---
+title: "Vector clocks: three processes, two messages"
+---
+sequenceDiagram
+    participant A as A
+    participant B as B
+    participant C as C
+    Note over A: A1<br/>{A:1}
+    Note over A: A2<br/>{A:2}
+    Note over B: B1<br/>{B:1}
+    A->>B: m1 {A:2}
+    Note over B: B2<br/>{A:2, B:2}
+    Note over C: C1<br/>{C:1}
+    Note over B: B3<br/>{A:2, B:3}
+    B->>C: m2 {A:2, B:3}
+    Note over C: C2<br/>{A:2, B:3, C:2}
+    Note over A: A3<br/>{A:3}
+    Note over A,B: A3 ∥ B3: {A:3} and {A:2, B:3} are incomparable, though A3 happened last
+    Note over A,C: A1 → C2: {A:1} #60; {A:2, B:3, C:2}, carried by m1 then m2

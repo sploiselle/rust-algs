@@ -1,0 +1,44 @@
+//! Figures for the write-ups, rendered from the reference implementations in
+//! `dist-sys` so that a picture can never disagree with the code.
+//!
+//! - [`model`]: what a figure *is*. Plain data (lanes, events, messages) that
+//!   knows nothing about clocks or registers.
+//! - [`label`]: how a library value appears inside a figure, as text.
+//! - [`catalog`]: the figures themselves. Each one drives the real library API,
+//!   records every step, and asserts the claims the picture makes.
+//! - [`render`]: backends that turn a model into the text of a file, SVG and
+//!   Mermaid.
+//!
+//! `cargo run -p diagrams` writes every figure into the workspace's `figures/`
+//! directory; the test in `tests/figures.rs` fails if those files are stale.
+
+use std::path::{Path, PathBuf};
+
+pub mod catalog;
+pub mod label;
+pub mod model;
+pub mod render;
+
+/// `<workspace>/figures`, found relative to this crate so it is the same
+/// directory whatever the working directory.
+pub fn figures_dir() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .join("figures")
+}
+
+/// Every file the binary writes, as `(file name, contents)`: each catalog entry
+/// times each backend that renders it. The staleness test compares against
+/// exactly this list, so the two can't drift apart.
+pub fn outputs() -> Vec<(String, String)> {
+    catalog::all()
+        .iter()
+        .flat_map(|figure| {
+            render::ALL.iter().filter_map(move |backend| {
+                backend
+                    .render(&figure.diagram)
+                    .map(|text| (format!("{}.{}", figure.stem, backend.extension()), text))
+            })
+        })
+        .collect()
+}

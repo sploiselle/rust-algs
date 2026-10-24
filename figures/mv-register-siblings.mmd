@@ -1,0 +1,21 @@
+---
+title: "Multi-value register: concurrent writes become siblings"
+---
+sequenceDiagram
+    participant r1 as r1
+    participant r2 as r2
+    Note over r1: write<br/>A:1→"draft"
+    r1->>r2: 
+    Note over r2: sync<br/>A:1→"draft"
+    Note over r1: write<br/>A:2→"edit A"
+    Note over r2: write<br/>B:1→"edit B"
+    r1->>r2: 
+    Note over r2: sync<br/>A:2→"edit A"<br/>B:1→"edit B"
+    r2->>r1: 
+    Note over r1: sync<br/>A:2→"edit A"<br/>B:1→"edit B"
+    Note over r2: write<br/>B:2→"merged"
+    r2->>r1: 
+    Note over r1: sync<br/>B:2→"merged"
+    Note over r1: sync (stale)<br/>B:2→"merged"
+    Note over r2,r1: r1 and r2 agree: A:2 and B:1 are siblings, since neither writer was shown the other's value
+    Note over r2,r1: a copy of r2 taken here still holds A:1, but r1 has already seen that write, so "draft" is not resurrected

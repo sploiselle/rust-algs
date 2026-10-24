@@ -1,0 +1,73 @@
+<svg xmlns="http://www.w3.org/2000/svg" class="ds-figure" role="img" viewBox="0 0 861 279" width="861" height="279">
+  <title>Multi-value register: concurrent writes become siblings</title>
+  <style>
+    .ds-figure { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; font-size: 13px; }
+    .ds-figure .lane { stroke: currentColor; stroke-width: 1; opacity: var(--ds-lane-opacity, .35); }
+    .ds-figure .lane-arrow { fill: currentColor; opacity: var(--ds-lane-opacity, .35); }
+    .ds-figure .lane-name { fill: currentColor; font-weight: 600; }
+    .ds-figure .event { fill: var(--ds-event, currentColor); }
+    .ds-figure .name, .ds-figure .label, .ds-figure .callout { fill: currentColor; }
+    .ds-figure .label { font-size: 11px; }
+    .ds-figure .annotation { font-family: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace; font-size: 11px; fill: var(--ds-annotation, currentColor); }
+    .ds-figure .message { stroke: var(--ds-message, currentColor); stroke-width: 1.5; fill: none; }
+    .ds-figure .arrow { fill: var(--ds-message, currentColor); }
+    .ds-figure .callout-ring { fill: none; stroke: var(--ds-accent, currentColor); stroke-width: 1.5; stroke-dasharray: 2 2; }
+    .ds-figure .callout-mark { fill: var(--ds-accent, currentColor); font-size: 10px; font-weight: 700; }
+    .ds-figure .dot { fill: currentColor; }
+    .ds-figure .dot.gap { fill: none; stroke: currentColor; stroke-dasharray: 3 2; }
+    .ds-figure .claim { fill: currentColor; }
+    .ds-figure .wrong { fill: var(--ds-wrong, currentColor); font-weight: 700; }
+  </style>
+  <line class="lane" x1="38" y1="44" x2="853" y2="44"/>
+  <polygon class="lane-arrow" points="853,40 861,44 853,48"/>
+  <text class="lane-name" x="28" y="48" text-anchor="end">r1</text>
+  <line class="lane" x1="38" y1="142" x2="853" y2="142"/>
+  <polygon class="lane-arrow" points="853,138 861,142 853,146"/>
+  <text class="lane-name" x="28" y="146" text-anchor="end">r2</text>
+  <circle class="event" cx="126" cy="44" r="5"/>
+  <text class="name" x="126" y="30" text-anchor="middle">write</text>
+  <text class="annotation" x="130" y="66" text-anchor="end">A:1→"draft"</text>
+  <circle class="event" cx="198" cy="142" r="5"/>
+  <text class="name" x="194" y="128" text-anchor="start">sync</text>
+  <text class="annotation" x="198" y="164" text-anchor="middle">A:1→"draft"</text>
+  <circle class="event" cx="270" cy="44" r="5"/>
+  <text class="name" x="270" y="30" text-anchor="middle">write</text>
+  <text class="annotation" x="274" y="66" text-anchor="end">A:2→"edit A"</text>
+  <circle class="event" cx="342" cy="142" r="5"/>
+  <text class="name" x="342" y="128" text-anchor="middle">write</text>
+  <text class="annotation" x="342" y="164" text-anchor="middle">B:1→"edit B"</text>
+  <circle class="event" cx="442" cy="142" r="5"/>
+  <text class="name" x="442" y="115" text-anchor="middle">sync</text>
+  <text class="annotation" x="442" y="164" text-anchor="middle">A:2→"edit A"<tspan x="442" dy="13">B:1→"edit B"</tspan></text>
+  <circle class="event" cx="514" cy="44" r="5"/>
+  <text class="name" x="514" y="30" text-anchor="middle">sync</text>
+  <text class="annotation" x="510" y="66" text-anchor="start">A:2→"edit A"<tspan x="510" dy="13">B:1→"edit B"</tspan></text>
+  <circle class="event" cx="586" cy="142" r="5"/>
+  <text class="name" x="590" y="128" text-anchor="end">write</text>
+  <text class="annotation" x="586" y="164" text-anchor="middle">B:2→"merged"</text>
+  <circle class="event" cx="658" cy="44" r="5"/>
+  <text class="name" x="658" y="30" text-anchor="middle">sync</text>
+  <text class="annotation" x="654" y="66" text-anchor="start">B:2→"merged"</text>
+  <circle class="event" cx="798" cy="44" r="5"/>
+  <text class="name" x="798" y="30" text-anchor="middle">sync (stale)</text>
+  <text class="annotation" x="798" y="66" text-anchor="middle">B:2→"merged"</text>
+  <line class="message" x1="130.1" y1="49.6" x2="187.9" y2="128.3"/>
+  <polygon class="arrow" points="193.3,135.6 185.1,130.4 190.8,126.2"/>
+  <line class="message" x1="276.1" y1="47.5" x2="427.2" y2="133.6"/>
+  <polygon class="arrow" points="435.0,138.0 425.5,136.6 429.0,130.5"/>
+  <line class="message" x1="446.1" y1="136.4" x2="503.9" y2="57.7"/>
+  <polygon class="arrow" points="509.3,50.4 506.8,59.8 501.1,55.6"/>
+  <line class="message" x1="590.1" y1="136.4" x2="647.9" y2="57.7"/>
+  <polygon class="arrow" points="653.3,50.4 650.8,59.8 645.1,55.6"/>
+  <circle class="callout-ring" cx="442" cy="142" r="9"/>
+  <text class="callout-mark" x="454" y="146">1</text>
+  <circle class="callout-ring" cx="514" cy="44" r="9"/>
+  <text class="callout-mark" x="526" y="48">1</text>
+  <text class="callout" x="38" y="226">1. r1 and r2 agree: A:2 and B:1 are siblings, since neither writer was shown the other's value</text>
+  <circle class="callout-ring" cx="198" cy="142" r="9"/>
+  <text class="callout-mark" x="210" y="146">2</text>
+  <circle class="callout-ring" cx="798" cy="44" r="9"/>
+  <text class="callout-mark" x="810" y="48">2</text>
+  <text class="callout" x="38" y="244">2. a copy of r2 taken here still holds A:1, but r1 has already seen that write, so "draft" is</text>
+  <text class="callout" x="54" y="262">not resurrected</text>
+</svg>

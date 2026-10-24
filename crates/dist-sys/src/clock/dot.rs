@@ -86,6 +86,14 @@ impl<A: Ord + Clone> CausalContext<A> {
         &self.vv
     }
 
+    /// The dots known beyond the contiguous prefix: the gaps a plain vector
+    /// can't express. Empty exactly when this context is just a vector clock.
+    pub fn cloud(&self) -> impl Iterator<Item = Dot<A>> {
+        self.cloud.iter().flat_map(|(actor, counters)| {
+            counters.iter().map(move |&counter| Dot { actor: actor.clone(), counter })
+        })
+    }
+
     /// One past the highest dot known for `actor`.
     pub fn next_counter(&self, actor: &A) -> u64 {
         let highest_extra = self.cloud.get(actor).and_then(|s| s.last().copied()).unwrap_or(0);
@@ -124,9 +132,11 @@ mod tests {
         assert!(!cc.contains(&dot('A', 2))); // the vector {A:3} would wrongly claim this
         assert!(cc.contains(&dot('A', 3)));
         assert_eq!(cc.vector(), &VectorClock::from_iter([('A', 1)]));
+        assert_eq!(cc.cloud().collect::<Vec<_>>(), [dot('A', 3)]);
 
         cc.insert(dot('A', 2)); // gap filled: everything folds into the vector
         assert_eq!(cc.vector(), &VectorClock::from_iter([('A', 3)]));
+        assert_eq!(cc.cloud().count(), 0);
         assert_eq!(cc.next_counter(&'A'), 4);
     }
 }

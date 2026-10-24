@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" class="ds-figure" role="img" viewBox="0 0 593 338" width="593" height="338">
+  <title>Vector clocks: three processes, two messages</title>
+  <style>
+    .ds-figure { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; font-size: 13px; }
+    .ds-figure .lane { stroke: currentColor; stroke-width: 1; opacity: var(--ds-lane-opacity, .35); }
+    .ds-figure .lane-arrow { fill: currentColor; opacity: var(--ds-lane-opacity, .35); }
+    .ds-figure .lane-name { fill: currentColor; font-weight: 600; }
+    .ds-figure .event { fill: var(--ds-event, currentColor); }
+    .ds-figure .name, .ds-figure .label, .ds-figure .callout { fill: currentColor; }
+    .ds-figure .label { font-size: 11px; }
+    .ds-figure .annotation { font-family: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace; font-size: 11px; fill: var(--ds-annotation, currentColor); }
+    .ds-figure .message { stroke: var(--ds-message, currentColor); stroke-width: 1.5; fill: none; }
+    .ds-figure .arrow { fill: var(--ds-message, currentColor); }
+    .ds-figure .callout-ring { fill: none; stroke: var(--ds-accent, currentColor); stroke-width: 1.5; stroke-dasharray: 2 2; }
+    .ds-figure .callout-mark { fill: var(--ds-accent, currentColor); font-size: 10px; font-weight: 700; }
+    .ds-figure .dot { fill: currentColor; }
+    .ds-figure .dot.gap { fill: none; stroke: currentColor; stroke-dasharray: 3 2; }
+    .ds-figure .claim { fill: currentColor; }
+    .ds-figure .wrong { fill: var(--ds-wrong, currentColor); font-weight: 700; }
+  </style>
+  <line class="lane" x1="29" y1="44" x2="585" y2="44"/>
+  <polygon class="lane-arrow" points="585,40 593,44 585,48"/>
+  <text class="lane-name" x="19" y="48" text-anchor="end">A</text>
+  <line class="lane" x1="29" y1="129" x2="585" y2="129"/>
+  <polygon class="lane-arrow" points="585,125 593,129 585,133"/>
+  <text class="lane-name" x="19" y="133" text-anchor="end">B</text>
+  <line class="lane" x1="29" y1="214" x2="585" y2="214"/>
+  <polygon class="lane-arrow" points="585,210 593,214 585,218"/>
+  <text class="lane-name" x="19" y="218" text-anchor="end">C</text>
+  <circle class="event" cx="59" cy="44" r="5"/>
+  <text class="name" x="59" y="30" text-anchor="middle">A1</text>
+  <text class="annotation" x="59" y="66" text-anchor="middle">{A:1}</text>
+  <circle class="event" cx="131" cy="44" r="5"/>
+  <text class="name" x="131" y="30" text-anchor="middle">A2</text>
+  <text class="annotation" x="135" y="66" text-anchor="end">{A:2}</text>
+  <circle class="event" cx="203" cy="129" r="5"/>
+  <text class="name" x="203" y="115" text-anchor="middle">B1</text>
+  <text class="annotation" x="203" y="151" text-anchor="middle">{B:1}</text>
+  <circle class="event" cx="275" cy="129" r="5"/>
+  <text class="name" x="271" y="115" text-anchor="start">B2</text>
+  <text class="annotation" x="275" y="151" text-anchor="middle">{A:2, B:2}</text>
+  <circle class="event" cx="347" cy="214" r="5"/>
+  <text class="name" x="347" y="200" text-anchor="middle">C1</text>
+  <text class="annotation" x="347" y="236" text-anchor="middle">{C:1}</text>
+  <circle class="event" cx="419" cy="129" r="5"/>
+  <text class="name" x="419" y="115" text-anchor="middle">B3</text>
+  <text class="annotation" x="423" y="151" text-anchor="end">{A:2, B:3}</text>
+  <circle class="event" cx="491" cy="214" r="5"/>
+  <text class="name" x="487" y="200" text-anchor="start">C2</text>
+  <text class="annotation" x="491" y="236" text-anchor="middle">{A:2, B:3, C:2}</text>
+  <circle class="event" cx="563" cy="44" r="5"/>
+  <text class="name" x="563" y="30" text-anchor="middle">A3</text>
+  <text class="annotation" x="563" y="66" text-anchor="middle">{A:3}</text>
+  <line class="message" x1="137.0" y1="47.6" x2="260.4" y2="120.4"/>
+  <polygon class="arrow" points="268.1,124.9 258.6,123.4 262.1,117.3"/>
+  <text class="label" x="208.1" y="77.9" text-anchor="start">m1 {A:2}</text>
+  <line class="message" x1="423.5" y1="134.3" x2="480.0" y2="201.0"/>
+  <polygon class="arrow" points="485.8,207.9 477.3,203.3 482.7,198.8"/>
+  <text class="label" x="462.6" y="165.0" text-anchor="start">m2 {A:2, B:3}</text>
+  <circle class="callout-ring" cx="563" cy="44" r="9"/>
+  <text class="callout-mark" x="575" y="48">1</text>
+  <circle class="callout-ring" cx="419" cy="129" r="9"/>
+  <text class="callout-mark" x="431" y="133">1</text>
+  <text class="callout" x="29" y="285">1. A3 ∥ B3: {A:3} and {A:2, B:3} are incomparable, though A3</text>
+  <text class="callout" x="45" y="303">happened last</text>
+  <circle class="callout-ring" cx="59" cy="44" r="9"/>
+  <text class="callout-mark" x="71" y="48">2</text>
+  <circle class="callout-ring" cx="491" cy="214" r="9"/>
+  <text class="callout-mark" x="503" y="218">2</text>
+  <text class="callout" x="29" y="321">2. A1 → C2: {A:1} &lt; {A:2, B:3, C:2}, carried by m1 then m2</text>
+</svg>

@@ -3,5 +3,12 @@
 version = 4
 
 [[package]]
+name = "diagrams"
+version = "0.1.0"
+dependencies = [
+ "dist-sys",
+]
+
+[[package]]
 name = "dist-sys"
 version = "0.1.0"

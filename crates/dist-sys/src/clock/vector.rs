@@ -71,6 +71,12 @@ impl<A: Ord + Clone> VectorClock<A> {
         self.entries.get(actor).copied().unwrap_or(0)
     }
 
+    /// The entries, in actor order. An absent actor is 0 and is never yielded
+    /// (the invariant: no stored zeros).
+    pub fn iter(&self) -> impl Iterator<Item = (&A, u64)> {
+        self.entries.iter().map(|(actor, &n)| (actor, n))
+    }
+
     /// Rule 1: record a new event at `actor`. Returns the new counter; together
     /// with `actor` it uniquely names the event (see [`Dot`](crate::clock::Dot)).
     pub fn tick(&mut self, actor: &A) -> u64 {
@@ -263,6 +269,13 @@ mod tests {
         assert!(empty < vc([('a', 1)]));
         assert_eq!(vc([('a', 1)]).compare(&vc([('b', 1)])), Causality::Concurrent);
         assert_eq!(vc([('a', 2), ('b', 1)]).compare(&vc([('a', 2)])), Causality::After);
+    }
+
+    #[test]
+    fn iter_yields_entries_in_actor_order_and_skips_zeros() {
+        let clock = vc([('b', 2), ('a', 1), ('c', 0)]);
+        let entries: Vec<_> = clock.iter().map(|(a, n)| (*a, n)).collect();
+        assert_eq!(entries, [('a', 1), ('b', 2)]);
     }
 
     #[test]
