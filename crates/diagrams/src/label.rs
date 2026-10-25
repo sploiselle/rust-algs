@@ -7,7 +7,8 @@
 
 use std::fmt::{Debug, Display};
 
-use dist_sys::clock::{CausalContext, Causality, Dot, Timestamp, VectorClock};
+use dist_sys::clock::{CausalContext, Causality, Dot, LamportStamp, Timestamp, VectorClock};
+use dist_sys::coordination::LamportMutex;
 use dist_sys::crdt::MvRegister;
 
 use crate::model::{Rich, Span};
@@ -189,6 +190,72 @@ impl Label for Timestamp {
     }
 }
 
+/// `(1,A)`: the time (role `time`), then the process that breaks ties, as an
+/// actor's name, all inside a `stamp`.
+impl<P: Display> Label for LamportStamp<P> {
+    fn label(&self) -> String {
+        self.spans().plain()
+    }
+
+    fn spans(&self) -> Rich {
+        let process = self.process.to_string();
+        Rich {
+            lines: vec![vec![
+                Span::part("(", "stamp"),
+                Span::part(self.time.to_string(), "stamp").also("time"),
+                Span::part(",", "stamp"),
+                Span::part(process.clone(), "stamp")
+                    .also("actor")
+                    .with("actor", process),
+                Span::part(")", "stamp"),
+            ]],
+        }
+    }
+}
+
+/// One process's state, as [`fields`]: its clock, its queue earliest first,
+/// the latest stamp it has heard from each other process, and whether it
+/// holds the resource.
+///
+/// ```text
+/// L     3
+/// queue (1,A) (1,B)
+/// heard B:1
+/// holds yes
+/// ```
+impl<P: Ord + Clone + Display> Label for LamportMutex<P> {
+    fn label(&self) -> String {
+        self.spans().plain()
+    }
+
+    fn spans(&self) -> Rich {
+        let mut queue = Rich::default();
+        for (i, s) in self.queue().enumerate() {
+            if i > 0 {
+                queue = queue.then(Span::value(" "));
+            }
+            queue = queue.then(s.spans());
+        }
+        if queue.is_empty() {
+            queue = Span::part("(empty)", "empty").into();
+        }
+        let mut heard = Vec::new();
+        for (i, (p, time)) in self.heard().enumerate() {
+            if i > 0 {
+                heard.push(Span::value(" "));
+            }
+            heard.extend(actor_parts(&p.to_string(), time, "heard"));
+        }
+        let holds = if self.holds() { "yes" } else { "no" };
+        fields(vec![
+            ("L", Span::value(self.clock().time().to_string()).into()),
+            ("queue", queue),
+            ("heard", Rich { lines: vec![heard] }),
+            ("holds", Span::part(holds, "holds").into()),
+        ])
+    }
+}
+
 /// The relation symbol: `→` before, `←` after, `=` equal, `∥` concurrent.
 impl Label for Causality {
     fn label(&self) -> String {
@@ -328,6 +395,24 @@ mod tests {
         let r = fields(vec![("a", Rich::from("1")), ("bbb", Rich::from("2"))]);
         assert_eq!(r.plain(), "a\u{a0}\u{a0}\u{a0}1\nbbb\u{a0}2");
         assert_eq!(r.lines[0][0].roles, ["field"]);
+    }
+
+    #[test]
+    fn lamport_mutex() {
+        assert_eq!(
+            LamportStamp {
+                time: 1,
+                process: 'A'
+            }
+            .label(),
+            "(1,A)"
+        );
+        let mut a = LamportMutex::new('A', ['A', 'B']);
+        a.request();
+        assert_eq!(
+            a.label(),
+            "L\u{a0}\u{a0}\u{a0}\u{a0}\u{a0}1\nqueue\u{a0}(1,A)\nheard\u{a0}B:0\nholds\u{a0}no"
+        );
     }
 
     #[test]

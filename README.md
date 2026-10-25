@@ -62,7 +62,9 @@ it any more. For each figure:
 - `<stem>.svg` stands alone: the same drawing with the notes set underneath.
 - `<stem>.mmd` is a Mermaid sequence diagram of the same scenario, for places
   that render Mermaid. The causal-context figure is a number line, which has
-  no Mermaid form.
+  no Mermaid form. Mermaid draws every message straight across, so the
+  overtaking message in the mutex figure doesn't cross there; its notes
+  still say so.
 
 `index.json` lists the figures in the order a reader should meet them, with
 their kinds and titles.
@@ -129,6 +131,7 @@ the parts set their own paint, and a stroke on a group outlines its text.
 | `.ds-v` | a library value inside prose: a `<tspan>` in a message label, a `<code>` in a figcaption note |
 | `.ds-entry[data-actor]` | one entry of a vector clock, in values, labels and figcaption notes, as two parts: `.ds-actor` (`A`) and `.ds-count` (`:2`) |
 | `.ds-dot-id[data-dot][data-actor]`, `.ds-cloud`, `.ds-sym`, `.ds-str`, `.ds-empty` | a dot's name (also split into `.ds-actor` and `.ds-count`), a dot past a causal context's gap (also `.ds-dot-id`), a register entry's arrow and value, an empty register |
+| `.ds-stamp[data-actor]`, `.ds-heard[data-actor]`, `.ds-holds` | a Lamport stamp `(1,A)` (its time also `.ds-time`, its process also `.ds-actor`), the latest stamp a mutex process has heard from a peer (split into `.ds-actor` and `.ds-count`), and whether it holds the resource |
 | `.ds-field` | a field's name in a value made of named fields (`label::fields`), padded so the values form a column |
 | `g.ds-row[data-row]`, `[data-counter][data-dot][data-actor]` | a number line's rows, and its counters and dots |
 

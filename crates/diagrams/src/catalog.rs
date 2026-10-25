@@ -10,7 +10,10 @@
 use std::sync::Arc;
 
 use dist_sys::clock::hybrid::ManualClock;
-use dist_sys::clock::{CausalContext, Causality, Dot, Hlc, LamportClock, Timestamp, VectorClock};
+use dist_sys::clock::{
+    CausalContext, Causality, Dot, Hlc, LamportClock, LamportStamp, Timestamp, VectorClock,
+};
+use dist_sys::coordination::{Kind, LamportMutex, Message};
 use dist_sys::crdt::MvRegister;
 
 use crate::label::{Label, fields, phrase, sorted_entries, v};
@@ -30,6 +33,7 @@ pub fn all() -> Vec<Figure> {
         mv_register_siblings(),
         actor_id_reuse(),
         causal_context_gap(),
+        mutex_overtaking(),
     ]
 }
 
@@ -602,6 +606,129 @@ fn causal_context_gap() -> Figure {
         stem: "causal-context-gap",
         diagram: Diagram::DotLine(d),
     }
+}
+
+/// Lamport's mutual exclusion over a channel that doesn't keep order: A's
+/// acknowledgement of B's request overtakes A's own, earlier request, and both
+/// processes enter. The scenario in the library test
+/// `overtaking_breaks_mutual_exclusion`.
+fn mutex_overtaking() -> Figure {
+    let mut d = SpaceTime::new("Lamport's mutex: an overtaking message lets two processes in");
+    let (la, lb) = (d.actor_lane("A", 'A'), d.actor_lane("B", 'B'));
+    let mut a = LamportMutex::new('A', ['A', 'B']);
+    let mut b = LamportMutex::new('B', ['A', 'B']);
+    let stamp = |time, process| LamportStamp { time, process };
+
+    // The Lamport time after every event, to check the drawn graph against.
+    let mut times: Vec<(EventId, u64)> = Vec::new();
+
+    let req_a = only(a.request());
+    let a1 = d.event(la, "request", a.spans());
+    times.push((a1, a.clock().time()));
+    let req_b = only(b.request());
+    let b1 = d.event(lb, "request", b.spans());
+    times.push((b1, b.clock().time()));
+    assert_eq!(a.pending(), Some(&stamp(1, 'A')));
+    assert_eq!(b.pending(), Some(&stamp(1, 'B')));
+    assert!(a.pending() < b.pending(), "the tie goes to A");
+
+    let req_b_label = message_label(&req_b);
+    let ack = a.receive(req_b).expect("a request is acknowledged");
+    let a2 = d.event(la, "req from B", a.spans());
+    times.push((a2, a.clock().time()));
+    let req_b_msg = d.message(b1, a2, req_b_label);
+    assert!(a.holds(), "rightly: A's request is the earliest");
+
+    let ack_label = message_label(&ack);
+    assert_eq!((ack.kind, ack.time), (Kind::Ack, 3));
+    b.receive(ack);
+    let b2 = d.event(lb, "ack from A", b.spans());
+    times.push((b2, b.clock().time()));
+    let ack_msg = d.message(a2, b2, ack_label);
+    assert_eq!(b.heard().collect::<Vec<_>>(), [(&'A', 3)]);
+    assert_eq!(b.queue().collect::<Vec<_>>(), [&stamp(1, 'B')]);
+    assert!(a.holds() && b.holds(), "both processes hold the resource");
+
+    let req_a_label = message_label(&req_a);
+    let late_ack = b.receive(req_a).expect("a request is acknowledged");
+    let b3 = d.event(lb, "req from A", b.spans());
+    times.push((b3, b.clock().time()));
+    let req_a_msg = d.message(a1, b3, req_a_label);
+    assert_eq!(
+        b.queue().collect::<Vec<_>>(),
+        [&stamp(1, 'A'), &stamp(1, 'B')]
+    );
+    assert!(a.holds() && !b.holds(), "B's queue is right again");
+
+    let late_ack_label = message_label(&late_ack);
+    a.receive(late_ack);
+    let a3 = d.event(la, "ack from B", a.spans());
+    times.push((a3, a.clock().time()));
+    d.message(b3, a3, late_ack_label);
+    assert!(a.holds(), "nothing A receives takes the resource away");
+
+    // The clock condition on the drawn graph: whatever an arrow or a lane
+    // carries into an event's past has a smaller Lamport time.
+    assert_eq!(
+        times.len(),
+        d.events().len(),
+        "every event's time is checked"
+    );
+    let pasts = d.pasts();
+    for (x, tx) in &times {
+        for (y, ty) in &times {
+            if pasts[y.0].contains(x) {
+                assert!(tx < ty, "an arrow runs backwards in Lamport time");
+            }
+        }
+    }
+    assert!(d.recorded_before(a2, b2) && d.recorded_before(b2, b3));
+
+    d.pin_event(a2, "a-enters");
+    d.pin_event(b2, "b-enters");
+    d.pin_message(req_a_msg, "req-a");
+    d.pin_message(req_b_msg, "req-b");
+    d.pin_message(ack_msg, "ack-a");
+    d.callout(
+        a2,
+        b2,
+        rich![
+            "A's ack, sent after its request, arrives first: B has heard from A at ",
+            Span::value("3"),
+            ", later than its own request ",
+            v(&stamp(1, 'B')),
+            ", decides nothing earlier from A is on the way, and enters while A holds"
+        ],
+    );
+    d.callout(
+        a1,
+        b3,
+        rich![
+            "A's request ",
+            v(&stamp(1, 'A')),
+            " arrives at last and goes to the head of B's queue, but B is already in"
+        ],
+    );
+    Figure {
+        stem: "mutex-overtaking",
+        diagram: Diagram::SpaceTime(d),
+    }
+}
+
+/// The one message a two-process broadcast sends.
+fn only<P>(mut msgs: Vec<Message<P>>) -> Message<P> {
+    assert_eq!(msgs.len(), 1, "one other process, one message");
+    msgs.pop().unwrap()
+}
+
+/// `req 1`, `ack 3`: what a message says and its stamp.
+fn message_label<P>(m: &Message<P>) -> Rich {
+    let kind = match m.kind {
+        Kind::Request => "req ",
+        Kind::Ack => "ack ",
+        Kind::Release => "release ",
+    };
+    rich![kind, Span::value(m.time.to_string())]
 }
 
 fn sorted_values(r: &MvRegister<char, &'static str>) -> Vec<&'static str> {

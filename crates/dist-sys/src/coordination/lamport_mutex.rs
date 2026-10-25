@@ -129,6 +129,12 @@ impl<P: Ord + Clone> LamportMutex<P> {
         self.queue.iter()
     }
 
+    /// For each other process, the latest stamp received from it, 0 if
+    /// nothing yet: what the second half of rule 5 compares against.
+    pub fn heard(&self) -> impl Iterator<Item = (&P, u64)> {
+        self.heard.iter().map(|(p, &time)| (p, time))
+    }
+
     /// This process's own request, from [`request`](Self::request) until
     /// [`release`](Self::release).
     pub fn pending(&self) -> Option<&LamportStamp<P>> {
@@ -270,26 +276,21 @@ mod tests {
     /// enters alongside A, whose request was earlier.
     #[test]
     fn overtaking_breaks_mutual_exclusion() {
-        let everyone = ['A', 'B', 'C'];
-        let mut a = LamportMutex::new('A', everyone);
-        let mut b = LamportMutex::new('B', everyone);
-        let mut c = LamportMutex::new('C', everyone);
+        let mut a = LamportMutex::new('A', ['A', 'B']);
+        let mut b = LamportMutex::new('B', ['A', 'B']);
 
-        let reqs_a = a.request(); // stamp (1, A); the copy for B is held up
-        let c_acks_a = c.receive(to(&reqs_a, 'C')).unwrap();
-        let reqs_b = b.request(); // stamp (1, B), later than A's
-        let a_acks_b = a.receive(to(&reqs_b, 'A')).unwrap();
-        let c_acks_b = c.receive(to(&reqs_b, 'C')).unwrap();
-        a.receive(c_acks_a);
+        let req_a = a.request().pop().unwrap(); // stamp (1, A), and slow to arrive
+        let req_b = b.request().pop().unwrap(); // stamp (1, B), later than A's
+        let a_acks_b = a.receive(req_b).unwrap();
         assert!(a.holds()); // rightly: A's request is the earliest
 
-        b.receive(a_acks_b); // sent by A after its request to B, delivered before it
-        b.receive(c_acks_b);
+        b.receive(a_acks_b); // sent by A after its request, delivered before it
+        assert_eq!(b.heard().collect::<Vec<_>>(), [(&'A', 3)]);
         assert!(b.holds());
         assert_eq!(b.queue().collect::<Vec<_>>(), [&stamp(1, 'B')]); // A's request is still in flight
 
         // With the request delivered, B's queue is right again, but too late.
-        b.receive(to(&reqs_a, 'B'));
+        b.receive(req_a);
         assert!(!b.holds());
     }
 
