@@ -155,6 +155,38 @@
 <p class="ds-beat" data-in="10" data-out="11" data-cont="" data-note="2"><span class="ds-note-n" aria-hidden="true">2</span> <span class="ds-beat-body">A3 is concurrent with B3: <code class="ds-v">{<span class="ds-entry ds-actor" data-actor="A" data-actor-n="1">A</span><span class="ds-entry ds-count" data-actor="A" data-actor-n="1">:3</span>}</code> and <code class="ds-v">{<span class="ds-entry ds-actor" data-actor="A" data-actor-n="1">A</span><span class="ds-entry ds-count" data-actor="A" data-actor-n="1">:2</span>, <span class="ds-entry ds-actor" data-actor="B" data-actor-n="2">B</span><span class="ds-entry ds-count" data-actor="B" data-actor-n="2">:3</span>}</code> are incomparable, though A3 is later in real time</span></p>
 <p class="ds-beat" data-in="11" data-cont=""><span class="ds-beat-body">Vector clocks: three processes, two messages</span></p>
 </div>
+<div class="ds-state">
+<table aria-label="What each lane holds at this step">
+<tbody>
+<tr class="ds-state-lane" data-lane="a" data-actor="A" data-actor-n="1">
+<th scope="row">A</th>
+<td><span class="ds-cells">
+<span class="ds-cell" data-in="0" data-out="1"><code class="ds-v">{}</code></span>
+<span class="ds-cell" data-in="1" data-out="2" data-cont="" data-event="a1"><code class="ds-v">{<span class="ds-entry ds-actor ds-changed" data-actor="A" data-actor-n="1">A</span><span class="ds-entry ds-count ds-changed" data-actor="A" data-actor-n="1">:1</span>}</code></span>
+<span class="ds-cell" data-in="2" data-out="9" data-cont="" data-event="a2"><code class="ds-v">{<span class="ds-entry ds-actor" data-actor="A" data-actor-n="1">A</span><span class="ds-entry ds-count ds-changed" data-actor="A" data-actor-n="1">:2</span>}</code></span>
+<span class="ds-cell" data-in="9" data-cont="" data-event="a3"><code class="ds-v">{<span class="ds-entry ds-actor" data-actor="A" data-actor-n="1">A</span><span class="ds-entry ds-count ds-changed" data-actor="A" data-actor-n="1">:3</span>}</code></span>
+</span></td>
+</tr>
+<tr class="ds-state-lane" data-lane="b" data-actor="B" data-actor-n="2">
+<th scope="row">B</th>
+<td><span class="ds-cells">
+<span class="ds-cell" data-in="0" data-out="3"><code class="ds-v">{}</code></span>
+<span class="ds-cell" data-in="3" data-out="4" data-cont="" data-event="b1"><code class="ds-v">{<span class="ds-entry ds-actor ds-changed" data-actor="B" data-actor-n="2">B</span><span class="ds-entry ds-count ds-changed" data-actor="B" data-actor-n="2">:1</span>}</code></span>
+<span class="ds-cell" data-in="4" data-out="6" data-cont="" data-event="b2"><code class="ds-v">{<span class="ds-entry ds-actor ds-changed" data-actor="A" data-actor-n="1">A</span><span class="ds-entry ds-count ds-changed" data-actor="A" data-actor-n="1">:2</span>, <span class="ds-entry ds-actor" data-actor="B" data-actor-n="2">B</span><span class="ds-entry ds-count ds-changed" data-actor="B" data-actor-n="2">:2</span>}</code></span>
+<span class="ds-cell" data-in="6" data-cont="" data-event="b3"><code class="ds-v">{<span class="ds-entry ds-actor" data-actor="A" data-actor-n="1">A</span><span class="ds-entry ds-count" data-actor="A" data-actor-n="1">:2</span>, <span class="ds-entry ds-actor" data-actor="B" data-actor-n="2">B</span><span class="ds-entry ds-count ds-changed" data-actor="B" data-actor-n="2">:3</span>}</code></span>
+</span></td>
+</tr>
+<tr class="ds-state-lane" data-lane="c" data-actor="C" data-actor-n="3">
+<th scope="row">C</th>
+<td><span class="ds-cells">
+<span class="ds-cell" data-in="0" data-out="5"><code class="ds-v">{}</code></span>
+<span class="ds-cell" data-in="5" data-out="7" data-cont="" data-event="c1"><code class="ds-v">{<span class="ds-entry ds-actor ds-changed" data-actor="C" data-actor-n="3">C</span><span class="ds-entry ds-count ds-changed" data-actor="C" data-actor-n="3">:1</span>}</code></span>
+<span class="ds-cell" data-in="7" data-cont="" data-event="c2"><code class="ds-v">{<span class="ds-entry ds-actor ds-changed" data-actor="A" data-actor-n="1">A</span><span class="ds-entry ds-count ds-changed" data-actor="A" data-actor-n="1">:2</span>, <span class="ds-entry ds-actor ds-changed" data-actor="B" data-actor-n="2">B</span><span class="ds-entry ds-count ds-changed" data-actor="B" data-actor-n="2">:3</span>, <span class="ds-entry ds-actor" data-actor="C" data-actor-n="3">C</span><span class="ds-entry ds-count ds-changed" data-actor="C" data-actor-n="3">:2</span>}</code></span>
+</span></td>
+</tr>
+</tbody>
+</table>
+</div>
 </div>
 <figcaption class="ds-fig-caption">
 <p class="ds-fig-title">Vector clocks: three processes, two messages</p>

@@ -91,6 +91,50 @@ impl Rich {
             .join("\n")
     }
 
+    /// This text with role `changed` on each part (a span with a role or
+    /// data) that `before` lacks or reads differently, so a page can show what
+    /// an event changed. Lines are matched by the dot they start with, else
+    /// their field name, else their position; parts within a line by roles,
+    /// data and how many alike parts precede them. Punctuation and symbols are
+    /// never marked.
+    pub fn mark_changes(&self, before: &Rich) -> Rich {
+        fn key(line: &[Span]) -> Option<String> {
+            let dot = line
+                .iter()
+                .find_map(|s| s.data.iter().find(|(k, _)| *k == "dot").map(|(_, v)| v));
+            match dot {
+                Some(d) => Some(format!("dot {d}")),
+                None => line
+                    .iter()
+                    .find(|s| s.roles.contains(&"field"))
+                    .map(|s| format!("field {}", s.text.trim())),
+            }
+        }
+        let is_part = |s: &Span| !s.roles.is_empty() && !s.roles.contains(&"sym");
+        let mut out = self.clone();
+        for (k, line) in out.lines.iter_mut().enumerate() {
+            let was: Option<&Vec<Span>> = match key(line) {
+                Some(id) => before.lines.iter().find(|l| key(l).as_ref() == Some(&id)),
+                None => before.lines.get(k).filter(|l| key(l).is_none()),
+            };
+            let alike = |a: &Span, b: &Span| a.roles == b.roles && a.data == b.data;
+            let changed: Vec<usize> = (0..line.len())
+                .filter(|&j| is_part(&line[j]))
+                .filter(|&j| {
+                    let s = &line[j];
+                    let nth = line[..j].iter().filter(|o| alike(o, s)).count();
+                    let old =
+                        was.and_then(|l| l.iter().filter(|o| is_part(o) && alike(o, s)).nth(nth));
+                    old.is_none_or(|o| o.text != s.text)
+                })
+                .collect();
+            for j in changed {
+                line[j].roles.push("changed");
+            }
+        }
+        out
+    }
+
     /// `other` continues this text: its first line joins the last line here,
     /// and any further lines follow.
     pub fn then(mut self, other: impl Into<Rich>) -> Rich {
@@ -162,6 +206,9 @@ pub struct Lane {
     /// The actor whose events this lane shows, when it is one: the name that
     /// appears in clock entries and dots. Set by [`SpaceTime::actor_lane`].
     pub actor: Option<String>,
+    /// What the lane holds before its first event, for a step-through's
+    /// state panel. Set by [`SpaceTime::start_value`].
+    pub start: Rich,
 }
 
 /// Something that happened at one actor. `annotation` is the library value
@@ -223,6 +270,16 @@ pub struct Note<'a> {
     /// Indices into [`SpaceTime::messages`] of the messages on such a path, or
     /// for any other callout, the messages joining its two events directly.
     pub messages: BTreeSet<usize>,
+}
+
+/// What a lane holds at one step; see [`SpaceTime::lane_state`].
+#[derive(Debug, Clone, Copy)]
+pub struct LaneState<'a> {
+    /// The event whose value it is, or `None` for the lane's start value.
+    pub event: Option<EventId>,
+    pub value: &'a Rich,
+    /// What the lane held before that event, if anything.
+    pub before: Option<&'a Rich>,
 }
 
 /// One step of a step-through figure.
@@ -338,6 +395,7 @@ impl SpaceTime {
             name,
             key,
             actor: None,
+            start: Rich::default(),
         });
         LaneId(self.lanes.len() - 1)
     }
@@ -361,7 +419,8 @@ impl SpaceTime {
             .iter()
             .map(|e| &e.annotation)
             .chain(self.messages.iter().map(|m| &m.label))
-            .chain(self.callouts.iter().map(|c| &c.text));
+            .chain(self.callouts.iter().map(|c| &c.text))
+            .chain(self.lanes.iter().map(|l| &l.start));
         for span in texts.flat_map(|r| r.lines.iter().flatten()) {
             for (k, v) in &span.data {
                 if *k == "actor" && !out.contains(v) {
@@ -379,7 +438,8 @@ impl SpaceTime {
             .iter_mut()
             .map(|e| &mut e.annotation)
             .chain(self.messages.iter_mut().map(|m| &mut m.label))
-            .chain(self.callouts.iter_mut().map(|c| &mut c.text));
+            .chain(self.callouts.iter_mut().map(|c| &mut c.text))
+            .chain(self.lanes.iter_mut().map(|l| &mut l.start));
         for r in texts {
             r.lines.iter_mut().flatten().for_each(&mut f);
         }
@@ -492,6 +552,42 @@ impl SpaceTime {
             text,
             relation,
         });
+    }
+
+    /// What `lane` holds before its first event: in a step-through, its state
+    /// panel shows this until the lane's first value. Panics if the lane is
+    /// unknown or already has one.
+    pub fn start_value(&mut self, lane: LaneId, value: impl Into<Rich>) {
+        assert!(lane.0 < self.lanes.len(), "unknown lane");
+        assert!(
+            self.lanes[lane.0].start.is_empty(),
+            "the lane already has a start value"
+        );
+        self.lanes[lane.0].start = value.into();
+    }
+
+    /// What `lane` holds at `step` of `t`: the value after its latest event by
+    /// then whose annotation isn't empty, else its start value, else nothing.
+    /// It is the value the figure already shows under that event, so a state
+    /// panel can't disagree with the drawing.
+    pub fn lane_state(&self, t: &Timeline, lane: LaneId, step: usize) -> Option<LaneState<'_>> {
+        let start = &self.lanes[lane.0].start;
+        let mut held: Vec<(Option<EventId>, &Rich)> = Vec::new();
+        if !start.is_empty() {
+            held.push((None, start));
+        }
+        for (i, e) in self.events.iter().enumerate() {
+            if e.lane == lane && t.event(EventId(i)) <= step && !e.annotation.is_empty() {
+                held.push((Some(EventId(i)), &e.annotation));
+            }
+        }
+        let &(event, value) = held.last()?;
+        let before = held.len().checked_sub(2).map(|k| held[k].1);
+        Some(LaneState {
+            event,
+            value,
+            before,
+        })
     }
 
     pub fn lane_of(&self, event: EventId) -> LaneId {
@@ -939,6 +1035,101 @@ mod tests {
         assert_eq!(t.now(0), None);
         assert_eq!(t.now(5), Some(c1), "a note doesn't move the playhead");
         assert_eq!(t.now(t.last()), Some(a2));
+    }
+
+    #[test]
+    fn a_lane_holds_its_latest_value_else_its_start() {
+        let mut d = SpaceTime::new("t");
+        let (a, b) = (d.lane("A"), d.lane("B"));
+        d.start_value(a, "{}");
+        let a1 = d.event(a, "A1", "{A:1}");
+        d.event(b, "B1", "");
+        let a2 = d.event(a, "A2", "");
+        let t = d.timeline();
+        let at = |lane, s| {
+            d.lane_state(&t, lane, s)
+                .map(|x| (x.event, x.value.plain(), x.before.map(Rich::plain)))
+        };
+        assert_eq!(at(a, 0), Some((None, "{}".into(), None)));
+        assert_eq!(
+            at(a, 1),
+            Some((Some(a1), "{A:1}".into(), Some("{}".into())))
+        );
+        assert_eq!(
+            at(a, t.event(a2)),
+            at(a, 1),
+            "an empty annotation holds nothing new"
+        );
+        assert_eq!(at(b, t.last()), None);
+    }
+
+    #[test]
+    #[should_panic(expected = "already has a start value")]
+    fn a_start_value_is_set_once() {
+        let mut d = SpaceTime::new("t");
+        let a = d.lane("A");
+        d.start_value(a, "{}");
+        d.start_value(a, "{}");
+    }
+
+    fn clock(entries: &[(&str, u64)]) -> Rich {
+        let mut line = vec![Span::value("{")];
+        for (i, (a, n)) in entries.iter().enumerate() {
+            if i > 0 {
+                line.push(Span::value(", "));
+            }
+            line.push(Span::part(*a, "entry").also("actor").with("actor", *a));
+            line.push(
+                Span::part(format!(":{n}"), "entry")
+                    .also("count")
+                    .with("actor", *a),
+            );
+        }
+        line.push(Span::value("}"));
+        Rich { lines: vec![line] }
+    }
+
+    fn changed(r: &Rich) -> Vec<String> {
+        r.lines
+            .iter()
+            .flatten()
+            .filter(|s| s.roles.contains(&"changed"))
+            .map(|s| s.text.clone())
+            .collect()
+    }
+
+    #[test]
+    fn mark_changes_marks_new_and_changed_parts_only() {
+        let after = clock(&[("A", 2), ("B", 2)]).mark_changes(&clock(&[("B", 1)]));
+        assert_eq!(changed(&after), ["A", ":2", ":2"]);
+        let same = clock(&[("A", 1)]);
+        assert!(changed(&same.mark_changes(&same)).is_empty());
+    }
+
+    #[test]
+    fn mark_changes_keeps_an_unchanged_sibling() {
+        let entry = |a: &str, n: u64, v: &str| {
+            let dot = format!("{a}:{n}");
+            vec![
+                Span::part(a, "dot-id")
+                    .also("actor")
+                    .with("actor", a)
+                    .with("dot", &dot),
+                Span::part(format!(":{n}"), "dot-id")
+                    .also("count")
+                    .with("actor", a)
+                    .with("dot", &dot),
+                Span::part("→", "sym"),
+                Span::part(format!("{v:?}"), "str"),
+            ]
+        };
+        let before = Rich {
+            lines: vec![entry("B", 1, "b")],
+        };
+        let after = Rich {
+            lines: vec![entry("A", 2, "a"), entry("B", 1, "b")],
+        };
+        assert_eq!(changed(&after.mark_changes(&before)), ["A", ":2", "\"a\""]);
     }
 
     #[test]

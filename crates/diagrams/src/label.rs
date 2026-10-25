@@ -66,6 +66,29 @@ pub fn fields(rows: Vec<(&str, Rich)>) -> Rich {
     out
 }
 
+/// The inverse of [`fields`]: each line's field name, its padding trimmed,
+/// and its value, when every line starts with a field name; `None` for any
+/// other value.
+pub fn split_fields(r: &Rich) -> Option<Vec<(String, Rich)>> {
+    if r.lines.is_empty() {
+        return None;
+    }
+    r.lines
+        .iter()
+        .map(|line| {
+            let (name, value) = line.split_first()?;
+            name.roles.contains(&"field").then(|| {
+                (
+                    name.text.trim().to_string(),
+                    Rich {
+                        lines: vec![value.to_vec()],
+                    },
+                )
+            })
+        })
+        .collect()
+}
+
 /// `{A:2, B:3}`: entries in actor order; `{}` when empty.
 impl<A: Ord + Clone + Display> Label for VectorClock<A> {
     fn label(&self) -> String {
@@ -291,6 +314,24 @@ pub fn sorted_entries<A: Ord + Clone, V: Clone>(r: &MvRegister<A, V>) -> Vec<(&D
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn split_fields_inverts_fields() {
+        let r = fields(vec![
+            ("phys", Rich::from("10")),
+            ("HLC", Rich::from("10,0")),
+        ]);
+        let split = split_fields(&r).unwrap();
+        assert_eq!(
+            split
+                .iter()
+                .map(|(n, v)| (n.as_str(), v.plain()))
+                .collect::<Vec<_>>(),
+            [("phys", "10".to_string()), ("HLC", "10,0".to_string())]
+        );
+        assert_eq!(split_fields(&Rich::from("{A:1}")), None);
+        assert_eq!(split_fields(&Rich::default()), None);
+    }
 
     #[test]
     fn vector_clock() {

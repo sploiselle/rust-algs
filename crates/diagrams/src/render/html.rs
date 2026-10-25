@@ -11,8 +11,9 @@
 //! every mark tagged by the steps it is shown at (see
 //! [`steps`](super::steps)), `data-steps` on the figure, and a hidden
 //! `.ds-play` block that a page's player fills with its controls and shows:
-//! one sentence per step (`.ds-beat`) saying what happened. Without a player
-//! the page shows the finished figure.
+//! one sentence per step (`.ds-beat`) saying what happened, and a table of
+//! what each lane holds at that step (`.ds-state`). Without a player the page
+//! shows the finished figure.
 //!
 //! The fragment has no blank lines, so Markdown passes it through as one raw
 //! HTML block.
@@ -20,10 +21,11 @@
 use super::Render;
 use super::steps::{At, timed};
 use super::svg::{
-    dot_line_svg, escape_attr, event_sentence, lanes_sentence, one_line, relation_attr,
-    role_classes, space_time_svg, with_actor_slots,
+    actor_attrs, dot_line_svg, escape_attr, event_sentence, lanes_sentence, one_line,
+    relation_attr, role_classes, space_time_svg, with_actor_slots,
 };
-use crate::model::{Beat, Diagram, DotLine, Note, Rich, SpaceTime, Span, Timeline};
+use crate::label::split_fields;
+use crate::model::{Beat, Diagram, DotLine, LaneId, Note, Rich, SpaceTime, Span, Timeline};
 
 pub struct Html;
 
@@ -90,15 +92,96 @@ fn note_item(notes: &[Note], n: &Note) -> String {
     ) + "\n"
 }
 
-/// The block a page's player fills in: an empty bar for its controls and a
-/// sentence for each step.
+/// The block a page's player fills in: an empty bar for its controls, a
+/// sentence for each step, and what each lane holds.
 fn play(d: &SpaceTime, t: &Timeline, at: At) -> String {
     let mut out = String::from(
         "<div class=\"ds-play\" hidden>\n<div class=\"ds-play-bar\"></div>\n<div class=\"ds-beats\">\n",
     );
     out.push_str(&timed(at, t.last(), "", |s| Some(beat(d, t, s))));
-    out.push_str("</div>\n</div>\n");
+    out.push_str("</div>\n");
+    if let Some(table) = state_table(d, t, at) {
+        out.push_str(&table);
+    }
+    out.push_str("</div>\n");
     out
+}
+
+/// A row per lane holding what the lane holds at the step: the value the
+/// figure shows under its latest event (see [`SpaceTime::lane_state`]), with
+/// what that event changed marked `ds-changed`. Values made of named fields
+/// ([`fields`](crate::label::fields)) get a column per field. Each value
+/// carries the event it came from, so a step at which a lane acts without
+/// changing (a sync that brings nothing new) still shows. `None` when no lane
+/// ever holds anything.
+fn state_table(d: &SpaceTime, t: &Timeline, at: At) -> Option<String> {
+    let values: Vec<&Rich> = d
+        .lanes()
+        .iter()
+        .map(|l| &l.start)
+        .chain(d.events().iter().map(|e| &e.annotation))
+        .filter(|r| !r.is_empty())
+        .collect();
+    let names =
+        |r: &Rich| split_fields(r).map(|f| f.into_iter().map(|(n, _)| n).collect::<Vec<_>>());
+    let columns = names(values.first()?)
+        .filter(|first| values.iter().all(|v| names(v).as_ref() == Some(first)));
+    let actors = d.actors();
+    let mut out = String::from(
+        "<div class=\"ds-state\">\n<table aria-label=\"What each lane holds at this step\">\n",
+    );
+    if let Some(columns) = &columns {
+        out.push_str("<thead><tr><td></td>");
+        for c in columns {
+            out.push_str(&format!(r#"<th scope="col">{}</th>"#, text(c)));
+        }
+        out.push_str("</tr></thead>\n");
+    }
+    out.push_str("<tbody>\n");
+    for (k, lane) in d.lanes().iter().enumerate() {
+        out.push_str(&format!(
+            "<tr class=\"ds-state-lane\" data-lane=\"{}\"{}>\n<th scope=\"row\">{}</th>\n",
+            escape_attr(&lane.key),
+            actor_attrs(lane.actor.as_deref(), &actors),
+            text(&lane.name)
+        ));
+        for c in 0..columns.as_ref().map_or(1, Vec::len) {
+            let column = columns.is_some().then_some(c);
+            out.push_str("<td><span class=\"ds-cells\">\n");
+            out.push_str(&timed(at, t.last(), "", |s| {
+                Some(cell(d, t, LaneId(k), s, column))
+            }));
+            out.push_str("</span></td>\n");
+        }
+        out.push_str("</tr>\n");
+    }
+    out.push_str("</tbody>\n</table>\n</div>\n");
+    Some(out)
+}
+
+/// One lane's value at step `s`, or one field of it.
+fn cell(d: &SpaceTime, t: &Timeline, lane: LaneId, s: usize, column: Option<usize>) -> String {
+    let Some(state) = d.lane_state(t, lane, s) else {
+        return "<span class=\"ds-cell\"></span>\n".to_string();
+    };
+    let pick = |r: &Rich| match column {
+        Some(c) => split_fields(r).map(|f| f[c].1.clone()).unwrap_or_default(),
+        None => r.clone(),
+    };
+    let value = pick(state.value);
+    // A start value changes nothing; a lane's first event changes all of it.
+    let shown = match (state.event, state.before) {
+        (None, _) => value,
+        (Some(_), before) => value.mark_changes(&before.map(pick).unwrap_or_default()),
+    };
+    let event = state
+        .event
+        .map(|e| format!(r#" data-event="{}""#, escape_attr(&d.event_key(e))))
+        .unwrap_or_default();
+    format!(
+        r#"<span class="ds-cell"{event}>{}</span>"#,
+        rich_html(&shown)
+    ) + "\n"
 }
 
 /// What step `s` says: the lanes; what happened at an event, including what
@@ -330,6 +413,62 @@ mod tests {
                 assert_eq!(html.matches(r#"<p class="ds-beat""#).count(), 1);
             }
         }
+    }
+
+    /// From the step each event happens, its lane's panel shows the value
+    /// drawn under it, read straight off the markup.
+    #[test]
+    fn a_state_panel_shows_each_value_from_its_event() {
+        for (stem, d) in step_throughs() {
+            let t = d.timeline();
+            let html = space_time_html(stem, &d, At::Every);
+            for (i, e) in d.events().iter().enumerate() {
+                if e.annotation.is_empty() {
+                    continue;
+                }
+                let key = d.event_key(EventId(i));
+                let cell = html
+                    .lines()
+                    .find(|l| {
+                        l.starts_with(r#"<span class="ds-cell""#)
+                            && l.contains(&format!(r#" data-event="{key}""#))
+                    })
+                    .unwrap_or_else(|| panic!("{stem}: no panel value from {key}"));
+                assert!(
+                    cell.contains(&format!(r#" data-in="{}""#, t.event(EventId(i)))),
+                    "{stem}: {key}'s value shows from another step: {cell}"
+                );
+                let drawn: String = e
+                    .annotation
+                    .lines
+                    .iter()
+                    .flatten()
+                    .map(|s| s.text.as_str())
+                    .collect();
+                assert_eq!(unescape(&strip_tags(cell)), drawn, "{stem}: {key}");
+            }
+        }
+    }
+
+    fn strip_tags(s: &str) -> String {
+        let mut out = String::new();
+        let mut inside = false;
+        for c in s.chars() {
+            match c {
+                '<' => inside = true,
+                '>' => inside = false,
+                c if !inside => out.push(c),
+                _ => {}
+            }
+        }
+        out
+    }
+
+    fn unescape(s: &str) -> String {
+        s.replace("&lt;", "<")
+            .replace("&gt;", ">")
+            .replace("&quot;", "\"")
+            .replace("&amp;", "&")
     }
 
     #[test]

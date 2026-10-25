@@ -17,7 +17,7 @@ use dist_sys::coordination::{Kind, LamportMutex, Message};
 use dist_sys::crdt::MvRegister;
 
 use crate::label::{Label, fields, phrase, sorted_entries, v};
-use crate::model::{Claim, Diagram, DotLine, EventId, Rich, SpaceTime, Span, rich};
+use crate::model::{Claim, Diagram, DotLine, EventId, LaneId, Rich, SpaceTime, Span, rich};
 
 /// A figure and the file stem its renderings are written under.
 pub struct Figure {
@@ -73,9 +73,13 @@ fn vector_clock_trace() -> Figure {
     }
 }
 
-/// The vector clock trace one event at a time.
+/// The vector clock trace one event at a time, each process's clock in a
+/// panel from the empty clock it starts with.
 fn vector_clock_steps() -> Figure {
-    let t = vector_trace();
+    let mut t = vector_trace();
+    for lane in t.lanes {
+        t.d.start_value(lane, VectorClock::<char>::new().spans());
+    }
     Figure {
         stem: "vector-clock-steps",
         diagram: Diagram::SpaceTime(t.d),
@@ -87,6 +91,7 @@ fn vector_clock_steps() -> Figure {
 /// everything either one claims asserted.
 struct VectorTrace {
     d: SpaceTime,
+    lanes: [LaneId; 3],
 }
 
 fn vector_trace() -> VectorTrace {
@@ -200,7 +205,10 @@ fn vector_trace() -> VectorTrace {
             ", carried by m1 then m2"
         ],
     );
-    VectorTrace { d }
+    VectorTrace {
+        d,
+        lanes: [la, lb, lc],
+    }
 }
 
 /// The vector clock trace again, stamped by a Lamport clock, a hybrid logical

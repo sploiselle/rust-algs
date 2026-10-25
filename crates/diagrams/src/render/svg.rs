@@ -1318,7 +1318,7 @@ fn tag_slot(s: &mut Span, actors: &[String]) {
 
 /// ` data-actor="A" data-actor-n="1"` for a lane (or one of its events) that
 /// shows an actor, or nothing.
-fn actor_attrs(actor: Option<&str>, actors: &[String]) -> String {
+pub(crate) fn actor_attrs(actor: Option<&str>, actors: &[String]) -> String {
     match actor.and_then(|a| actors.iter().position(|x| x == a).map(|i| (a, i))) {
         Some((a, i)) => format!(
             r#" data-actor="{}" data-actor-n="{}""#,
