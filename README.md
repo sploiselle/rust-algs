@@ -9,6 +9,7 @@ idea it implements, and its tests check the claims the explanation makes.
 ```text
 crates/dist-sys/          the library
   src/clock/              tracking causality
+    lamport.rs            Lamport clocks
     vector.rs             vector clocks
     dot.rs                dots and causal contexts
     hybrid.rs             hybrid logical clocks
