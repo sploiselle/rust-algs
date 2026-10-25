@@ -100,8 +100,8 @@ impl Rich {
     pub fn mark_changes(&self, before: &Rich) -> Rich {
         fn key(line: &[Span]) -> Option<String> {
             let dot = line
-                .iter()
-                .find_map(|s| s.data.iter().find(|(k, _)| *k == "dot").map(|(_, v)| v));
+                .first()
+                .and_then(|s| s.data.iter().find(|(k, _)| *k == "dot").map(|(_, v)| v));
             match dot {
                 Some(d) => Some(format!("dot {d}")),
                 None => line
@@ -125,7 +125,8 @@ impl Rich {
                     let nth = line[..j].iter().filter(|o| alike(o, s)).count();
                     let old =
                         was.and_then(|l| l.iter().filter(|o| is_part(o) && alike(o, s)).nth(nth));
-                    old.is_none_or(|o| o.text != s.text)
+                    // Without padding, which follows the longest field name.
+                    old.is_none_or(|o| o.text.trim() != s.text.trim())
                 })
                 .collect();
             for j in changed {
@@ -1251,6 +1252,39 @@ mod tests {
         assert_eq!(changed(&after), ["A", ":2", ":2"]);
         let same = clock(&[("A", 1)]);
         assert!(changed(&same.mark_changes(&same)).is_empty());
+    }
+
+    #[test]
+    fn mark_changes_matches_a_line_by_the_dot_it_starts_with() {
+        // A causal context's line starts with its vector; a dot past the gap
+        // comes later and keys nothing.
+        let cloud = |a: &str, n: u64| {
+            let dot = format!("{a}:{n}");
+            [
+                Span::part(a, "dot-id")
+                    .also("actor")
+                    .with("actor", a)
+                    .with("dot", &dot),
+                Span::part(format!(":{n}"), "dot-id")
+                    .also("count")
+                    .with("actor", a)
+                    .with("dot", &dot),
+            ]
+        };
+        let mut gap = clock(&[("A", 1)]);
+        gap.lines[0].push(Span::value(" + dot "));
+        gap.lines[0].extend(cloud("A", 3));
+        assert_eq!(changed(&gap.mark_changes(&clock(&[("A", 1)]))), ["A", ":3"]);
+    }
+
+    #[test]
+    fn mark_changes_ignores_a_field_names_padding() {
+        let before = crate::label::fields(vec![("L", Rich::from(Span::part("1", "lamport")))]);
+        let after = crate::label::fields(vec![
+            ("phys", Rich::from(Span::part("10", "physical"))),
+            ("L", Rich::from(Span::part("1", "lamport"))),
+        ]);
+        assert_eq!(changed(&after.mark_changes(&before)), ["phys\u{a0}", "10"]);
     }
 
     #[test]

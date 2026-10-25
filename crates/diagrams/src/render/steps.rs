@@ -94,7 +94,11 @@ pub(crate) fn timed(
             let mut out = String::new();
             let mut previous: Option<Shown> = None;
             for (markup, shown) in runs(&per_step) {
-                assert_eq!(top_level(&markup), 1, "a mark is one element:\n{markup}");
+                let bare = markup.trim();
+                assert!(
+                    top_level(&markup) == 1 && bare.starts_with('<') && bare.ends_with('>'),
+                    "a mark is one element:\n{markup}"
+                );
                 let cont = previous.is_some_and(|p| p.until == Some(shown.from));
                 previous = Some(shown);
                 if shown.from == 0 && shown.until.is_none() {
@@ -376,6 +380,14 @@ mod tests {
     fn a_mark_is_one_element() {
         timed(At::Every, 1, "", |s| {
             (s == 1).then(|| "<b class=\"x\"></b><i class=\"y\"></i>".to_string())
+        });
+    }
+
+    #[test]
+    #[should_panic(expected = "one element")]
+    fn a_mark_has_no_loose_text() {
+        timed(At::Every, 1, "", |s| {
+            (s == 1).then(|| "stray <b class=\"x\"></b>".to_string())
         });
     }
 

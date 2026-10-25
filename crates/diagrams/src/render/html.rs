@@ -516,6 +516,21 @@ mod tests {
                     assert_eq!(html.contains(&badge), made);
                     assert!(t.note(n.n) > t.event(n.callout.a.max(n.callout.b)));
                 }
+                // A ring marks its event from the first note it ends.
+                for i in 0..d.events().len() {
+                    let first = d
+                        .notes()
+                        .iter()
+                        .filter(|n| n.callout.a.0 == i || n.callout.b.0 == i)
+                        .map(|n| t.note(n.n))
+                        .min();
+                    let key = d.event_key(EventId(i));
+                    assert_eq!(
+                        html.contains(&format!(r#"<circle class="ds-ring" data-event="{key}""#)),
+                        first.is_some_and(|f| s >= f),
+                        "{stem}: {key}'s ring at step {s}"
+                    );
+                }
                 assert_eq!(html.matches(r#"<p class="ds-beat""#).count(), 1);
             }
         }
@@ -526,6 +541,7 @@ mod tests {
     #[test]
     fn a_state_panel_shows_each_value_from_its_event() {
         for (stem, d) in step_throughs() {
+            let d = with_actor_slots(&d);
             let t = d.timeline();
             let html = space_time_html(stem, &d, At::Every);
             for (i, e) in d.events().iter().enumerate() {
@@ -533,52 +549,55 @@ mod tests {
                     continue;
                 }
                 let key = d.event_key(EventId(i));
-                let cell = html
+                let row = format!(
+                    r#"<tr class="ds-state-lane" data-lane="{}""#,
+                    d.lane_key(e.lane)
+                );
+                let at = html.find(&row).expect("a row per lane");
+                let row = &html[at..at + html[at..].find("</tr>").unwrap()];
+                let cells: Vec<&str> = row
                     .lines()
-                    .find(|l| {
+                    .filter(|l| {
                         l.starts_with(r#"<span class="ds-cell""#)
                             && l.contains(&format!(r#" data-event="{key}""#))
                     })
-                    .unwrap_or_else(|| panic!("{stem}: no panel value from {key}"));
-                assert!(
-                    cell.contains(&format!(r#" data-in="{}""#, t.event(EventId(i)))),
-                    "{stem}: {key}'s value shows from another step: {cell}"
-                );
-                let drawn: String = e
-                    .annotation
-                    .lines
-                    .iter()
-                    .flatten()
-                    .map(|s| s.text.as_str())
                     .collect();
-                assert_eq!(unescape(&strip_tags(cell)), drawn, "{stem}: {key}");
+                assert!(!cells.is_empty(), "{stem}: no panel value from {key}");
+                for cell in &cells {
+                    assert!(
+                        cell.contains(&format!(r#" data-in="{}""#, t.event(EventId(i)))),
+                        "{stem}: {key}'s value shows from another step: {cell}"
+                    );
+                }
+                // What the lane held before: its last value, else its start.
+                let before = d.events()[..i]
+                    .iter()
+                    .rev()
+                    .find(|x| x.lane == e.lane && !x.annotation.is_empty())
+                    .map_or(&d.lanes()[e.lane.0].start, |x| &x.annotation);
+                let want: Vec<String> = match split_fields(&e.annotation) {
+                    Some(fields) if fields.len() == cells.len() => {
+                        let was = split_fields(before);
+                        fields
+                            .iter()
+                            .enumerate()
+                            .map(|(k, (_, v))| {
+                                let w = was.as_ref().map(|w| w[k].1.clone()).unwrap_or_default();
+                                rich_html(&v.mark_changes(&w))
+                            })
+                            .collect()
+                    }
+                    _ => vec![rich_html(&e.annotation.mark_changes(before))],
+                };
+                let got: Vec<&str> = cells
+                    .iter()
+                    .map(|c| &c[c.find('>').unwrap() + 1..c.len() - "</span>".len()])
+                    .collect();
+                assert_eq!(got, want, "{stem}: {key}");
             }
         }
     }
 
-    fn strip_tags(s: &str) -> String {
-        let mut out = String::new();
-        let mut inside = false;
-        for c in s.chars() {
-            match c {
-                '<' => inside = true,
-                '>' => inside = false,
-                c if !inside => out.push(c),
-                _ => {}
-            }
-        }
-        out
-    }
-
-    fn unescape(s: &str) -> String {
-        s.replace("&lt;", "<")
-            .replace("&gt;", ">")
-            .replace("&quot;", "\"")
-            .replace("&amp;", "&")
-    }
-
-    /// Every value a narration quotes is on screen at its step: in a value
-    /// drawn under an event, on an arrow, or in a lane's start value.
     #[test]
     fn narration_cites_only_values_on_screen() {
         for (stem, d) in step_throughs() {
@@ -597,7 +616,20 @@ mod tests {
                             .filter(|m| t.event(m.to) <= s)
                             .map(|m| m.label.plain()),
                     )
-                    .chain(d.lanes().iter().map(|l| l.start.plain()))
+                    // A start value shows until its lane's first value.
+                    .chain(
+                        d.lanes()
+                            .iter()
+                            .enumerate()
+                            .filter(|(k, _)| {
+                                !d.events().iter().enumerate().any(|(j, x)| {
+                                    x.lane.0 == *k
+                                        && !x.annotation.is_empty()
+                                        && t.event(EventId(j)) <= s
+                                })
+                            })
+                            .map(|(_, l)| l.start.plain()),
+                    )
                     .collect();
                 for line in &e.narration.lines {
                     for run in line

@@ -2093,6 +2093,12 @@ mod tests {
                         .filter(|(m, _)| shown(m.to))
                         .filter_map(|(_, p)| p.as_ref().map(Placed::rect)),
                 );
+                boxes.extend(
+                    l.badges
+                        .iter()
+                        .filter(|b| b.notes.iter().any(|&n| t.note(n) <= s))
+                        .map(Badge::rect),
+                );
                 for (mi, m) in d.messages().iter().enumerate() {
                     if !(t.event(m.from)..t.event(m.to)).contains(&s) {
                         continue;
@@ -2121,6 +2127,53 @@ mod tests {
                             d.message_key(mi)
                         );
                     }
+                }
+            }
+        }
+    }
+
+    /// At each step a message is in flight, its head is drawn at the
+    /// playhead's column and its line runs to the head's base.
+    #[test]
+    fn a_message_in_flight_is_drawn_to_the_playhead() {
+        for figure in crate::catalog::all() {
+            let Diagram::SpaceTime(d) = &figure.diagram else {
+                continue;
+            };
+            if figure.form != crate::catalog::Form::Steps {
+                continue;
+            }
+            let (l, t) = (layout(d, false), d.timeline());
+            for s in 0..=t.last() {
+                let svg = space_time_svg(figure.stem, d, false, At::Step(s));
+                for (mi, m) in d.messages().iter().enumerate() {
+                    let at = svg
+                        .find(&format!(r#"data-message="{}""#, d.message_key(mi)))
+                        .unwrap();
+                    let group = &svg[at..at + svg[at..].find("</g>").unwrap()];
+                    if !(t.event(m.from)..t.event(m.to)).contains(&s) {
+                        assert!(!group.contains("ds-flight"));
+                        continue;
+                    }
+                    let seg = l.segments[mi];
+                    let tip = front(seg, l.x[t.now(s).unwrap().0]);
+                    assert!(
+                        group.contains(&format!(r#"points="{},{} "#, num(tip.0), num(tip.1))),
+                        "{}: {}'s head at step {s}",
+                        figure.stem,
+                        d.message_key(mi)
+                    );
+                    let (ux, uy) = unit(seg.0, tip);
+                    let base = (tip.0 - ux * HEAD, tip.1 - uy * HEAD);
+                    let line = format!(r#"x2="{}" y2="{}""#, num(base.0), num(base.1));
+                    assert_eq!(
+                        group.contains(&line),
+                        dist(seg.0, tip) - HEAD >= 0.5,
+                        "{}: {}'s line at step {s}",
+                        figure.stem,
+                        d.message_key(mi)
+                    );
+                    assert!(!group.contains(r#"class="ds-message-line" "#));
                 }
             }
         }
