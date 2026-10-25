@@ -225,17 +225,22 @@ pub(crate) fn at_step(markup: &str, s: usize, player: bool) -> String {
         if !player && line.trim_start().starts_with(r#"<div class="ds-play""#) {
             return None;
         }
-        match parse_tag(line) {
-            Some((shown, _, blob)) if shown.contains(s) => Some(line.replacen(&blob, "", 1)),
-            Some(_) => None,
-            None if !player => Some(without_step_count(line)),
-            None => Some(line.to_string()),
-        }
+        let kept = match parse_tag(line) {
+            Some((shown, _, blob)) if shown.contains(s) => line.replacen(&blob, "", 1),
+            Some(_) => return None,
+            None => line.to_string(),
+        };
+        Some(if player {
+            kept
+        } else {
+            without_step_count(&kept)
+        })
     })
 }
 
 /// What a page with no player shows of `markup` written [`At::Every`]: the
-/// versions not hidden, their tags stripped, and no player's block.
+/// versions not hidden, their tags stripped, and no player's block. Nothing
+/// moves without a player, so what a mark needs to move goes too.
 #[cfg(test)]
 pub(crate) fn without_player(markup: &str) -> String {
     show(markup, |line| {
@@ -246,7 +251,7 @@ pub(crate) fn without_player(markup: &str) -> String {
             Some((shown, _, _)) if shown.until.is_some() && line.contains(r#" display="none""#) => {
                 None
             }
-            Some((_, _, blob)) => Some(line.replacen(&blob, "", 1)),
+            Some((_, _, blob)) => Some(without_step_count(&line.replacen(&blob, "", 1))),
             None => Some(without_step_count(line)),
         }
     })
@@ -271,8 +276,18 @@ fn show(markup: &str, keep: impl Fn(&str) -> Option<String>) -> String {
     out
 }
 
+/// `line` as a page without a player has it: no step count on the figure,
+/// and nothing a mark would need to move.
 #[cfg(test)]
 fn without_step_count(line: &str) -> String {
+    let moves = [r#" style="--ds-len:"#, r#" style="--ds-dx:"#];
+    let line = &match moves.iter().find_map(|m| line.find(m)) {
+        Some(i) => {
+            let end = i + 8 + line[i + 8..].find('"').expect("the style is quoted") + 1;
+            format!("{}{}", &line[..i], &line[end..])
+        }
+        None => line.to_string(),
+    };
     match line.find(r#" data-steps=""#) {
         Some(i) => {
             let rest = &line[i + 13..];

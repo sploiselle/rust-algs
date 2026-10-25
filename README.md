@@ -94,6 +94,7 @@ steps it shows at:
 | `[data-in="k"]`, `[data-out="j"]` | shown from step `k`, up to but not including step `j` (or to the end). A version with a `data-out` also carries `display="none"` in the SVG, so without a player the page shows the finished figure |
 | `[data-cont]` | the version takes over from the one before it (a message moving on, a value changing), rather than appearing afresh |
 | `.ds-flight` | a message line or head in flight: between its send and its arrival it reaches as far as the latest event's column |
+| `--ds-len`, `--ds-grow`; `--ds-dx`, `--ds-dy` | on each version of a message line, its length and how much longer it is than the version before; on each version of a head, how far it was from here before. A page can grow the line (`stroke-dasharray`/`stroke-dashoffset`) and slide the head into place |
 | `.ds-play[hidden]` | the block a player fills and shows: an empty `.ds-play-bar` for its controls and one `p.ds-beat[data-event]` / `[data-note]` per step, whose `.ds-beat-body` says what happened (`.ds-lead` is the event's name) |
 | `.ds-state`, `tr.ds-state-lane[data-lane]`, `.ds-cell[data-event]`, `.ds-changed` | in a space-time step-through's block, what each lane holds: a row per lane, a version of its value per event, and the parts that event changed |
 

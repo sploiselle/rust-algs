@@ -1395,21 +1395,38 @@ pub(crate) fn space_time_svg(stem: &str, d: &SpaceTime, captions: bool, at: At) 
             d.event_key(m.to),
             notes_attr(&notes, |n| n.messages.contains(&mi))
         );
-        out.push_str(&timed(&|s| {
+        // Where the arrow's head is at each step, and whether its line shows.
+        let head = |s: usize| if s >= arrives { Some(seg.1) } else { flight(s) };
+        let line = |s: usize| head(s).filter(|&tip| dist(seg.0, tip) - HEAD >= 0.5);
+        let class = |s: usize, part: &str| {
             if s >= arrives {
-                Some(message_line("ds-message-line", seg))
+                format!("ds-message-{part}")
             } else {
-                flight(s)
-                    .filter(|&tip| dist(seg.0, tip) - HEAD >= 0.5)
-                    .map(|tip| message_line("ds-message-line ds-flight", (seg.0, tip)))
+                format!("ds-message-{part} ds-flight")
             }
+        };
+        out.push_str(&timed(&|s| {
+            let tip = line(s)?;
+            let len = dist(seg.0, tip) - HEAD;
+            let was = before(s, line).map_or(0.0, |p| dist(seg.0, p) - HEAD);
+            let vars = motion(
+                at,
+                &format!("--ds-len: {}; --ds-grow: {}", num(len), num(len - was)),
+            );
+            Some(message_line(&class(s, "line"), &vars, (seg.0, tip)))
         }));
         out.push_str(&timed(&|s| {
-            if s >= arrives {
-                Some(message_head("ds-message-head", seg))
-            } else {
-                flight(s).map(|tip| message_head("ds-message-head ds-flight", (seg.0, tip)))
-            }
+            let tip = head(s)?;
+            let was = before(s, head).unwrap_or(tip);
+            let vars = motion(
+                at,
+                &format!(
+                    "--ds-dx: {}; --ds-dy: {}",
+                    num(was.0 - tip.0),
+                    num(was.1 - tip.1)
+                ),
+            );
+            Some(message_head(&class(s, "head"), &vars, (seg.0, tip)))
         }));
         if let Some(label) = &l.labels[mi] {
             let mut text = String::new();
@@ -1522,14 +1539,32 @@ const OFF: &str = r#" display="none""#;
 /// A message's arrowhead, tip to base.
 const HEAD: f64 = 9.0;
 
+/// Where a moving mark was before the version shown at step `s`: its
+/// position in the last step that shows it differently, if that step shows it.
+fn before(s: usize, at: impl Fn(usize) -> Option<Pt>) -> Option<Pt> {
+    let now = at(s);
+    (0..s).rev().map(&at).find(|p| *p != now).flatten()
+}
+
+/// ` style="…"` with what a page needs to move a mark from its last version
+/// (see [`steps`](super::steps)), on a step-through; nothing on a finished
+/// figure, whose marks never move.
+fn motion(at: At, vars: &str) -> String {
+    if at == At::End {
+        String::new()
+    } else {
+        format!(r#" style="{vars}""#)
+    }
+}
+
 /// A message's line, from its start to the base of its head at `tip`.
-fn message_line(class: &str, (start, tip): (Pt, Pt)) -> String {
+fn message_line(class: &str, vars: &str, (start, tip): (Pt, Pt)) -> String {
     let (ux, uy) = unit(start, tip);
     let base = (tip.0 - ux * HEAD, tip.1 - uy * HEAD);
     let mut out = String::new();
     emit!(
         out,
-        r#"      <line class="{class}" x1="{}" y1="{}" x2="{}" y2="{}" stroke="currentColor" stroke-width="1.5"/>"#,
+        r#"      <line class="{class}"{vars} x1="{}" y1="{}" x2="{}" y2="{}" stroke="currentColor" stroke-width="1.5"/>"#,
         num(start.0),
         num(start.1),
         num(base.0),
@@ -1539,14 +1574,14 @@ fn message_line(class: &str, (start, tip): (Pt, Pt)) -> String {
 }
 
 /// A message's arrowhead at `tip`, pointing away from `start`.
-fn message_head(class: &str, (start, tip): (Pt, Pt)) -> String {
+fn message_head(class: &str, vars: &str, (start, tip): (Pt, Pt)) -> String {
     let (ux, uy) = unit(start, tip);
     let (nx, ny) = (-uy, ux);
     let base = (tip.0 - ux * HEAD, tip.1 - uy * HEAD);
     let mut out = String::new();
     emit!(
         out,
-        r#"      <polygon class="{class}" points="{},{} {},{} {},{}"/>"#,
+        r#"      <polygon class="{class}"{vars} points="{},{} {},{} {},{}"/>"#,
         num(tip.0),
         num(tip.1),
         num(base.0 + nx * 3.5),
