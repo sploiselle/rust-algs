@@ -1,0 +1,266 @@
+<figure class="ds-fig" data-figure="mutex-fifo-steps" data-kind="space-time" data-steps="12" data-steps-v="1">
+<div class="ds-fig-canvas">
+<svg xmlns="http://www.w3.org/2000/svg" class="ds-figure" data-figure="mutex-fifo-steps" data-kind="space-time" role="img" viewBox="0 0 874 392" width="874" height="392" style="--ds-w: 874" fill="currentColor" font-family="system-ui, sans-serif">
+  <title>Lamport's mutex over FIFO channels: B waits its turn</title>
+  <desc>Timelines for A, B. request on A: L 1; queue (1,A); heard B:0; holds no. request on B: L 1; queue (1,B); heard A:0; holds no. req from B on A, receiving req 1 from request on B: L 3; queue (1,A) (1,B); heard B:1; holds yes. req from A on B, receiving req 1 from request on A: L 3; queue (1,A) (1,B); heard A:1; holds no. ack from A on B, receiving ack 3 from req from B on A: L 4; queue (1,A) (1,B); heard A:3; holds no. ack from B on A, receiving ack 3 from req from A on B: L 4; queue (1,A) (1,B); heard B:3; holds yes. release on A: L 5; queue (1,B); heard B:3; holds no. release from A on B, receiving release 5 from release on A: L 6; queue (1,B); heard A:5; holds yes.</desc>
+  <style>
+    @layer ds-figure {
+      .ds-figure { max-width: 100%; height: auto; font-family: var(--ds-font-sans, system-ui, -apple-system, "Segoe UI", sans-serif); }
+      .ds-figure:root { color-scheme: light dark; color: CanvasText; }
+      .ds-figure text { fill: var(--ds-ink, currentColor); }
+      .ds-figure :is(.ds-event-value, .ds-row-value, .ds-v) { font-family: var(--ds-font-mono, ui-monospace, "SF Mono", Menlo, Consolas, monospace); }
+      .ds-figure .ds-sym { font-family: var(--ds-font-sym, system-ui, sans-serif); }
+      .ds-figure .ds-lane-line { stroke: var(--ds-lane-line, var(--ds-rule, var(--ds-ink, currentColor))); stroke-opacity: var(--ds-lane-opacity, .5); stroke-width: var(--ds-lane-width, 1); }
+      .ds-figure .ds-lane-head { fill: var(--ds-lane-line, var(--ds-rule, var(--ds-ink, currentColor))); fill-opacity: var(--ds-lane-opacity, .5); }
+      .ds-figure [data-actor-n="1"] { --ds-actor: var(--ds-actor-1); }
+      .ds-figure [data-actor-n="2"] { --ds-actor: var(--ds-actor-2); }
+      .ds-figure [data-actor-n="3"] { --ds-actor: var(--ds-actor-3); }
+      .ds-figure [data-actor-n="4"] { --ds-actor: var(--ds-actor-4); }
+      .ds-figure [data-actor-n="5"] { --ds-actor: var(--ds-actor-5); }
+      .ds-figure [data-actor-n="6"] { --ds-actor: var(--ds-actor-6); }
+      .ds-figure [data-actor-n="7"] { --ds-actor: var(--ds-actor-7); }
+      .ds-figure [data-actor-n="8"] { --ds-actor: var(--ds-actor-8); }
+      .ds-figure .ds-actor { fill: var(--ds-actor); }
+      .ds-figure .ds-lane-name { fill: var(--ds-lane-name, var(--ds-actor, var(--ds-ink, currentColor))); font-weight: 600; }
+      .ds-figure .ds-row-name { fill: var(--ds-lane-name, var(--ds-ink, currentColor)); font-weight: 600; }
+      .ds-figure .ds-event-dot { fill: var(--ds-event-dot, var(--ds-ink, currentColor)); }
+      .ds-figure .ds-event-name { fill: var(--ds-event-name, var(--ds-muted, var(--ds-ink, currentColor))); }
+      .ds-figure .ds-field { fill: var(--ds-field, var(--ds-muted, var(--ds-ink, currentColor))); }
+      .ds-figure :is(.ds-event-value, .ds-row-value) { fill: var(--ds-value, var(--ds-ink, currentColor)); }
+      .ds-figure .ds-message-line { fill: none; stroke: var(--ds-message-line, var(--ds-ink, currentColor)); stroke-width: var(--ds-message-width, 1.5); }
+      .ds-figure .ds-message-head { fill: var(--ds-message-line, var(--ds-ink, currentColor)); }
+      .ds-figure .ds-message-label { fill: var(--ds-message-label, var(--ds-muted, var(--ds-ink, currentColor))); }
+      .ds-figure .ds-ring { fill: none; stroke: var(--ds-accent, var(--ds-ink, currentColor)); stroke-width: var(--ds-ring-width, 1.5); stroke-dasharray: var(--ds-ring-dash, none); }
+      .ds-figure .ds-badge-disc { fill: var(--ds-accent, var(--ds-ink, currentColor)); }
+      .ds-figure .ds-badge-n { fill: var(--ds-on-accent, Canvas); font-weight: 700; }
+      .ds-figure .ds-caption { fill: var(--ds-caption, var(--ds-ink, currentColor)); }
+      .ds-figure :is(.ds-counter, .ds-legend) { fill: var(--ds-muted, var(--ds-ink, currentColor)); }
+      .ds-figure :is(.ds-dot, .ds-claim) { fill: var(--ds-dot, var(--ds-ink, currentColor)); }
+      .ds-figure .ds-dot.ds-gap { fill: none; stroke: var(--ds-gap, var(--ds-ink, currentColor)); stroke-width: 1.5; stroke-dasharray: 3 2; }
+      .ds-figure .ds-wrong { fill: var(--ds-wrong, var(--ds-accent, var(--ds-ink, currentColor))); font-weight: 700; }
+    }
+  </style>
+  <g class="ds-lanes">
+    <g class="ds-lane" data-lane="a" data-actor="A" data-actor-n="1">
+      <line class="ds-lane-line" x1="28" y1="95" x2="866" y2="95" stroke="currentColor" stroke-opacity=".5"/>
+      <polygon class="ds-lane-head" points="866,91 874,95 866,99" fill-opacity=".5"/>
+      <text class="ds-lane-name" x="18" y="100" text-anchor="end" font-size="14">A</text>
+    </g>
+    <g class="ds-lane" data-lane="b" data-actor="B" data-actor-n="2">
+      <line class="ds-lane-line" x1="28" y1="285" x2="866" y2="285" stroke="currentColor" stroke-opacity=".5"/>
+      <polygon class="ds-lane-head" points="866,281 874,285 866,289" fill-opacity=".5"/>
+      <text class="ds-lane-name" x="18" y="290" text-anchor="end" font-size="14">B</text>
+    </g>
+  </g>
+  <g class="ds-messages">
+    <g class="ds-message" data-message="req-b" data-from="b-1" data-to="a-enters">
+      <line class="ds-message-line" data-in="3" style="--ds-len: 175.2; --ds-grow: 175.2" x1="207.5" y1="278.5" x2="269.6" y2="114.6" stroke="currentColor" stroke-width="1.5"/>
+      <polygon class="ds-message-head ds-flight" data-in="2" data-out="3" display="none" style="--ds-dx: 0; --ds-dy: 0" points="210.7,270 210.8,279.7 204.2,277.2"/>
+      <polygon class="ds-message-head" data-in="3" data-cont="" style="--ds-dx: -62.1; --ds-dy: 163.8" points="272.7,106.2 272.8,115.9 266.3,113.4"/>
+      <text class="ds-message-label" data-in="3" x="224.4" y="205.5" text-anchor="end" font-size="12">req <tspan class="ds-v" font-family="ui-monospace, Menlo, Consolas, monospace">1</tspan></text>
+    </g>
+    <g class="ds-message" data-message="req-a" data-from="a-1" data-to="b-2" data-notes="1">
+      <line class="ds-message-line ds-flight" data-in="2" data-out="3" display="none" style="--ds-len: 75.9; --ds-grow: 75.9" x1="141.3" y1="102.3" x2="198.2" y2="152.4" stroke="currentColor" stroke-width="1.5"/>
+      <line class="ds-message-line ds-flight" data-in="3" data-out="4" display="none" data-cont="" style="--ds-len: 171.8; --ds-grow: 95.9" x1="141.3" y1="102.3" x2="270.2" y2="215.7" stroke="currentColor" stroke-width="1.5"/>
+      <line class="ds-message-line" data-in="4" data-cont="" style="--ds-len: 255.7; --ds-grow: 83.9" x1="141.3" y1="102.3" x2="333.2" y2="271.1" stroke="currentColor" stroke-width="1.5"/>
+      <polygon class="ds-message-head ds-flight" data-in="1" data-out="2" display="none" style="--ds-dx: 0; --ds-dy: 0" points="148,108.2 138.9,104.9 143.6,99.6"/>
+      <polygon class="ds-message-head ds-flight" data-in="2" data-out="3" display="none" data-cont="" style="--ds-dx: -57; --ds-dy: -50.1" points="205,158.3 195.9,155 200.6,149.8"/>
+      <polygon class="ds-message-head ds-flight" data-in="3" data-out="4" display="none" data-cont="" style="--ds-dx: -72; --ds-dy: -63.3" points="277,221.7 267.9,218.4 272.6,213.1"/>
+      <polygon class="ds-message-head" data-in="4" data-cont="" style="--ds-dx: -63; --ds-dy: -55.4" points="340,277.1 330.9,273.8 335.5,268.5"/>
+      <text class="ds-message-label" data-in="4" x="212.8" y="178.5" text-anchor="end" font-size="12">req <tspan class="ds-v" font-family="ui-monospace, Menlo, Consolas, monospace">1</tspan></text>
+    </g>
+    <g class="ds-message" data-message="ack-a" data-from="a-enters" data-to="b-waits" data-notes="2">
+      <line class="ds-message-line ds-flight" data-in="4" data-out="6" display="none" style="--ds-len: 72.6; --ds-grow: 72.6" x1="285.6" y1="101.9" x2="342" y2="147.6" stroke="currentColor" stroke-width="1.5"/>
+      <line class="ds-message-line" data-in="6" data-cont="" style="--ds-len: 270.2; --ds-grow: 197.6" x1="285.6" y1="101.9" x2="495.7" y2="271.8" stroke="currentColor" stroke-width="1.5"/>
+      <polygon class="ds-message-head ds-flight" data-in="3" data-out="4" display="none" style="--ds-dx: 0; --ds-dy: 0" points="292.6,107.6 283.4,104.6 287.8,99.2"/>
+      <polygon class="ds-message-head ds-flight" data-in="4" data-out="6" display="none" data-cont="" style="--ds-dx: -56.4; --ds-dy: -45.6" points="349,153.2 339.8,150.3 344.2,144.8"/>
+      <polygon class="ds-message-head" data-in="6" data-cont="" style="--ds-dx: -153.7; --ds-dy: -124.2" points="502.7,277.5 493.5,274.5 497.9,269.1"/>
+      <text class="ds-message-label" data-in="6" x="400.8" y="182.2" text-anchor="start" font-size="12">ack <tspan class="ds-v" font-family="ui-monospace, Menlo, Consolas, monospace">3</tspan></text>
+    </g>
+    <g class="ds-message" data-message="m4" data-from="b-2" data-to="a-3">
+      <line class="ds-message-line ds-flight" data-in="6" data-out="8" display="none" style="--ds-len: 189.6; --ds-grow: 189.6" x1="357.6" y1="278.1" x2="505" y2="158.9" stroke="currentColor" stroke-width="1.5"/>
+      <line class="ds-message-line" data-in="8" data-cont="" style="--ds-len: 274.2; --ds-grow: 84.6" x1="357.6" y1="278.1" x2="570.8" y2="105.7" stroke="currentColor" stroke-width="1.5"/>
+      <polygon class="ds-message-head ds-flight" data-in="4" data-out="6" display="none" style="--ds-dx: 0; --ds-dy: 0" points="364.6,272.4 359.8,280.8 355.4,275.4"/>
+      <polygon class="ds-message-head ds-flight" data-in="6" data-out="8" display="none" data-cont="" style="--ds-dx: -147.4; --ds-dy: 119.2" points="512,153.2 507.2,161.6 502.8,156.1"/>
+      <polygon class="ds-message-head" data-in="8" data-cont="" style="--ds-dx: -65.8; --ds-dy: 53.2" points="577.8,100 573,108.4 568.6,103"/>
+      <text class="ds-message-label" data-in="8" x="472.8" y="197.8" text-anchor="start" font-size="12">ack <tspan class="ds-v" font-family="ui-monospace, Menlo, Consolas, monospace">3</tspan></text>
+    </g>
+    <g class="ds-message" data-message="release-a" data-from="a-4" data-to="b-enters" data-notes="3">
+      <line class="ds-message-line" data-in="10" style="--ds-len: 171.2; --ds-grow: 171.2" x1="723.9" y1="105.3" x2="784.6" y2="265.4" stroke="currentColor" stroke-width="1.5"/>
+      <polygon class="ds-message-head ds-flight" data-in="9" data-out="10" display="none" style="--ds-dx: 0; --ds-dy: 0" points="727.1,113.7 720.6,106.5 727.2,104"/>
+      <polygon class="ds-message-head" data-in="10" data-cont="" style="--ds-dx: -60.7; --ds-dy: -160.1" points="787.7,273.8 781.3,266.6 787.8,264.1"/>
+      <text class="ds-message-label" data-in="10" x="765.4" y="186.5" text-anchor="start" font-size="12">release <tspan class="ds-v" font-family="ui-monospace, Menlo, Consolas, monospace">5</tspan></text>
+    </g>
+  </g>
+  <g class="ds-events">
+    <g class="ds-event" data-in="1" data-event="a-1" data-lane="a" data-actor="A" data-actor-n="1" data-notes="1">
+      <circle class="ds-event-dot" cx="133" cy="95" r="5"/>
+      <text class="ds-event-name" x="133" y="79.8" text-anchor="middle" font-size="13">request</text>
+      <text class="ds-event-value" x="137" y="116.8" text-anchor="end" font-size="13" font-family="ui-monospace, Menlo, Consolas, monospace"><tspan class="ds-field">L     </tspan><tspan class="ds-lamport">1</tspan>    <tspan x="137" dy="15"><tspan class="ds-field">queue </tspan><tspan class="ds-stamp" data-stamp="1,A">(</tspan><tspan class="ds-stamp ds-time" data-stamp="1,A">1</tspan><tspan class="ds-stamp" data-stamp="1,A">,</tspan><tspan class="ds-stamp ds-actor" data-actor="A" data-stamp="1,A" data-actor-n="1">A</tspan><tspan class="ds-stamp" data-stamp="1,A">)</tspan></tspan><tspan x="137" dy="15"><tspan class="ds-field">heard </tspan><tspan class="ds-heard ds-actor" data-actor="B" data-actor-n="2">B</tspan><tspan class="ds-heard ds-count" data-actor="B" data-actor-n="2">:0</tspan>  </tspan><tspan x="137" dy="15"><tspan class="ds-field">holds </tspan><tspan class="ds-holds">no</tspan>   </tspan></text>
+    </g>
+    <g class="ds-event" data-in="2" data-event="b-1" data-lane="b" data-actor="B" data-actor-n="2">
+      <circle class="ds-event-dot" cx="205" cy="285" r="5"/>
+      <text class="ds-event-name" x="205" y="306.8" text-anchor="middle" font-size="13">request</text>
+      <text class="ds-event-value" x="205" y="323.8" text-anchor="middle" font-size="13" font-family="ui-monospace, Menlo, Consolas, monospace"><tspan class="ds-field">L     </tspan><tspan class="ds-lamport">1</tspan>    <tspan x="205" dy="15"><tspan class="ds-field">queue </tspan><tspan class="ds-stamp" data-stamp="1,B">(</tspan><tspan class="ds-stamp ds-time" data-stamp="1,B">1</tspan><tspan class="ds-stamp" data-stamp="1,B">,</tspan><tspan class="ds-stamp ds-actor" data-actor="B" data-stamp="1,B" data-actor-n="2">B</tspan><tspan class="ds-stamp" data-stamp="1,B">)</tspan></tspan><tspan x="205" dy="15"><tspan class="ds-field">heard </tspan><tspan class="ds-heard ds-actor" data-actor="A" data-actor-n="1">A</tspan><tspan class="ds-heard ds-count" data-actor="A" data-actor-n="1">:0</tspan>  </tspan><tspan x="205" dy="15"><tspan class="ds-field">holds </tspan><tspan class="ds-holds">no</tspan>   </tspan></text>
+    </g>
+    <g class="ds-event" data-in="3" data-event="a-enters" data-lane="a" data-actor="A" data-actor-n="1" data-notes="2">
+      <circle class="ds-event-dot" cx="277" cy="95" r="5"/>
+      <text class="ds-event-name" x="277" y="79.8" text-anchor="middle" font-size="13">req from B</text>
+      <text class="ds-event-value" x="277" y="17.8" text-anchor="middle" font-size="13" font-family="ui-monospace, Menlo, Consolas, monospace"><tspan class="ds-field">L     </tspan><tspan class="ds-lamport">3</tspan>          <tspan x="277" dy="15"><tspan class="ds-field">queue </tspan><tspan class="ds-stamp" data-stamp="1,A">(</tspan><tspan class="ds-stamp ds-time" data-stamp="1,A">1</tspan><tspan class="ds-stamp" data-stamp="1,A">,</tspan><tspan class="ds-stamp ds-actor" data-actor="A" data-stamp="1,A" data-actor-n="1">A</tspan><tspan class="ds-stamp" data-stamp="1,A">)</tspan> <tspan class="ds-stamp" data-stamp="1,B">(</tspan><tspan class="ds-stamp ds-time" data-stamp="1,B">1</tspan><tspan class="ds-stamp" data-stamp="1,B">,</tspan><tspan class="ds-stamp ds-actor" data-actor="B" data-stamp="1,B" data-actor-n="2">B</tspan><tspan class="ds-stamp" data-stamp="1,B">)</tspan></tspan><tspan x="277" dy="15"><tspan class="ds-field">heard </tspan><tspan class="ds-heard ds-actor" data-actor="B" data-actor-n="2">B</tspan><tspan class="ds-heard ds-count" data-actor="B" data-actor-n="2">:1</tspan>        </tspan><tspan x="277" dy="15"><tspan class="ds-field">holds </tspan><tspan class="ds-holds">yes</tspan>        </tspan></text>
+    </g>
+    <g class="ds-event" data-in="4" data-event="b-2" data-lane="b" data-actor="B" data-actor-n="2" data-notes="1">
+      <circle class="ds-event-dot" cx="349" cy="285" r="5"/>
+      <text class="ds-event-name" x="349" y="306.8" text-anchor="middle" font-size="13">req from A</text>
+      <text class="ds-event-value" x="349" y="323.8" text-anchor="middle" font-size="13" font-family="ui-monospace, Menlo, Consolas, monospace"><tspan class="ds-field">L     </tspan><tspan class="ds-lamport">3</tspan>          <tspan x="349" dy="15"><tspan class="ds-field">queue </tspan><tspan class="ds-stamp" data-stamp="1,A">(</tspan><tspan class="ds-stamp ds-time" data-stamp="1,A">1</tspan><tspan class="ds-stamp" data-stamp="1,A">,</tspan><tspan class="ds-stamp ds-actor" data-actor="A" data-stamp="1,A" data-actor-n="1">A</tspan><tspan class="ds-stamp" data-stamp="1,A">)</tspan> <tspan class="ds-stamp" data-stamp="1,B">(</tspan><tspan class="ds-stamp ds-time" data-stamp="1,B">1</tspan><tspan class="ds-stamp" data-stamp="1,B">,</tspan><tspan class="ds-stamp ds-actor" data-actor="B" data-stamp="1,B" data-actor-n="2">B</tspan><tspan class="ds-stamp" data-stamp="1,B">)</tspan></tspan><tspan x="349" dy="15"><tspan class="ds-field">heard </tspan><tspan class="ds-heard ds-actor" data-actor="A" data-actor-n="1">A</tspan><tspan class="ds-heard ds-count" data-actor="A" data-actor-n="1">:1</tspan>        </tspan><tspan x="349" dy="15"><tspan class="ds-field">holds </tspan><tspan class="ds-holds">no</tspan>         </tspan></text>
+    </g>
+    <g class="ds-event" data-in="6" data-event="b-waits" data-lane="b" data-actor="B" data-actor-n="2" data-notes="2">
+      <circle class="ds-event-dot" cx="512" cy="285" r="5"/>
+      <text class="ds-event-name" x="508" y="269.8" text-anchor="start" font-size="13">ack from A</text>
+      <text class="ds-event-value" x="512" y="306.8" text-anchor="middle" font-size="13" font-family="ui-monospace, Menlo, Consolas, monospace"><tspan class="ds-field">L     </tspan><tspan class="ds-lamport">4</tspan>          <tspan x="512" dy="15"><tspan class="ds-field">queue </tspan><tspan class="ds-stamp" data-stamp="1,A">(</tspan><tspan class="ds-stamp ds-time" data-stamp="1,A">1</tspan><tspan class="ds-stamp" data-stamp="1,A">,</tspan><tspan class="ds-stamp ds-actor" data-actor="A" data-stamp="1,A" data-actor-n="1">A</tspan><tspan class="ds-stamp" data-stamp="1,A">)</tspan> <tspan class="ds-stamp" data-stamp="1,B">(</tspan><tspan class="ds-stamp ds-time" data-stamp="1,B">1</tspan><tspan class="ds-stamp" data-stamp="1,B">,</tspan><tspan class="ds-stamp ds-actor" data-actor="B" data-stamp="1,B" data-actor-n="2">B</tspan><tspan class="ds-stamp" data-stamp="1,B">)</tspan></tspan><tspan x="512" dy="15"><tspan class="ds-field">heard </tspan><tspan class="ds-heard ds-actor" data-actor="A" data-actor-n="1">A</tspan><tspan class="ds-heard ds-count" data-actor="A" data-actor-n="1">:3</tspan>        </tspan><tspan x="512" dy="15"><tspan class="ds-field">holds </tspan><tspan class="ds-holds">no</tspan>         </tspan></text>
+    </g>
+    <g class="ds-event" data-in="8" data-event="a-3" data-lane="a" data-actor="A" data-actor-n="1">
+      <circle class="ds-event-dot" cx="584" cy="95" r="5"/>
+      <text class="ds-event-name" x="584" y="79.8" text-anchor="middle" font-size="13">ack from B</text>
+      <text class="ds-event-value" x="584" y="17.8" text-anchor="middle" font-size="13" font-family="ui-monospace, Menlo, Consolas, monospace"><tspan class="ds-field">L     </tspan><tspan class="ds-lamport">4</tspan>          <tspan x="584" dy="15"><tspan class="ds-field">queue </tspan><tspan class="ds-stamp" data-stamp="1,A">(</tspan><tspan class="ds-stamp ds-time" data-stamp="1,A">1</tspan><tspan class="ds-stamp" data-stamp="1,A">,</tspan><tspan class="ds-stamp ds-actor" data-actor="A" data-stamp="1,A" data-actor-n="1">A</tspan><tspan class="ds-stamp" data-stamp="1,A">)</tspan> <tspan class="ds-stamp" data-stamp="1,B">(</tspan><tspan class="ds-stamp ds-time" data-stamp="1,B">1</tspan><tspan class="ds-stamp" data-stamp="1,B">,</tspan><tspan class="ds-stamp ds-actor" data-actor="B" data-stamp="1,B" data-actor-n="2">B</tspan><tspan class="ds-stamp" data-stamp="1,B">)</tspan></tspan><tspan x="584" dy="15"><tspan class="ds-field">heard </tspan><tspan class="ds-heard ds-actor" data-actor="B" data-actor-n="2">B</tspan><tspan class="ds-heard ds-count" data-actor="B" data-actor-n="2">:3</tspan>        </tspan><tspan x="584" dy="15"><tspan class="ds-field">holds </tspan><tspan class="ds-holds">yes</tspan>        </tspan></text>
+    </g>
+    <g class="ds-event" data-in="9" data-event="a-4" data-lane="a" data-actor="A" data-actor-n="1" data-notes="3">
+      <circle class="ds-event-dot" cx="720" cy="95" r="5"/>
+      <text class="ds-event-name" x="720" y="79.8" text-anchor="middle" font-size="13">release</text>
+      <text class="ds-event-value" x="720" y="17.8" text-anchor="middle" font-size="13" font-family="ui-monospace, Menlo, Consolas, monospace"><tspan class="ds-field">L     </tspan><tspan class="ds-lamport">5</tspan>    <tspan x="720" dy="15"><tspan class="ds-field">queue </tspan><tspan class="ds-stamp" data-stamp="1,B">(</tspan><tspan class="ds-stamp ds-time" data-stamp="1,B">1</tspan><tspan class="ds-stamp" data-stamp="1,B">,</tspan><tspan class="ds-stamp ds-actor" data-actor="B" data-stamp="1,B" data-actor-n="2">B</tspan><tspan class="ds-stamp" data-stamp="1,B">)</tspan></tspan><tspan x="720" dy="15"><tspan class="ds-field">heard </tspan><tspan class="ds-heard ds-actor" data-actor="B" data-actor-n="2">B</tspan><tspan class="ds-heard ds-count" data-actor="B" data-actor-n="2">:3</tspan>  </tspan><tspan x="720" dy="15"><tspan class="ds-field">holds </tspan><tspan class="ds-holds">no</tspan>   </tspan></text>
+    </g>
+    <g class="ds-event" data-in="10" data-event="b-enters" data-lane="b" data-actor="B" data-actor-n="2" data-notes="3">
+      <circle class="ds-event-dot" cx="792" cy="285" r="5"/>
+      <text class="ds-event-name" x="792" y="306.8" text-anchor="middle" font-size="13">release from A</text>
+      <text class="ds-event-value" x="792" y="323.8" text-anchor="middle" font-size="13" font-family="ui-monospace, Menlo, Consolas, monospace"><tspan class="ds-field">L     </tspan><tspan class="ds-lamport">6</tspan>    <tspan x="792" dy="15"><tspan class="ds-field">queue </tspan><tspan class="ds-stamp" data-stamp="1,B">(</tspan><tspan class="ds-stamp ds-time" data-stamp="1,B">1</tspan><tspan class="ds-stamp" data-stamp="1,B">,</tspan><tspan class="ds-stamp ds-actor" data-actor="B" data-stamp="1,B" data-actor-n="2">B</tspan><tspan class="ds-stamp" data-stamp="1,B">)</tspan></tspan><tspan x="792" dy="15"><tspan class="ds-field">heard </tspan><tspan class="ds-heard ds-actor" data-actor="A" data-actor-n="1">A</tspan><tspan class="ds-heard ds-count" data-actor="A" data-actor-n="1">:5</tspan>  </tspan><tspan x="792" dy="15"><tspan class="ds-field">holds </tspan><tspan class="ds-holds">yes</tspan>  </tspan></text>
+    </g>
+  </g>
+  <g class="ds-marks">
+    <circle class="ds-ring" data-in="5" data-event="a-1" data-notes="1" cx="133" cy="95" r="9" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <circle class="ds-ring" data-in="7" data-event="a-enters" data-notes="2" cx="277" cy="95" r="9" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <circle class="ds-ring" data-in="5" data-event="b-2" data-notes="1" cx="349" cy="285" r="9" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <circle class="ds-ring" data-in="7" data-event="b-waits" data-notes="2" cx="512" cy="285" r="9" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <circle class="ds-ring" data-in="11" data-event="a-4" data-notes="3" cx="720" cy="95" r="9" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <circle class="ds-ring" data-in="11" data-event="b-enters" data-notes="3" cx="792" cy="285" r="9" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <g class="ds-badge" data-in="5" data-note="1" data-event="a-1">
+      <circle class="ds-badge-disc" cx="170" cy="76.5" r="7.5"/>
+      <text class="ds-badge-n" x="170" y="80.5" text-anchor="middle" font-size="11" fill="Canvas">1</text>
+    </g>
+    <g class="ds-badge" data-in="7" data-note="2" data-event="a-enters">
+      <circle class="ds-badge-disc" cx="325" cy="76.5" r="7.5"/>
+      <text class="ds-badge-n" x="325" y="80.5" text-anchor="middle" font-size="11" fill="Canvas">2</text>
+    </g>
+    <g class="ds-badge" data-in="5" data-note="1" data-event="b-2">
+      <circle class="ds-badge-disc" cx="397" cy="303.5" r="7.5"/>
+      <text class="ds-badge-n" x="397" y="307.5" text-anchor="middle" font-size="11" fill="Canvas">1</text>
+    </g>
+    <g class="ds-badge" data-in="7" data-note="2" data-event="b-waits">
+      <circle class="ds-badge-disc" cx="592.5" cy="266.5" r="7.5"/>
+      <text class="ds-badge-n" x="592.5" y="270.5" text-anchor="middle" font-size="11" fill="Canvas">2</text>
+    </g>
+    <g class="ds-badge" data-in="11" data-note="3" data-event="a-4">
+      <circle class="ds-badge-disc" cx="757" cy="76.5" r="7.5"/>
+      <text class="ds-badge-n" x="757" y="80.5" text-anchor="middle" font-size="11" fill="Canvas">3</text>
+    </g>
+    <g class="ds-badge" data-in="11" data-note="3" data-event="b-enters">
+      <circle class="ds-badge-disc" cx="854.5" cy="303.5" r="7.5"/>
+      <text class="ds-badge-n" x="854.5" y="307.5" text-anchor="middle" font-size="11" fill="Canvas">3</text>
+    </g>
+  </g>
+</svg>
+</div>
+<div class="ds-play" hidden>
+<div class="ds-play-bar"></div>
+<div class="ds-beats">
+<p class="ds-beat" data-in="0" data-out="1"><span class="ds-beat-body">Timelines for A, B; time runs left to right</span></p>
+<p class="ds-beat" data-in="1" data-out="2" data-cont="" data-event="a-1"><span class="ds-beat-body"><span class="ds-lead">request</span> on A asks for the resource: stamps its request <code class="ds-v"><span class="ds-stamp" data-stamp="1,A">(</span><span class="ds-stamp ds-time" data-stamp="1,A">1</span><span class="ds-stamp" data-stamp="1,A">,</span><span class="ds-stamp ds-actor" data-actor="A" data-stamp="1,A" data-actor-n="1">A</span><span class="ds-stamp" data-stamp="1,A">)</span></code>, queues it, and sends it to B</span></p>
+<p class="ds-beat" data-in="2" data-out="3" data-cont="" data-event="b-1"><span class="ds-beat-body"><span class="ds-lead">request</span> on B asks too, at the same Lamport time: <code class="ds-v"><span class="ds-stamp" data-stamp="1,B">(</span><span class="ds-stamp ds-time" data-stamp="1,B">1</span><span class="ds-stamp" data-stamp="1,B">,</span><span class="ds-stamp ds-actor" data-actor="B" data-stamp="1,B" data-actor-n="2">B</span><span class="ds-stamp" data-stamp="1,B">)</span></code> ranks after <code class="ds-v"><span class="ds-stamp" data-stamp="1,A">(</span><span class="ds-stamp ds-time" data-stamp="1,A">1</span><span class="ds-stamp" data-stamp="1,A">,</span><span class="ds-stamp ds-actor" data-actor="A" data-stamp="1,A" data-actor-n="1">A</span><span class="ds-stamp" data-stamp="1,A">)</span></code>, since A's id is smaller</span></p>
+<p class="ds-beat" data-in="3" data-out="4" data-cont="" data-event="a-enters"><span class="ds-beat-body"><span class="ds-lead">req from B</span> on A queues B's request behind its own and acks it. Its request is first, and it has heard from B past it, so A enters</span></p>
+<p class="ds-beat" data-in="4" data-out="5" data-cont="" data-event="b-2"><span class="ds-beat-body"><span class="ds-lead">req from A</span> on B, receiving req <code class="ds-v">1</code> from request on A, sending ack <code class="ds-v">3</code> to A: <span class="ds-field">L </span><code class="ds-v"><span class="ds-lamport">3</span></code>; <span class="ds-field">queue </span><code class="ds-v"><span class="ds-stamp" data-stamp="1,A">(</span><span class="ds-stamp ds-time" data-stamp="1,A">1</span><span class="ds-stamp" data-stamp="1,A">,</span><span class="ds-stamp ds-actor" data-actor="A" data-stamp="1,A" data-actor-n="1">A</span><span class="ds-stamp" data-stamp="1,A">)</span> <span class="ds-stamp" data-stamp="1,B">(</span><span class="ds-stamp ds-time" data-stamp="1,B">1</span><span class="ds-stamp" data-stamp="1,B">,</span><span class="ds-stamp ds-actor" data-actor="B" data-stamp="1,B" data-actor-n="2">B</span><span class="ds-stamp" data-stamp="1,B">)</span></code>; <span class="ds-field">heard </span><code class="ds-v"><span class="ds-heard ds-actor" data-actor="A" data-actor-n="1">A</span><span class="ds-heard ds-count" data-actor="A" data-actor-n="1">:1</span></code>; <span class="ds-field">holds </span><code class="ds-v"><span class="ds-holds">no</span></code></span></p>
+<p class="ds-beat" data-in="5" data-out="6" data-cont="" data-note="1"><span class="ds-note-n" aria-hidden="true">1</span> <span class="ds-beat-body">A's request <code class="ds-v"><span class="ds-stamp" data-stamp="1,A">(</span><span class="ds-stamp ds-time" data-stamp="1,A">1</span><span class="ds-stamp" data-stamp="1,A">,</span><span class="ds-stamp ds-actor" data-actor="A" data-stamp="1,A" data-actor-n="1">A</span><span class="ds-stamp" data-stamp="1,A">)</span></code> reaches B before anything A sent after it, and goes ahead of B's own <code class="ds-v"><span class="ds-stamp" data-stamp="1,B">(</span><span class="ds-stamp ds-time" data-stamp="1,B">1</span><span class="ds-stamp" data-stamp="1,B">,</span><span class="ds-stamp ds-actor" data-actor="B" data-stamp="1,B" data-actor-n="2">B</span><span class="ds-stamp" data-stamp="1,B">)</span></code> in B's queue</span></p>
+<p class="ds-beat" data-in="6" data-out="7" data-cont="" data-event="b-waits"><span class="ds-beat-body"><span class="ds-lead">ack from A</span> on B, receiving ack <code class="ds-v">3</code> from req from B on A: <span class="ds-field">L </span><code class="ds-v"><span class="ds-lamport">4</span></code>; <span class="ds-field">queue </span><code class="ds-v"><span class="ds-stamp" data-stamp="1,A">(</span><span class="ds-stamp ds-time" data-stamp="1,A">1</span><span class="ds-stamp" data-stamp="1,A">,</span><span class="ds-stamp ds-actor" data-actor="A" data-stamp="1,A" data-actor-n="1">A</span><span class="ds-stamp" data-stamp="1,A">)</span> <span class="ds-stamp" data-stamp="1,B">(</span><span class="ds-stamp ds-time" data-stamp="1,B">1</span><span class="ds-stamp" data-stamp="1,B">,</span><span class="ds-stamp ds-actor" data-actor="B" data-stamp="1,B" data-actor-n="2">B</span><span class="ds-stamp" data-stamp="1,B">)</span></code>; <span class="ds-field">heard </span><code class="ds-v"><span class="ds-heard ds-actor" data-actor="A" data-actor-n="1">A</span><span class="ds-heard ds-count" data-actor="A" data-actor-n="1">:3</span></code>; <span class="ds-field">holds </span><code class="ds-v"><span class="ds-holds">no</span></code></span></p>
+<p class="ds-beat" data-in="7" data-out="8" data-cont="" data-note="2"><span class="ds-note-n" aria-hidden="true">2</span> <span class="ds-beat-body">B has heard from A at <code class="ds-v">3</code>, later than its request, but A's request is first in its queue, so B waits</span></p>
+<p class="ds-beat" data-in="8" data-out="9" data-cont="" data-event="a-3"><span class="ds-beat-body"><span class="ds-lead">ack from B</span> on A, receiving ack <code class="ds-v">3</code> from req from A on B: <span class="ds-field">L </span><code class="ds-v"><span class="ds-lamport">4</span></code>; <span class="ds-field">queue </span><code class="ds-v"><span class="ds-stamp" data-stamp="1,A">(</span><span class="ds-stamp ds-time" data-stamp="1,A">1</span><span class="ds-stamp" data-stamp="1,A">,</span><span class="ds-stamp ds-actor" data-actor="A" data-stamp="1,A" data-actor-n="1">A</span><span class="ds-stamp" data-stamp="1,A">)</span> <span class="ds-stamp" data-stamp="1,B">(</span><span class="ds-stamp ds-time" data-stamp="1,B">1</span><span class="ds-stamp" data-stamp="1,B">,</span><span class="ds-stamp ds-actor" data-actor="B" data-stamp="1,B" data-actor-n="2">B</span><span class="ds-stamp" data-stamp="1,B">)</span></code>; <span class="ds-field">heard </span><code class="ds-v"><span class="ds-heard ds-actor" data-actor="B" data-actor-n="2">B</span><span class="ds-heard ds-count" data-actor="B" data-actor-n="2">:3</span></code>; <span class="ds-field">holds </span><code class="ds-v"><span class="ds-holds">yes</span></code></span></p>
+<p class="ds-beat" data-in="9" data-out="10" data-cont="" data-event="a-4"><span class="ds-beat-body"><span class="ds-lead">release</span> on A leaves: drops its request <code class="ds-v"><span class="ds-stamp" data-stamp="1,A">(</span><span class="ds-stamp ds-time" data-stamp="1,A">1</span><span class="ds-stamp" data-stamp="1,A">,</span><span class="ds-stamp ds-actor" data-actor="A" data-stamp="1,A" data-actor-n="1">A</span><span class="ds-stamp" data-stamp="1,A">)</span></code> from its queue and sends a release to B</span></p>
+<p class="ds-beat" data-in="10" data-out="11" data-cont="" data-event="b-enters"><span class="ds-beat-body"><span class="ds-lead">release from A</span> on B, receiving release <code class="ds-v">5</code> from release on A: <span class="ds-field">L </span><code class="ds-v"><span class="ds-lamport">6</span></code>; <span class="ds-field">queue </span><code class="ds-v"><span class="ds-stamp" data-stamp="1,B">(</span><span class="ds-stamp ds-time" data-stamp="1,B">1</span><span class="ds-stamp" data-stamp="1,B">,</span><span class="ds-stamp ds-actor" data-actor="B" data-stamp="1,B" data-actor-n="2">B</span><span class="ds-stamp" data-stamp="1,B">)</span></code>; <span class="ds-field">heard </span><code class="ds-v"><span class="ds-heard ds-actor" data-actor="A" data-actor-n="1">A</span><span class="ds-heard ds-count" data-actor="A" data-actor-n="1">:5</span></code>; <span class="ds-field">holds </span><code class="ds-v"><span class="ds-holds">yes</span></code></span></p>
+<p class="ds-beat" data-in="11" data-out="12" data-cont="" data-note="3"><span class="ds-note-n" aria-hidden="true">3</span> <span class="ds-beat-body">A releases: B drops <code class="ds-v"><span class="ds-stamp" data-stamp="1,A">(</span><span class="ds-stamp ds-time" data-stamp="1,A">1</span><span class="ds-stamp" data-stamp="1,A">,</span><span class="ds-stamp ds-actor" data-actor="A" data-stamp="1,A" data-actor-n="1">A</span><span class="ds-stamp" data-stamp="1,A">)</span></code> from its queue, its own request is first, and B enters</span></p>
+<p class="ds-beat" data-in="12" data-cont=""><span class="ds-beat-body">Lamport's mutex over FIFO channels: B waits its turn</span></p>
+</div>
+<div class="ds-state">
+<table aria-label="What each lane holds at this step">
+<thead><tr><td></td><th scope="col">L</th><th scope="col">queue</th><th scope="col">heard</th><th scope="col">holds</th></tr></thead>
+<tbody>
+<tr class="ds-state-lane" data-lane="a" data-actor="A" data-actor-n="1">
+<th scope="row">A</th>
+<td><span class="ds-cells">
+<span class="ds-cell" data-in="0" data-out="1"><code class="ds-v"><span class="ds-lamport">0</span></code></span>
+<span class="ds-cell" data-in="1" data-out="3" data-cont="" data-event="a-1"><code class="ds-v"><span class="ds-lamport ds-changed">1</span></code></span>
+<span class="ds-cell" data-in="3" data-out="8" data-cont="" data-event="a-enters"><code class="ds-v"><span class="ds-lamport ds-changed">3</span></code></span>
+<span class="ds-cell" data-in="8" data-out="9" data-cont="" data-event="a-3"><code class="ds-v"><span class="ds-lamport ds-changed">4</span></code></span>
+<span class="ds-cell" data-in="9" data-cont="" data-event="a-4"><code class="ds-v"><span class="ds-lamport ds-changed">5</span></code></span>
+</span></td>
+<td><span class="ds-cells">
+<span class="ds-cell" data-in="0" data-out="1"><code class="ds-v"><span class="ds-empty">(empty)</span></code></span>
+<span class="ds-cell" data-in="1" data-out="3" data-cont="" data-event="a-1"><code class="ds-v"><span class="ds-stamp ds-changed" data-stamp="1,A">(</span><span class="ds-stamp ds-time ds-changed" data-stamp="1,A">1</span><span class="ds-stamp ds-changed" data-stamp="1,A">,</span><span class="ds-stamp ds-actor ds-changed" data-actor="A" data-stamp="1,A" data-actor-n="1">A</span><span class="ds-stamp ds-changed" data-stamp="1,A">)</span></code></span>
+<span class="ds-cell" data-in="3" data-out="8" data-cont="" data-event="a-enters"><code class="ds-v"><span class="ds-stamp" data-stamp="1,A">(</span><span class="ds-stamp ds-time" data-stamp="1,A">1</span><span class="ds-stamp" data-stamp="1,A">,</span><span class="ds-stamp ds-actor" data-actor="A" data-stamp="1,A" data-actor-n="1">A</span><span class="ds-stamp" data-stamp="1,A">)</span> <span class="ds-stamp ds-changed" data-stamp="1,B">(</span><span class="ds-stamp ds-time ds-changed" data-stamp="1,B">1</span><span class="ds-stamp ds-changed" data-stamp="1,B">,</span><span class="ds-stamp ds-actor ds-changed" data-actor="B" data-stamp="1,B" data-actor-n="2">B</span><span class="ds-stamp ds-changed" data-stamp="1,B">)</span></code></span>
+<span class="ds-cell" data-in="8" data-out="9" data-cont="" data-event="a-3"><code class="ds-v"><span class="ds-stamp" data-stamp="1,A">(</span><span class="ds-stamp ds-time" data-stamp="1,A">1</span><span class="ds-stamp" data-stamp="1,A">,</span><span class="ds-stamp ds-actor" data-actor="A" data-stamp="1,A" data-actor-n="1">A</span><span class="ds-stamp" data-stamp="1,A">)</span> <span class="ds-stamp" data-stamp="1,B">(</span><span class="ds-stamp ds-time" data-stamp="1,B">1</span><span class="ds-stamp" data-stamp="1,B">,</span><span class="ds-stamp ds-actor" data-actor="B" data-stamp="1,B" data-actor-n="2">B</span><span class="ds-stamp" data-stamp="1,B">)</span></code></span>
+<span class="ds-cell" data-in="9" data-cont="" data-event="a-4"><code class="ds-v"><span class="ds-stamp" data-stamp="1,B">(</span><span class="ds-stamp ds-time" data-stamp="1,B">1</span><span class="ds-stamp" data-stamp="1,B">,</span><span class="ds-stamp ds-actor" data-actor="B" data-stamp="1,B" data-actor-n="2">B</span><span class="ds-stamp" data-stamp="1,B">)</span></code></span>
+</span></td>
+<td><span class="ds-cells">
+<span class="ds-cell" data-in="0" data-out="1"><code class="ds-v"><span class="ds-heard ds-actor" data-actor="B" data-actor-n="2">B</span><span class="ds-heard ds-count" data-actor="B" data-actor-n="2">:0</span></code></span>
+<span class="ds-cell" data-in="1" data-out="3" data-cont="" data-event="a-1"><code class="ds-v"><span class="ds-heard ds-actor" data-actor="B" data-actor-n="2">B</span><span class="ds-heard ds-count" data-actor="B" data-actor-n="2">:0</span></code></span>
+<span class="ds-cell" data-in="3" data-out="8" data-cont="" data-event="a-enters"><code class="ds-v"><span class="ds-heard ds-actor" data-actor="B" data-actor-n="2">B</span><span class="ds-heard ds-count ds-changed" data-actor="B" data-actor-n="2">:1</span></code></span>
+<span class="ds-cell" data-in="8" data-out="9" data-cont="" data-event="a-3"><code class="ds-v"><span class="ds-heard ds-actor" data-actor="B" data-actor-n="2">B</span><span class="ds-heard ds-count ds-changed" data-actor="B" data-actor-n="2">:3</span></code></span>
+<span class="ds-cell" data-in="9" data-cont="" data-event="a-4"><code class="ds-v"><span class="ds-heard ds-actor" data-actor="B" data-actor-n="2">B</span><span class="ds-heard ds-count" data-actor="B" data-actor-n="2">:3</span></code></span>
+</span></td>
+<td><span class="ds-cells">
+<span class="ds-cell" data-in="0" data-out="1"><code class="ds-v"><span class="ds-holds">no</span></code></span>
+<span class="ds-cell" data-in="1" data-out="3" data-cont="" data-event="a-1"><code class="ds-v"><span class="ds-holds">no</span></code></span>
+<span class="ds-cell" data-in="3" data-out="8" data-cont="" data-event="a-enters"><code class="ds-v"><span class="ds-holds ds-changed">yes</span></code></span>
+<span class="ds-cell" data-in="8" data-out="9" data-cont="" data-event="a-3"><code class="ds-v"><span class="ds-holds">yes</span></code></span>
+<span class="ds-cell" data-in="9" data-cont="" data-event="a-4"><code class="ds-v"><span class="ds-holds ds-changed">no</span></code></span>
+</span></td>
+</tr>
+<tr class="ds-state-lane" data-lane="b" data-actor="B" data-actor-n="2">
+<th scope="row">B</th>
+<td><span class="ds-cells">
+<span class="ds-cell" data-in="0" data-out="2"><code class="ds-v"><span class="ds-lamport">0</span></code></span>
+<span class="ds-cell" data-in="2" data-out="4" data-cont="" data-event="b-1"><code class="ds-v"><span class="ds-lamport ds-changed">1</span></code></span>
+<span class="ds-cell" data-in="4" data-out="6" data-cont="" data-event="b-2"><code class="ds-v"><span class="ds-lamport ds-changed">3</span></code></span>
+<span class="ds-cell" data-in="6" data-out="10" data-cont="" data-event="b-waits"><code class="ds-v"><span class="ds-lamport ds-changed">4</span></code></span>
+<span class="ds-cell" data-in="10" data-cont="" data-event="b-enters"><code class="ds-v"><span class="ds-lamport ds-changed">6</span></code></span>
+</span></td>
+<td><span class="ds-cells">
+<span class="ds-cell" data-in="0" data-out="2"><code class="ds-v"><span class="ds-empty">(empty)</span></code></span>
+<span class="ds-cell" data-in="2" data-out="4" data-cont="" data-event="b-1"><code class="ds-v"><span class="ds-stamp ds-changed" data-stamp="1,B">(</span><span class="ds-stamp ds-time ds-changed" data-stamp="1,B">1</span><span class="ds-stamp ds-changed" data-stamp="1,B">,</span><span class="ds-stamp ds-actor ds-changed" data-actor="B" data-stamp="1,B" data-actor-n="2">B</span><span class="ds-stamp ds-changed" data-stamp="1,B">)</span></code></span>
+<span class="ds-cell" data-in="4" data-out="6" data-cont="" data-event="b-2"><code class="ds-v"><span class="ds-stamp ds-changed" data-stamp="1,A">(</span><span class="ds-stamp ds-time ds-changed" data-stamp="1,A">1</span><span class="ds-stamp ds-changed" data-stamp="1,A">,</span><span class="ds-stamp ds-actor ds-changed" data-actor="A" data-stamp="1,A" data-actor-n="1">A</span><span class="ds-stamp ds-changed" data-stamp="1,A">)</span> <span class="ds-stamp" data-stamp="1,B">(</span><span class="ds-stamp ds-time" data-stamp="1,B">1</span><span class="ds-stamp" data-stamp="1,B">,</span><span class="ds-stamp ds-actor" data-actor="B" data-stamp="1,B" data-actor-n="2">B</span><span class="ds-stamp" data-stamp="1,B">)</span></code></span>
+<span class="ds-cell" data-in="6" data-out="10" data-cont="" data-event="b-waits"><code class="ds-v"><span class="ds-stamp" data-stamp="1,A">(</span><span class="ds-stamp ds-time" data-stamp="1,A">1</span><span class="ds-stamp" data-stamp="1,A">,</span><span class="ds-stamp ds-actor" data-actor="A" data-stamp="1,A" data-actor-n="1">A</span><span class="ds-stamp" data-stamp="1,A">)</span> <span class="ds-stamp" data-stamp="1,B">(</span><span class="ds-stamp ds-time" data-stamp="1,B">1</span><span class="ds-stamp" data-stamp="1,B">,</span><span class="ds-stamp ds-actor" data-actor="B" data-stamp="1,B" data-actor-n="2">B</span><span class="ds-stamp" data-stamp="1,B">)</span></code></span>
+<span class="ds-cell" data-in="10" data-cont="" data-event="b-enters"><code class="ds-v"><span class="ds-stamp" data-stamp="1,B">(</span><span class="ds-stamp ds-time" data-stamp="1,B">1</span><span class="ds-stamp" data-stamp="1,B">,</span><span class="ds-stamp ds-actor" data-actor="B" data-stamp="1,B" data-actor-n="2">B</span><span class="ds-stamp" data-stamp="1,B">)</span></code></span>
+</span></td>
+<td><span class="ds-cells">
+<span class="ds-cell" data-in="0" data-out="2"><code class="ds-v"><span class="ds-heard ds-actor" data-actor="A" data-actor-n="1">A</span><span class="ds-heard ds-count" data-actor="A" data-actor-n="1">:0</span></code></span>
+<span class="ds-cell" data-in="2" data-out="4" data-cont="" data-event="b-1"><code class="ds-v"><span class="ds-heard ds-actor" data-actor="A" data-actor-n="1">A</span><span class="ds-heard ds-count" data-actor="A" data-actor-n="1">:0</span></code></span>
+<span class="ds-cell" data-in="4" data-out="6" data-cont="" data-event="b-2"><code class="ds-v"><span class="ds-heard ds-actor" data-actor="A" data-actor-n="1">A</span><span class="ds-heard ds-count ds-changed" data-actor="A" data-actor-n="1">:1</span></code></span>
+<span class="ds-cell" data-in="6" data-out="10" data-cont="" data-event="b-waits"><code class="ds-v"><span class="ds-heard ds-actor" data-actor="A" data-actor-n="1">A</span><span class="ds-heard ds-count ds-changed" data-actor="A" data-actor-n="1">:3</span></code></span>
+<span class="ds-cell" data-in="10" data-cont="" data-event="b-enters"><code class="ds-v"><span class="ds-heard ds-actor" data-actor="A" data-actor-n="1">A</span><span class="ds-heard ds-count ds-changed" data-actor="A" data-actor-n="1">:5</span></code></span>
+</span></td>
+<td><span class="ds-cells">
+<span class="ds-cell" data-in="0" data-out="2"><code class="ds-v"><span class="ds-holds">no</span></code></span>
+<span class="ds-cell" data-in="2" data-out="4" data-cont="" data-event="b-1"><code class="ds-v"><span class="ds-holds">no</span></code></span>
+<span class="ds-cell" data-in="4" data-out="6" data-cont="" data-event="b-2"><code class="ds-v"><span class="ds-holds">no</span></code></span>
+<span class="ds-cell" data-in="6" data-out="10" data-cont="" data-event="b-waits"><code class="ds-v"><span class="ds-holds">no</span></code></span>
+<span class="ds-cell" data-in="10" data-cont="" data-event="b-enters"><code class="ds-v"><span class="ds-holds ds-changed">yes</span></code></span>
+</span></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<figcaption class="ds-fig-caption">
+<p class="ds-fig-title">Lamport's mutex over FIFO channels: B waits its turn</p>
+<ol class="ds-notes">
+<li class="ds-note" data-in="5" data-note="1"><span class="ds-note-n" aria-hidden="true">1</span> <span class="ds-note-body">A's request <code class="ds-v"><span class="ds-stamp" data-stamp="1,A">(</span><span class="ds-stamp ds-time" data-stamp="1,A">1</span><span class="ds-stamp" data-stamp="1,A">,</span><span class="ds-stamp ds-actor" data-actor="A" data-stamp="1,A" data-actor-n="1">A</span><span class="ds-stamp" data-stamp="1,A">)</span></code> reaches B before anything A sent after it, and goes ahead of B's own <code class="ds-v"><span class="ds-stamp" data-stamp="1,B">(</span><span class="ds-stamp ds-time" data-stamp="1,B">1</span><span class="ds-stamp" data-stamp="1,B">,</span><span class="ds-stamp ds-actor" data-actor="B" data-stamp="1,B" data-actor-n="2">B</span><span class="ds-stamp" data-stamp="1,B">)</span></code> in B's queue</span></li>
+<li class="ds-note" data-in="7" data-note="2"><span class="ds-note-n" aria-hidden="true">2</span> <span class="ds-note-body">B has heard from A at <code class="ds-v">3</code>, later than its request, but A's request is first in its queue, so B waits</span></li>
+<li class="ds-note" data-in="11" data-note="3"><span class="ds-note-n" aria-hidden="true">3</span> <span class="ds-note-body">A releases: B drops <code class="ds-v"><span class="ds-stamp" data-stamp="1,A">(</span><span class="ds-stamp ds-time" data-stamp="1,A">1</span><span class="ds-stamp" data-stamp="1,A">,</span><span class="ds-stamp ds-actor" data-actor="A" data-stamp="1,A" data-actor-n="1">A</span><span class="ds-stamp" data-stamp="1,A">)</span></code> from its queue, its own request is first, and B enters</span></li>
+</ol>
+</figcaption>
+</figure>

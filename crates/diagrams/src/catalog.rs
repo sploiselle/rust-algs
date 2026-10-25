@@ -59,7 +59,9 @@ pub fn all() -> Vec<Figure> {
         causal_context_gap(),
         causal_context_steps(),
         mutex_fifo(),
+        mutex_fifo_steps(),
         mutex_overtaking(),
+        mutex_overtaking_steps(),
     ]
 }
 
@@ -817,6 +819,86 @@ fn causal_context_steps() -> Figure {
 /// The scenario in the library test
 /// `concurrent_requests_are_granted_in_stamp_order`.
 fn mutex_fifo() -> Figure {
+    Figure {
+        stem: "mutex-fifo",
+        diagram: Diagram::SpaceTime(mutex_fifo_run().d),
+        form: Form::Static,
+    }
+}
+
+/// The FIFO run one event at a time, each process's state in the panel from
+/// where it starts.
+fn mutex_fifo_steps() -> Figure {
+    let mut r = mutex_fifo_run();
+    narrate_requests(&mut r);
+    let a4 = r.a[3];
+    r.d.narrate(
+        a4,
+        rich![
+            "leaves: drops its request ",
+            v(&LamportStamp {
+                time: 1,
+                process: 'A'
+            }),
+            " from its queue and sends a release to B"
+        ],
+    );
+    Figure {
+        stem: "mutex-fifo-steps",
+        diagram: Diagram::SpaceTime(r.d),
+        form: Form::Steps,
+    }
+}
+
+/// A run of Lamport's mutex between processes A and B, for the figures that
+/// show it: the figure, with every claim either figure makes asserted, its
+/// lanes, and each process's events in order.
+struct MutexRun {
+    d: SpaceTime,
+    lanes: [LaneId; 2],
+    a: Vec<EventId>,
+    b: Vec<EventId>,
+}
+
+/// What both mutex step-throughs say about the opening, where the two runs
+/// agree: each process requests, then A gets B's request and enters. Each
+/// lane starts from a process that has done nothing yet.
+fn narrate_requests(r: &mut MutexRun) {
+    let stamp = |time, process| LamportStamp { time, process };
+    for (lane, me) in r.lanes.into_iter().zip(['A', 'B']) {
+        r.d.start_value(lane, LamportMutex::new(me, ['A', 'B']).spans());
+    }
+    // Both runs assert each request's stamp, and that A enters on getting B's.
+    assert!(
+        stamp(1, 'A') < stamp(1, 'B'),
+        "a tie in time goes to the smaller id"
+    );
+    r.d.narrate(
+        r.a[0],
+        rich![
+            "asks for the resource: stamps its request ",
+            v(&stamp(1, 'A')),
+            ", queues it, and sends it to B"
+        ],
+    );
+    r.d.narrate(
+        r.b[0],
+        rich![
+            "asks too, at the same Lamport time: ",
+            v(&stamp(1, 'B')),
+            " ranks after ",
+            v(&stamp(1, 'A')),
+            ", since A's id is smaller"
+        ],
+    );
+    r.d.narrate(
+        r.a[1],
+        "queues B's request behind its own and acks it. Its request is first, and it has heard from B past it, so A enters",
+    );
+}
+
+/// The run behind both FIFO mutex figures.
+fn mutex_fifo_run() -> MutexRun {
     let mut d = SpaceTime::new("Lamport's mutex over FIFO channels: B waits its turn");
     let (la, lb) = (d.actor_lane("A", 'A'), d.actor_lane("B", 'B'));
     let mut a = LamportMutex::new('A', ['A', 'B']);
@@ -923,10 +1005,11 @@ fn mutex_fifo() -> Figure {
             " from its queue, its own request is first, and B enters"
         ],
     );
-    Figure {
-        stem: "mutex-fifo",
-        diagram: Diagram::SpaceTime(d),
-        form: Form::Static,
+    MutexRun {
+        d,
+        lanes: [la, lb],
+        a: vec![a1, a2, a3, a4],
+        b: vec![b1, b2, b3, b4],
     }
 }
 
@@ -935,6 +1018,44 @@ fn mutex_fifo() -> Figure {
 /// processes enter. The scenario in the library test
 /// `overtaking_breaks_mutual_exclusion`.
 fn mutex_overtaking() -> Figure {
+    Figure {
+        stem: "mutex-overtaking",
+        diagram: Diagram::SpaceTime(mutex_overtaking_run().d),
+        form: Form::Static,
+    }
+}
+
+/// The overtaking run one event at a time: A's request is visibly still on
+/// its way when the ack A sent after it reaches B.
+fn mutex_overtaking_steps() -> Figure {
+    let mut r = mutex_overtaking_run();
+    narrate_requests(&mut r);
+    // The run asserts that both hold after B's ack, and that B's queue puts
+    // A's request first once it arrives.
+    r.d.narrate(
+        r.b[1],
+        "gets A's ack before A's earlier request, which is still on its way, and enters while A holds",
+    );
+    r.d.narrate(
+        r.b[2],
+        rich![
+            "gets A's request at last: ",
+            v(&LamportStamp {
+                time: 1,
+                process: 'A'
+            }),
+            " goes ahead of its own, so B no longer holds by its queue, but it is already in"
+        ],
+    );
+    Figure {
+        stem: "mutex-overtaking-steps",
+        diagram: Diagram::SpaceTime(r.d),
+        form: Form::Steps,
+    }
+}
+
+/// The run behind both overtaking mutex figures.
+fn mutex_overtaking_run() -> MutexRun {
     let mut d = SpaceTime::new("Lamport's mutex: an overtaking message lets two processes in");
     let (la, lb) = (d.actor_lane("A", 'A'), d.actor_lane("B", 'B'));
     let mut a = LamportMutex::new('A', ['A', 'B']);
@@ -1016,10 +1137,11 @@ fn mutex_overtaking() -> Figure {
             " arrives at last and goes to the head of B's queue, but B is already in"
         ],
     );
-    Figure {
-        stem: "mutex-overtaking",
-        diagram: Diagram::SpaceTime(d),
-        form: Form::Static,
+    MutexRun {
+        d,
+        lanes: [la, lb],
+        a: vec![a1, a2, a3],
+        b: vec![b1, b2, b3],
     }
 }
 

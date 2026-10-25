@@ -8,6 +8,8 @@
     { "stem": "causal-context-gap", "kind": "dot-line", "form": "static", "title": "A causal context tracks a gap a vector clock cannot" },
     { "stem": "causal-context-steps", "kind": "dot-line", "form": "steps", "title": "A causal context tracks a gap a vector clock cannot" },
     { "stem": "mutex-fifo", "kind": "space-time", "form": "static", "title": "Lamport's mutex over FIFO channels: B waits its turn" },
-    { "stem": "mutex-overtaking", "kind": "space-time", "form": "static", "title": "Lamport's mutex: an overtaking message lets two processes in" }
+    { "stem": "mutex-fifo-steps", "kind": "space-time", "form": "steps", "title": "Lamport's mutex over FIFO channels: B waits its turn" },
+    { "stem": "mutex-overtaking", "kind": "space-time", "form": "static", "title": "Lamport's mutex: an overtaking message lets two processes in" },
+    { "stem": "mutex-overtaking-steps", "kind": "space-time", "form": "steps", "title": "Lamport's mutex: an overtaking message lets two processes in" }
   ]
 }

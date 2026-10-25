@@ -165,7 +165,7 @@ the parts set their own paint, and a stroke on a group outlines its text.
 | `.ds-v` | a library value inside prose: a `<tspan>` in a message label, a `<code>` in a figcaption note |
 | `.ds-entry[data-actor]` | one entry of a vector clock, in values, labels and figcaption notes, as two parts: `.ds-actor` (`A`) and `.ds-count` (`:2`) |
 | `.ds-dot-id[data-dot][data-actor]`, `.ds-cloud`, `.ds-sym`, `.ds-str`, `.ds-empty` | a dot's name (also split into `.ds-actor` and `.ds-count`), a dot past a causal context's gap (also `.ds-dot-id`), a register entry's arrow and value, an empty register |
-| `.ds-stamp[data-actor]`, `.ds-heard[data-actor]`, `.ds-holds` | a Lamport stamp `(1,A)` (its time also `.ds-time`, its process also `.ds-actor`), the latest stamp a mutex process has heard from a peer (split into `.ds-actor` and `.ds-count`), and whether it holds the resource |
+| `.ds-stamp[data-stamp]`, `.ds-heard[data-actor]`, `.ds-holds`, `.ds-lamport` | a Lamport stamp `(1,A)`, every part keyed `data-stamp="1,A"` (its time also `.ds-time`, its process also `.ds-actor`); the latest stamp a mutex process has heard from a peer (split into `.ds-actor` and `.ds-count`); whether it holds the resource; a Lamport clock's time |
 | `.ds-field` | a field's name in a value made of named fields (`label::fields`), padded so the values form a column |
 | `g.ds-row[data-row]`, `[data-counter][data-dot][data-actor]` | a number line's rows, and its counters and dots |
 

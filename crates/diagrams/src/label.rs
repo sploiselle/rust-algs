@@ -214,7 +214,9 @@ impl Label for Timestamp {
 }
 
 /// `(1,A)`: the time (role `time`), then the process that breaks ties, as an
-/// actor's name, all inside a `stamp`.
+/// actor's name, all inside a `stamp` and keyed by it (`data-stamp="1,A"`), so a
+/// page can pick out one request wherever it appears, and a step-through can
+/// tell a request joining a queue from the ones already there.
 impl<P: Display> Label for LamportStamp<P> {
     fn label(&self) -> String {
         self.spans().plain()
@@ -222,16 +224,22 @@ impl<P: Display> Label for LamportStamp<P> {
 
     fn spans(&self) -> Rich {
         let process = self.process.to_string();
+        let key = format!("{},{process}", self.time);
         Rich {
-            lines: vec![vec![
-                Span::part("(", "stamp"),
-                Span::part(self.time.to_string(), "stamp").also("time"),
-                Span::part(",", "stamp"),
-                Span::part(process.clone(), "stamp")
-                    .also("actor")
-                    .with("actor", process),
-                Span::part(")", "stamp"),
-            ]],
+            lines: vec![
+                [
+                    Span::part("(", "stamp"),
+                    Span::part(self.time.to_string(), "stamp").also("time"),
+                    Span::part(",", "stamp"),
+                    Span::part(process.clone(), "stamp")
+                        .also("actor")
+                        .with("actor", process),
+                    Span::part(")", "stamp"),
+                ]
+                .into_iter()
+                .map(|s| s.with("stamp", &key))
+                .collect(),
+            ],
         }
     }
 }
@@ -271,7 +279,10 @@ impl<P: Ord + Clone + Display> Label for LamportMutex<P> {
         }
         let holds = if self.holds() { "yes" } else { "no" };
         fields(vec![
-            ("L", Span::value(self.clock().time().to_string()).into()),
+            (
+                "L",
+                Span::part(self.clock().time().to_string(), "lamport").into(),
+            ),
             ("queue", queue),
             ("heard", Rich { lines: vec![heard] }),
             ("holds", Span::part(holds, "holds").into()),
