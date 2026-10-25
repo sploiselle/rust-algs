@@ -172,7 +172,7 @@ impl<P: Ord + Clone> LamportMutex<P> {
     /// If this process already has a request outstanding.
     pub fn request(&mut self) -> Vec<Message<P>> {
         assert!(self.pending.is_none(), "already requested");
-        let mine = self.clock.send();
+        let mine = self.clock.tick();
         self.queue.insert(mine.clone());
         self.pending = Some(mine.clone());
         self.broadcast(mine, Kind::Request)
@@ -188,7 +188,7 @@ impl<P: Ord + Clone> LamportMutex<P> {
         assert!(self.holds(), "released without holding");
         let mine = self.pending.take().expect("a holder has a request");
         self.queue.remove(&mine);
-        let stamp = self.clock.send();
+        let stamp = self.clock.tick();
         self.broadcast(stamp, Kind::Release)
     }
 
@@ -210,7 +210,7 @@ impl<P: Ord + Clone> LamportMutex<P> {
                 self.queue.insert(msg.stamp);
                 Some(Message {
                     to,
-                    stamp: self.clock.send(),
+                    stamp: self.clock.tick(),
                     kind: Kind::Ack,
                 })
             }

@@ -356,7 +356,7 @@ fn lamport_trace() -> LamportTrace {
 
     a.tick();
     let a1 = record(&mut d, la, "A1", &a);
-    let m1 = a.send().time;
+    let m1 = a.tick().time;
     let a2 = record(&mut d, la, "A2", &a);
     b.tick();
     record(&mut d, lb, "B1", &b);
@@ -367,7 +367,7 @@ fn lamport_trace() -> LamportTrace {
     c.tick();
     record(&mut d, lc, "C1", &c);
     let c1_time = c.time();
-    let m2 = b.send().time;
+    let m2 = b.tick().time;
     let b3 = record(&mut d, lb, "B3", &b);
     c.receive(m2);
     let c2 = record(&mut d, lc, "C2", &c);
@@ -598,7 +598,7 @@ impl Process {
 
     fn send(&mut self, physical: u64) -> Stamps {
         self.physical.set(physical);
-        let lamport = self.lamport.send().time;
+        let lamport = self.lamport.tick().time;
         let hlc = self.hlc.now();
         self.vector.send(&self.id);
         self.stamps(physical, lamport, hlc)

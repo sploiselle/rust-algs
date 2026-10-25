@@ -76,19 +76,14 @@ impl<P: Clone> LamportClock<P> {
         self.time
     }
 
-    /// Rule 1: record a local event and return its stamp.
+    /// Rule 1: record a local or send event and return its stamp. A send
+    /// attaches the stamp to the message.
     pub fn tick(&mut self) -> LamportStamp<P> {
         self.time += 1;
         LamportStamp {
             time: self.time,
             process: self.process.clone(),
         }
-    }
-
-    /// Rule 1: record a send event and return its stamp, to attach to the
-    /// message.
-    pub fn send(&mut self) -> LamportStamp<P> {
-        self.tick()
     }
 
     /// Rule 2: absorb the time of an incoming message, record the receive
@@ -141,12 +136,12 @@ mod tests {
         );
 
         let a1 = la.tick();
-        let m1 = la.send();
+        let m1 = la.tick();
         let a2 = m1;
         let b1 = lb.tick();
         let b2 = lb.receive(m1.time);
         let c1 = lc.tick();
-        let m2 = lb.send();
+        let m2 = lb.tick();
         let b3 = m2;
         let c2 = lc.receive(m2.time);
         let a3 = la.tick();
@@ -172,7 +167,7 @@ mod tests {
             busy.tick();
         }
         quiet.tick();
-        assert_eq!(busy.send().time, 1_001);
+        assert_eq!(busy.tick().time, 1_001);
         assert_eq!(quiet.receive(1_001).time, 1_002);
         // A message from the past changes nothing but the receive itself.
         assert_eq!(quiet.receive(1).time, 1_003);
@@ -205,7 +200,7 @@ mod tests {
                 let stamp = match rng.below(3) {
                     0 => {
                         let to = (p + 1 + rng.below(PROCS - 1)) % PROCS;
-                        let stamp = clocks[p].send();
+                        let stamp = clocks[p].tick();
                         in_flight.push((to, id, stamp.time));
                         stamp
                     }
@@ -279,7 +274,7 @@ mod tests {
                 let (lamport, hlc) = match rng.below(3) {
                     0 => {
                         let to = (p + 1 + rng.below(PROCS - 1)) % PROCS;
-                        let stamps = (lamports[p].send().time, hlcs[p].now());
+                        let stamps = (lamports[p].tick().time, hlcs[p].now());
                         in_flight.push((to, stamps.0, stamps.1));
                         stamps
                     }
