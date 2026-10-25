@@ -30,17 +30,51 @@ pub fn figures_dir() -> PathBuf {
 }
 
 /// Every file the binary writes, as `(file name, contents)`: each catalog entry
-/// times each backend that renders it. The staleness test compares against
-/// exactly this list, so the two can't drift apart.
+/// times each backend that renders it, plus `index.json`. The staleness test
+/// compares against exactly this list, so the two can't drift apart.
 pub fn outputs() -> Vec<(String, String)> {
-    catalog::all()
+    let figures = catalog::all();
+    let mut out: Vec<(String, String)> = figures
         .iter()
         .flat_map(|figure| {
             render::ALL.iter().filter_map(move |backend| {
                 backend
-                    .render(&figure.diagram)
+                    .render(figure.stem, &figure.diagram)
                     .map(|text| (format!("{}.{}", figure.stem, backend.extension()), text))
             })
         })
-        .collect()
+        .collect();
+    out.push(("index.json".to_string(), index(&figures)));
+    out
+}
+
+/// The figures in catalog order, which is the order a reader should meet them
+/// in, with their kinds and titles: what a page or a preview script needs to
+/// list them without parsing the SVGs.
+fn index(figures: &[catalog::Figure]) -> String {
+    let rows: Vec<String> = figures
+        .iter()
+        .map(|f| {
+            format!(
+                r#"    {{ "stem": "{}", "kind": "{}", "title": "{}" }}"#,
+                json_escape(f.stem),
+                f.diagram.kind(),
+                json_escape(f.diagram.title())
+            )
+        })
+        .collect();
+    format!("{{\n  \"figures\": [\n{}\n  ]\n}}\n", rows.join(",\n"))
+}
+
+fn json_escape(s: &str) -> String {
+    let mut out = String::new();
+    for c in s.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            c if c.is_control() => out.push_str(&format!("\\u{:04x}", c as u32)),
+            c => out.push(c),
+        }
+    }
+    out
 }

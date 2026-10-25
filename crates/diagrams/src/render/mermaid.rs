@@ -25,7 +25,7 @@ impl Render for Mermaid {
         "mmd"
     }
 
-    fn space_time(&self, d: &SpaceTime) -> Option<String> {
+    fn space_time(&self, _stem: &str, d: &SpaceTime) -> Option<String> {
         let id = |lane: LaneId| format!("L{}", lane.0);
         let mut out = String::new();
         out.push_str("---\n");
@@ -38,6 +38,7 @@ impl Render for Mermaid {
                 multiline(&lane.name)
             ));
         }
+        let notes = d.notes();
         for (i, event) in d.events().iter().enumerate() {
             for m in d.messages().iter().filter(|m| m.to.0 == i) {
                 // Mermaid wants at least one character after the colon, so a
@@ -46,7 +47,7 @@ impl Render for Mermaid {
                 let label = if m.label.is_empty() {
                     "#8203;".to_string()
                 } else {
-                    multiline(&m.label)
+                    multiline(&m.label.plain())
                 };
                 out.push_str(&format!(
                     "    {}->>{}: {label}\n",
@@ -54,10 +55,10 @@ impl Render for Mermaid {
                     id(event.lane)
                 ));
             }
-            let parts: Vec<String> = [&event.name, &event.annotation]
+            let parts: Vec<String> = [event.name.clone(), event.annotation.plain()]
                 .into_iter()
                 .filter(|s| !s.is_empty())
-                .map(|s| multiline(s))
+                .map(|s| multiline(&s))
                 .collect();
             if !parts.is_empty() {
                 out.push_str(&format!(
@@ -66,20 +67,27 @@ impl Render for Mermaid {
                     parts.join("<br/>")
                 ));
             }
-            for c in d.callouts().iter().filter(|c| c.a.0.max(c.b.0) == i) {
+            for c in notes
+                .iter()
+                .map(|n| n.callout)
+                .filter(|c| c.a.0.max(c.b.0) == i)
+            {
                 let (a, b) = (d.lane_of(c.a), d.lane_of(c.b));
                 let over = if a == b {
                     id(a)
                 } else {
                     format!("{},{}", id(a), id(b))
                 };
-                out.push_str(&format!("    Note over {over}: {}\n", multiline(&c.text)));
+                out.push_str(&format!(
+                    "    Note over {over}: {}\n",
+                    multiline(&c.text.plain())
+                ));
             }
         }
         Some(out)
     }
 
-    fn dot_line(&self, _: &DotLine) -> Option<String> {
+    fn dot_line(&self, _stem: &str, _: &DotLine) -> Option<String> {
         None
     }
 }
@@ -128,7 +136,7 @@ mod tests {
         d.message(a1, b1, "m");
         d.message(b1, a2, "");
         d.callout(a1, b1, "note");
-        let text = Mermaid.space_time(&d).unwrap();
+        let text = Mermaid.space_time("t", &d).unwrap();
         let find = |s: &str| {
             text.find(s)
                 .unwrap_or_else(|| panic!("missing {s:?} in:\n{text}"))

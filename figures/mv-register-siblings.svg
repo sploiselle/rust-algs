@@ -1,73 +1,145 @@
-<svg xmlns="http://www.w3.org/2000/svg" class="ds-figure" role="img" viewBox="0 0 851 264" width="851" height="264">
+<svg xmlns="http://www.w3.org/2000/svg" class="ds-figure" data-figure="mv-register-siblings" data-kind="space-time" role="img" viewBox="0 0 931 278" width="931" height="278" style="--ds-w: 931" fill="currentColor" font-family="system-ui, sans-serif">
   <title>Multi-value register: concurrent writes become siblings</title>
+  <desc>Timelines for r1, r2. write on r1: A:1→"draft". sync on r2, receiving a message from write on r1: A:1→"draft". write on r1: A:2→"edit A". write on r2: B:1→"edit B". sync on r2, receiving a message from write on r1: A:2→"edit A"; B:1→"edit B". sync on r1, receiving a message from sync on r2: A:2→"edit A"; B:1→"edit B". write on r2: B:2→"merged". sync on r1, receiving a message from write on r2: B:2→"merged". sync (stale) on r1: B:2→"merged". Note 1: r1 and r2 agree: A:2 and B:1 are siblings, since neither writer was shown the other's value. Note 2: a copy of r2 taken right after its first sync still holds A:1, but r1 has already seen that write, so "draft" is not resurrected.</desc>
   <style>
-    .ds-figure { max-width: 100%; height: auto; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; font-size: 13px; }
-    .ds-figure .ds-lane { stroke: currentColor; stroke-width: 1; opacity: var(--ds-lane-opacity, .35); }
-    .ds-figure .ds-lane-arrow { fill: currentColor; opacity: var(--ds-lane-opacity, .35); }
-    .ds-figure .ds-lane-name { fill: currentColor; font-weight: 600; }
-    .ds-figure .ds-event { fill: var(--ds-event, currentColor); }
-    .ds-figure .ds-name, .ds-figure .ds-label, .ds-figure .ds-callout { fill: currentColor; }
-    .ds-figure .ds-label { font-size: 11px; }
-    .ds-figure .ds-annotation { font-family: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace; font-size: 11px; fill: var(--ds-annotation, currentColor); }
-    .ds-figure .ds-message { stroke: var(--ds-message, currentColor); stroke-width: 1.5; fill: none; }
-    .ds-figure .ds-arrow { fill: var(--ds-message, currentColor); }
-    .ds-figure .ds-callout-ring { fill: none; stroke: var(--ds-accent, currentColor); stroke-width: 1.5; stroke-dasharray: 2 2; }
-    .ds-figure .ds-callout-mark { fill: var(--ds-accent, currentColor); font-size: 10px; font-weight: 700; }
-    .ds-figure .ds-dot { fill: currentColor; }
-    .ds-figure .ds-dot.ds-gap { fill: none; stroke: currentColor; stroke-dasharray: 3 2; }
-    .ds-figure .ds-claim { fill: currentColor; }
-    .ds-figure .ds-wrong { fill: var(--ds-wrong, currentColor); font-weight: 700; }
+    @layer ds-figure {
+      .ds-figure { max-width: 100%; height: auto; font-family: var(--ds-font-sans, system-ui, -apple-system, "Segoe UI", sans-serif); }
+      .ds-figure:root { color-scheme: light dark; color: CanvasText; }
+      .ds-figure text { fill: var(--ds-ink, currentColor); }
+      .ds-figure :is(.ds-event-value, .ds-row-value, .ds-v) { font-family: var(--ds-font-mono, ui-monospace, "SF Mono", Menlo, Consolas, monospace); }
+      .ds-figure .ds-sym { font-family: var(--ds-font-sym, system-ui, sans-serif); }
+      .ds-figure .ds-lane-line { stroke: var(--ds-lane-line, var(--ds-rule, var(--ds-ink, currentColor))); stroke-opacity: var(--ds-lane-opacity, .5); stroke-width: var(--ds-lane-width, 1); }
+      .ds-figure .ds-lane-head { fill: var(--ds-lane-line, var(--ds-rule, var(--ds-ink, currentColor))); fill-opacity: var(--ds-lane-opacity, .5); }
+      .ds-figure [data-actor-n="1"] { --ds-actor: var(--ds-actor-1); }
+      .ds-figure [data-actor-n="2"] { --ds-actor: var(--ds-actor-2); }
+      .ds-figure [data-actor-n="3"] { --ds-actor: var(--ds-actor-3); }
+      .ds-figure [data-actor-n="4"] { --ds-actor: var(--ds-actor-4); }
+      .ds-figure [data-actor-n="5"] { --ds-actor: var(--ds-actor-5); }
+      .ds-figure [data-actor-n="6"] { --ds-actor: var(--ds-actor-6); }
+      .ds-figure [data-actor-n="7"] { --ds-actor: var(--ds-actor-7); }
+      .ds-figure [data-actor-n="8"] { --ds-actor: var(--ds-actor-8); }
+      .ds-figure .ds-actor { fill: var(--ds-actor); }
+      .ds-figure .ds-lane-name { fill: var(--ds-lane-name, var(--ds-actor, var(--ds-ink, currentColor))); font-weight: 600; }
+      .ds-figure .ds-row-name { fill: var(--ds-lane-name, var(--ds-ink, currentColor)); font-weight: 600; }
+      .ds-figure .ds-event-dot { fill: var(--ds-event-dot, var(--ds-ink, currentColor)); }
+      .ds-figure .ds-event-name { fill: var(--ds-event-name, var(--ds-muted, var(--ds-ink, currentColor))); }
+      .ds-figure .ds-field { fill: var(--ds-field, var(--ds-muted, var(--ds-ink, currentColor))); }
+      .ds-figure :is(.ds-event-value, .ds-row-value) { fill: var(--ds-value, var(--ds-ink, currentColor)); }
+      .ds-figure .ds-message-line { fill: none; stroke: var(--ds-message-line, var(--ds-ink, currentColor)); stroke-width: var(--ds-message-width, 1.5); }
+      .ds-figure .ds-message-head { fill: var(--ds-message-line, var(--ds-ink, currentColor)); }
+      .ds-figure .ds-message-label { fill: var(--ds-message-label, var(--ds-muted, var(--ds-ink, currentColor))); }
+      .ds-figure .ds-ring { fill: none; stroke: var(--ds-accent, var(--ds-ink, currentColor)); stroke-width: var(--ds-ring-width, 1.5); stroke-dasharray: var(--ds-ring-dash, none); }
+      .ds-figure .ds-badge-disc { fill: var(--ds-accent, var(--ds-ink, currentColor)); }
+      .ds-figure .ds-badge-n { fill: var(--ds-on-accent, Canvas); font-weight: 700; }
+      .ds-figure .ds-caption { fill: var(--ds-caption, var(--ds-ink, currentColor)); }
+      .ds-figure :is(.ds-counter, .ds-legend) { fill: var(--ds-muted, var(--ds-ink, currentColor)); }
+      .ds-figure :is(.ds-dot, .ds-claim) { fill: var(--ds-dot, var(--ds-ink, currentColor)); }
+      .ds-figure .ds-dot.ds-gap { fill: none; stroke: var(--ds-gap, var(--ds-ink, currentColor)); stroke-width: 1.5; stroke-dasharray: 3 2; }
+      .ds-figure .ds-wrong { fill: var(--ds-wrong, var(--ds-accent, var(--ds-ink, currentColor))); font-weight: 700; }
+    }
   </style>
-  <line class="ds-lane" x1="35" y1="33" x2="843" y2="33"/>
-  <polygon class="ds-lane-arrow" points="843,29 851,33 843,37"/>
-  <text class="ds-lane-name" x="25" y="37" text-anchor="end">r1</text>
-  <line class="ds-lane" x1="35" y1="127" x2="843" y2="127"/>
-  <polygon class="ds-lane-arrow" points="843,123 851,127 843,131"/>
-  <text class="ds-lane-name" x="25" y="131" text-anchor="end">r2</text>
-  <circle class="ds-event" cx="123" cy="33" r="5"/>
-  <circle class="ds-event" cx="195" cy="127" r="5"/>
-  <circle class="ds-event" cx="267" cy="33" r="5"/>
-  <circle class="ds-event" cx="339" cy="127" r="5"/>
-  <circle class="ds-event" cx="439" cy="127" r="5"/>
-  <circle class="ds-event" cx="511" cy="33" r="5"/>
-  <circle class="ds-event" cx="583" cy="127" r="5"/>
-  <circle class="ds-event" cx="655" cy="33" r="5"/>
-  <circle class="ds-event" cx="795" cy="33" r="5"/>
-  <text class="ds-name" x="123" y="17.8" text-anchor="middle">write</text>
-  <text class="ds-name" x="191" y="111.8" text-anchor="start">sync</text>
-  <text class="ds-name" x="267" y="17.8" text-anchor="middle">write</text>
-  <text class="ds-name" x="339" y="111.8" text-anchor="middle">write</text>
-  <text class="ds-name" x="439" y="148.8" text-anchor="middle">sync</text>
-  <text class="ds-name" x="511" y="17.8" text-anchor="middle">sync</text>
-  <text class="ds-name" x="587" y="111.8" text-anchor="end">write</text>
-  <text class="ds-name" x="655" y="17.8" text-anchor="middle">sync</text>
-  <text class="ds-name" x="795" y="17.8" text-anchor="middle">sync (stale)</text>
-  <text class="ds-annotation" x="127" y="53.2" text-anchor="end">A:1→"draft"</text>
-  <text class="ds-annotation" x="195" y="147.2" text-anchor="middle">A:1→"draft"</text>
-  <text class="ds-annotation" x="271" y="53.2" text-anchor="end">A:2→"edit A"</text>
-  <text class="ds-annotation" x="339" y="147.2" text-anchor="middle">B:1→"edit B"</text>
-  <text class="ds-annotation" x="439" y="164.2" text-anchor="middle">A:2→"edit A"<tspan x="439" dy="13">B:1→"edit B"</tspan></text>
-  <text class="ds-annotation" x="507" y="53.2" text-anchor="start">A:2→"edit A"<tspan x="507" dy="13">B:1→"edit B"</tspan></text>
-  <text class="ds-annotation" x="583" y="147.2" text-anchor="middle">B:2→"merged"</text>
-  <text class="ds-annotation" x="651" y="53.2" text-anchor="start">B:2→"merged"</text>
-  <text class="ds-annotation" x="795" y="53.2" text-anchor="middle">B:2→"merged"</text>
-  <line class="ds-message" x1="127.3" y1="38.6" x2="184.7" y2="113.5"/>
-  <polygon class="ds-arrow" points="190.1,120.6 181.9,115.6 187.4,111.4"/>
-  <line class="ds-message" x1="273.1" y1="36.4" x2="424.1" y2="118.8"/>
-  <polygon class="ds-arrow" points="432,123.2 422.4,121.9 425.8,115.8"/>
-  <line class="ds-message" x1="443.3" y1="121.4" x2="500.7" y2="46.5"/>
-  <polygon class="ds-arrow" points="506.1,39.4 503.4,48.6 497.9,44.4"/>
-  <line class="ds-message" x1="587.3" y1="121.4" x2="644.7" y2="46.5"/>
-  <polygon class="ds-arrow" points="650.1,39.4 647.4,48.6 641.9,44.4"/>
-  <circle class="ds-callout-ring" cx="195" cy="127" r="9"/>
-  <circle class="ds-callout-ring" cx="439" cy="127" r="9"/>
-  <circle class="ds-callout-ring" cx="511" cy="33" r="9"/>
-  <circle class="ds-callout-ring" cx="795" cy="33" r="9"/>
-  <text class="ds-callout-mark" x="207" y="131" text-anchor="start">2</text>
-  <text class="ds-callout-mark" x="451" y="131" text-anchor="start">1</text>
-  <text class="ds-callout-mark" x="523" y="37" text-anchor="start">1</text>
-  <text class="ds-callout-mark" x="807" y="37" text-anchor="start">2</text>
-  <text class="ds-callout" x="35" y="211" text-anchor="start">1. r1 and r2 agree: A:2 and B:1 are siblings, since neither writer was shown the other's value</text>
-  <text class="ds-callout" x="35" y="229" text-anchor="start">2. a copy of r2 taken right after its first sync still holds A:1, but r1 has already seen that write, so</text>
-  <text class="ds-callout" x="51" y="247" text-anchor="start">"draft" is not resurrected</text>
+  <g class="ds-lanes">
+    <g class="ds-lane" data-lane="r1" data-actor="A" data-actor-n="1">
+      <line class="ds-lane-line" x1="36" y1="33" x2="923" y2="33" stroke="currentColor" stroke-opacity=".5"/>
+      <polygon class="ds-lane-head" points="923,29 931,33 923,37" fill-opacity=".5"/>
+      <text class="ds-lane-name" x="26" y="38" text-anchor="end" font-size="14">r1</text>
+    </g>
+    <g class="ds-lane" data-lane="r2" data-actor="B" data-actor-n="2">
+      <line class="ds-lane-line" x1="36" y1="131" x2="923" y2="131" stroke="currentColor" stroke-opacity=".5"/>
+      <polygon class="ds-lane-head" points="923,127 931,131 923,135" fill-opacity=".5"/>
+      <text class="ds-lane-name" x="26" y="136" text-anchor="end" font-size="14">r2</text>
+    </g>
+  </g>
+  <g class="ds-messages">
+    <g class="ds-message" data-message="m1" data-from="r1-1" data-to="r2-1">
+      <line class="ds-message-line" x1="145.1" y1="38.6" x2="200.6" y2="114.1" stroke="currentColor" stroke-width="1.5"/>
+      <polygon class="ds-message-head" points="205.9,121.3 197.7,116.1 203.4,112"/>
+    </g>
+    <g class="ds-message" data-message="m2" data-from="r1-2" data-to="r2-3">
+      <line class="ds-message-line" x1="291.2" y1="36.2" x2="455.4" y2="121.3" stroke="currentColor" stroke-width="1.5"/>
+      <polygon class="ds-message-head" points="463.3,125.5 453.7,124.4 457,118.2"/>
+    </g>
+    <g class="ds-message" data-message="m3" data-from="r2-3" data-to="r1-3" data-notes="1">
+      <line class="ds-message-line" x1="480.5" y1="122.1" x2="533.6" y2="49.9" stroke="currentColor" stroke-width="1.5"/>
+      <polygon class="ds-message-head" points="538.9,42.7 536.4,52 530.7,47.9"/>
+    </g>
+    <g class="ds-message" data-message="m4" data-from="r2-4" data-to="r1-4">
+      <line class="ds-message-line" x1="622.1" y1="125.4" x2="679.9" y2="46.7" stroke="currentColor" stroke-width="1.5"/>
+      <polygon class="ds-message-head" points="685.3,39.4 682.8,48.8 677.1,44.6"/>
+    </g>
+  </g>
+  <g class="ds-events">
+    <g class="ds-event" data-event="r1-1" data-lane="r1" data-actor="A" data-actor-n="1">
+      <circle class="ds-event-dot" cx="141" cy="33" r="5"/>
+      <text class="ds-event-name" x="141" y="17.8" text-anchor="middle" font-size="13">write</text>
+      <text class="ds-event-value" x="145" y="54.8" text-anchor="end" font-size="13" font-family="ui-monospace, Menlo, Consolas, monospace"><tspan class="ds-dot-id ds-actor" data-actor="A" data-dot="A:1" data-actor-n="1">A</tspan><tspan class="ds-dot-id ds-count" data-actor="A" data-dot="A:1" data-actor-n="1">:1</tspan><tspan class="ds-sym">→</tspan><tspan class="ds-str">"draft"</tspan></text>
+    </g>
+    <g class="ds-event" data-event="r2-1" data-lane="r2" data-actor="B" data-actor-n="2" data-notes="2">
+      <circle class="ds-event-dot" cx="213" cy="131" r="5"/>
+      <text class="ds-event-name" x="209" y="115.8" text-anchor="start" font-size="13">sync</text>
+      <text class="ds-event-value" x="213" y="152.8" text-anchor="middle" font-size="13" font-family="ui-monospace, Menlo, Consolas, monospace"><tspan class="ds-dot-id ds-actor" data-actor="A" data-dot="A:1" data-actor-n="1">A</tspan><tspan class="ds-dot-id ds-count" data-actor="A" data-dot="A:1" data-actor-n="1">:1</tspan><tspan class="ds-sym">→</tspan><tspan class="ds-str">"draft"</tspan></text>
+    </g>
+    <g class="ds-event" data-event="r1-2" data-lane="r1" data-actor="A" data-actor-n="1">
+      <circle class="ds-event-dot" cx="285" cy="33" r="5"/>
+      <text class="ds-event-name" x="285" y="17.8" text-anchor="middle" font-size="13">write</text>
+      <text class="ds-event-value" x="289" y="54.8" text-anchor="end" font-size="13" font-family="ui-monospace, Menlo, Consolas, monospace"><tspan class="ds-dot-id ds-actor" data-actor="A" data-dot="A:2" data-actor-n="1">A</tspan><tspan class="ds-dot-id ds-count" data-actor="A" data-dot="A:2" data-actor-n="1">:2</tspan><tspan class="ds-sym">→</tspan><tspan class="ds-str">"edit A"</tspan></text>
+    </g>
+    <g class="ds-event" data-event="r2-2" data-lane="r2" data-actor="B" data-actor-n="2">
+      <circle class="ds-event-dot" cx="357" cy="131" r="5"/>
+      <text class="ds-event-name" x="357" y="115.8" text-anchor="middle" font-size="13">write</text>
+      <text class="ds-event-value" x="357" y="152.8" text-anchor="middle" font-size="13" font-family="ui-monospace, Menlo, Consolas, monospace"><tspan class="ds-dot-id ds-actor" data-actor="B" data-dot="B:1" data-actor-n="2">B</tspan><tspan class="ds-dot-id ds-count" data-actor="B" data-dot="B:1" data-actor-n="2">:1</tspan><tspan class="ds-sym">→</tspan><tspan class="ds-str">"edit B"</tspan></text>
+    </g>
+    <g class="ds-event" data-event="r2-3" data-lane="r2" data-actor="B" data-actor-n="2" data-notes="1">
+      <circle class="ds-event-dot" cx="474" cy="131" r="5"/>
+      <text class="ds-event-name" x="474" y="152.8" text-anchor="middle" font-size="13">sync</text>
+      <text class="ds-event-value" x="474" y="169.8" text-anchor="middle" font-size="13" font-family="ui-monospace, Menlo, Consolas, monospace"><tspan class="ds-dot-id ds-actor" data-actor="A" data-dot="A:2" data-actor-n="1">A</tspan><tspan class="ds-dot-id ds-count" data-actor="A" data-dot="A:2" data-actor-n="1">:2</tspan><tspan class="ds-sym">→</tspan><tspan class="ds-str">"edit A"</tspan><tspan x="474" dy="15"><tspan class="ds-dot-id ds-actor" data-actor="B" data-dot="B:1" data-actor-n="2">B</tspan><tspan class="ds-dot-id ds-count" data-actor="B" data-dot="B:1" data-actor-n="2">:1</tspan><tspan class="ds-sym">→</tspan><tspan class="ds-str">"edit B"</tspan></tspan></text>
+    </g>
+    <g class="ds-event" data-event="r1-3" data-lane="r1" data-actor="A" data-actor-n="1" data-notes="1">
+      <circle class="ds-event-dot" cx="546" cy="33" r="5"/>
+      <text class="ds-event-name" x="546" y="17.8" text-anchor="middle" font-size="13">sync</text>
+      <text class="ds-event-value" x="542" y="54.8" text-anchor="start" font-size="13" font-family="ui-monospace, Menlo, Consolas, monospace"><tspan class="ds-dot-id ds-actor" data-actor="A" data-dot="A:2" data-actor-n="1">A</tspan><tspan class="ds-dot-id ds-count" data-actor="A" data-dot="A:2" data-actor-n="1">:2</tspan><tspan class="ds-sym">→</tspan><tspan class="ds-str">"edit A"</tspan><tspan x="542" dy="15"><tspan class="ds-dot-id ds-actor" data-actor="B" data-dot="B:1" data-actor-n="2">B</tspan><tspan class="ds-dot-id ds-count" data-actor="B" data-dot="B:1" data-actor-n="2">:1</tspan><tspan class="ds-sym">→</tspan><tspan class="ds-str">"edit B"</tspan></tspan></text>
+    </g>
+    <g class="ds-event" data-event="r2-4" data-lane="r2" data-actor="B" data-actor-n="2">
+      <circle class="ds-event-dot" cx="618" cy="131" r="5"/>
+      <text class="ds-event-name" x="622" y="115.8" text-anchor="end" font-size="13">write</text>
+      <text class="ds-event-value" x="618" y="152.8" text-anchor="middle" font-size="13" font-family="ui-monospace, Menlo, Consolas, monospace"><tspan class="ds-dot-id ds-actor" data-actor="B" data-dot="B:2" data-actor-n="2">B</tspan><tspan class="ds-dot-id ds-count" data-actor="B" data-dot="B:2" data-actor-n="2">:2</tspan><tspan class="ds-sym">→</tspan><tspan class="ds-str">"merged"</tspan></text>
+    </g>
+    <g class="ds-event" data-event="r1-4" data-lane="r1" data-actor="A" data-actor-n="1">
+      <circle class="ds-event-dot" cx="690" cy="33" r="5"/>
+      <text class="ds-event-name" x="690" y="17.8" text-anchor="middle" font-size="13">sync</text>
+      <text class="ds-event-value" x="686" y="54.8" text-anchor="start" font-size="13" font-family="ui-monospace, Menlo, Consolas, monospace"><tspan class="ds-dot-id ds-actor" data-actor="B" data-dot="B:2" data-actor-n="2">B</tspan><tspan class="ds-dot-id ds-count" data-actor="B" data-dot="B:2" data-actor-n="2">:2</tspan><tspan class="ds-sym">→</tspan><tspan class="ds-str">"merged"</tspan></text>
+    </g>
+    <g class="ds-event" data-event="stale-sync" data-lane="r1" data-actor="A" data-actor-n="1" data-notes="2">
+      <circle class="ds-event-dot" cx="855.5" cy="33" r="5"/>
+      <text class="ds-event-name" x="855.5" y="17.8" text-anchor="middle" font-size="13">sync (stale)</text>
+      <text class="ds-event-value" x="855.5" y="54.8" text-anchor="middle" font-size="13" font-family="ui-monospace, Menlo, Consolas, monospace"><tspan class="ds-dot-id ds-actor" data-actor="B" data-dot="B:2" data-actor-n="2">B</tspan><tspan class="ds-dot-id ds-count" data-actor="B" data-dot="B:2" data-actor-n="2">:2</tspan><tspan class="ds-sym">→</tspan><tspan class="ds-str">"merged"</tspan></text>
+    </g>
+  </g>
+  <g class="ds-marks">
+    <circle class="ds-ring" data-event="r2-1" data-notes="2" cx="213" cy="131" r="9" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <circle class="ds-ring" data-event="r2-3" data-notes="1" cx="474" cy="131" r="9" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <circle class="ds-ring" data-event="r1-3" data-notes="1" cx="546" cy="33" r="9" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <circle class="ds-ring" data-event="stale-sync" data-notes="2" cx="855.5" cy="33" r="9" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <g class="ds-badge" data-note="2" data-event="r2-1">
+      <circle class="ds-badge-disc" cx="250.5" cy="112.5" r="7.5"/>
+      <text class="ds-badge-n" x="250.5" y="116.5" text-anchor="middle" font-size="11" fill="Canvas">2</text>
+    </g>
+    <g class="ds-badge" data-note="1" data-event="r2-3">
+      <circle class="ds-badge-disc" cx="500.5" cy="149.5" r="7.5"/>
+      <text class="ds-badge-n" x="500.5" y="153.5" text-anchor="middle" font-size="11" fill="Canvas">1</text>
+    </g>
+    <g class="ds-badge" data-note="1" data-event="r1-3">
+      <circle class="ds-badge-disc" cx="572.5" cy="14.5" r="7.5"/>
+      <text class="ds-badge-n" x="572.5" y="18.5" text-anchor="middle" font-size="11" fill="Canvas">1</text>
+    </g>
+    <g class="ds-badge" data-note="2" data-event="stale-sync">
+      <circle class="ds-badge-disc" cx="911" cy="14.5" r="7.5"/>
+      <text class="ds-badge-n" x="911" y="18.5" text-anchor="middle" font-size="11" fill="Canvas">2</text>
+    </g>
+  </g>
+  <g class="ds-captions">
+    <text class="ds-caption" data-note="1" x="36" y="220" text-anchor="start" font-size="14">1. r1 and r2 agree: A:2 and B:1 are siblings, since neither writer was shown the other's value</text>
+    <text class="ds-caption" data-note="2" x="36" y="240" text-anchor="start" font-size="14">2. a copy of r2 taken right after its first sync still holds A:1, but r1 has already seen that write, so "draft"</text>
+    <text class="ds-caption" data-note="2" x="52" y="260" text-anchor="start" font-size="14">is not resurrected</text>
+  </g>
 </svg>

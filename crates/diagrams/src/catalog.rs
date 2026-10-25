@@ -13,8 +13,8 @@ use dist_sys::clock::hybrid::ManualClock;
 use dist_sys::clock::{CausalContext, Causality, Dot, Hlc, LamportClock, Timestamp, VectorClock};
 use dist_sys::crdt::MvRegister;
 
-use crate::label::{Label, sorted_entries};
-use crate::model::{Claim, Diagram, DotLine, SpaceTime};
+use crate::label::{Label, fields, phrase, sorted_entries, v};
+use crate::model::{Claim, Diagram, DotLine, EventId, Rich, SpaceTime, Span, rich};
 
 /// A figure and the file stem its renderings are written under.
 pub struct Figure {
@@ -38,31 +38,46 @@ pub fn all() -> Vec<Figure> {
 /// concurrent with B3; A1 reaches C2 only through B.
 fn vector_clock_trace() -> Figure {
     let mut d = SpaceTime::new("Vector clocks: three processes, two messages");
-    let (la, lb, lc) = (d.lane("A"), d.lane("B"), d.lane("C"));
     let (a, b, c) = ('A', 'B', 'C');
+    let (la, lb, lc) = (
+        d.actor_lane("A", a),
+        d.actor_lane("B", b),
+        d.actor_lane("C", c),
+    );
     let (mut va, mut vb, mut vc) = (VectorClock::new(), VectorClock::new(), VectorClock::new());
 
+    // Every event's clock, to check the drawn graph against the library.
+    let mut clocks: Vec<(EventId, VectorClock<char>)> = Vec::new();
+
     va.tick(&a);
-    let a1 = d.event(la, "A1", va.label());
+    let a1 = d.event(la, "A1", va.spans());
+    clocks.push((a1, va.clone()));
     let a1_clock = va.clone();
     let m1 = va.send(&a);
-    let a2 = d.event(la, "A2", va.label());
+    let a2 = d.event(la, "A2", va.spans());
+    clocks.push((a2, va.clone()));
     vb.tick(&b);
-    d.event(lb, "B1", vb.label());
+    let b1 = d.event(lb, "B1", vb.spans());
+    clocks.push((b1, vb.clone()));
     vb.receive(&b, &m1);
-    let b2 = d.event(lb, "B2", vb.label());
-    d.message(a2, b2, format!("m1 {}", m1.label()));
+    let b2 = d.event(lb, "B2", vb.spans());
+    clocks.push((b2, vb.clone()));
+    let m1_msg = d.message(a2, b2, rich!["m1 ", v(&m1)]);
     vc.tick(&c);
-    d.event(lc, "C1", vc.label());
+    let c1 = d.event(lc, "C1", vc.spans());
+    clocks.push((c1, vc.clone()));
     let m2 = vb.send(&b);
-    let b3 = d.event(lb, "B3", vb.label());
+    let b3 = d.event(lb, "B3", vb.spans());
+    clocks.push((b3, vb.clone()));
     let b3_clock = vb.clone();
     vc.receive(&c, &m2);
-    let c2 = d.event(lc, "C2", vc.label());
+    let c2 = d.event(lc, "C2", vc.spans());
+    clocks.push((c2, vc.clone()));
     let c2_clock = vc.clone();
-    d.message(b3, c2, format!("m2 {}", m2.label()));
+    let m2_msg = d.message(b3, c2, rich!["m2 ", v(&m2)]);
     va.tick(&a);
-    let a3 = d.event(la, "A3", va.label());
+    let a3 = d.event(la, "A3", va.spans());
+    clocks.push((a3, va.clone()));
     let a3_clock = va.clone();
 
     assert_eq!(a1_clock, VectorClock::from_iter([(a, 1)]));
@@ -75,25 +90,62 @@ fn vector_clock_trace() -> Figure {
     let a1_c2 = a1_clock.compare(&c2_clock);
     assert_eq!(a1_c2, Causality::Before);
     assert!(a1_clock < m2, "m2 carries A1 because B received m1 first");
-    d.callout(
+    // The arrows are wired by hand above. The graph they draw must agree with
+    // the clocks about every pair of events, or the picture would contradict
+    // the values printed on it.
+    assert_eq!(
+        clocks.len(),
+        d.events().len(),
+        "every event's clock is checked"
+    );
+    let pasts = d.pasts();
+    for (x, cx) in &clocks {
+        for (y, cy) in &clocks {
+            assert_eq!(
+                pasts[y.0].contains(x),
+                cx < cy,
+                "the drawn arrows and the clocks disagree about {} and {}",
+                cx.label(),
+                cy.label()
+            );
+        }
+    }
+    assert!(
+        d.recorded_before(b3, a3),
+        "the note says A3 is later in real time"
+    );
+    // Pinned keys, so a post can address A1 or m2 whatever is added around them.
+    for (e, _) in &clocks {
+        let key = d.events()[e.0].name.to_lowercase();
+        d.pin_event(*e, &key);
+    }
+    d.pin_message(m1_msg, "m1");
+    d.pin_message(m2_msg, "m2");
+    d.callout_concurrent(
         a3,
         b3,
-        format!(
-            "A3 {} B3: {} and {} are incomparable, though A3 happened last",
-            a3_b3.label(),
-            a3_clock.label(),
-            b3_clock.label()
-        ),
+        rich![
+            "A3 ",
+            phrase(a3_b3),
+            " B3: ",
+            v(&a3_clock),
+            " and ",
+            v(&b3_clock),
+            " are incomparable, though A3 is later in real time"
+        ],
     );
-    d.callout(
+    d.callout_before(
         a1,
         c2,
-        format!(
-            "A1 {} C2: {} < {}, carried by m1 then m2",
-            a1_c2.label(),
-            a1_clock.label(),
-            c2_clock.label()
-        ),
+        rich![
+            "A1 ",
+            phrase(a1_c2),
+            " C2: ",
+            v(&a1_clock),
+            " < ",
+            v(&c2_clock),
+            ", carried by m1 then m2"
+        ],
     );
     Figure {
         stem: "vector-clock-trace",
@@ -107,29 +159,33 @@ fn vector_clock_trace() -> Figure {
 /// HLC puts B3 first, and only the vector clocks say neither happened first.
 fn clock_comparison() -> Figure {
     let mut d = SpaceTime::new("Three clocks, one trace: Lamport, hybrid logical, and vector");
-    let (la, lb, lc) = (d.lane("A"), d.lane("B"), d.lane("C"));
+    let (la, lb, lc) = (
+        d.actor_lane("A", 'A'),
+        d.actor_lane("B", 'B'),
+        d.actor_lane("C", 'C'),
+    );
     let (mut a, mut b, mut c) = (Process::new('A'), Process::new('B'), Process::new('C'));
 
     // Physical readings: A and C agree with true time, B's clock runs behind.
     const B_BEHIND: u64 = 25;
     let a1_stamps = a.local(10);
-    d.event(la, "A1", a1_stamps.label());
+    let a1 = d.event(la, "A1", a1_stamps.spans());
     let m1 = a.send(20);
-    let a2 = d.event(la, "A2", m1.label());
+    let a2 = d.event(la, "A2", m1.spans());
     let b1_stamps = b.local(30 - B_BEHIND);
-    d.event(lb, "B1", b1_stamps.label());
+    let b1 = d.event(lb, "B1", b1_stamps.spans());
     let b2_stamps = b.receive(40 - B_BEHIND, &m1);
-    let b2 = d.event(lb, "B2", b2_stamps.label());
-    d.message(a2, b2, "m1");
+    let b2 = d.event(lb, "B2", b2_stamps.spans());
+    let m1_msg = d.message(a2, b2, "m1");
     let c1_stamps = c.local(50);
-    d.event(lc, "C1", c1_stamps.label());
+    let c1 = d.event(lc, "C1", c1_stamps.spans());
     let m2 = b.send(60 - B_BEHIND);
-    let b3 = d.event(lb, "B3", m2.label());
+    let b3 = d.event(lb, "B3", m2.spans());
     let c2_stamps = c.receive(70, &m2);
-    let c2 = d.event(lc, "C2", c2_stamps.label());
-    d.message(b3, c2, "m2");
+    let c2 = d.event(lc, "C2", c2_stamps.spans());
+    let m2_msg = d.message(b3, c2, "m2");
     let a3_stamps = a.local(80);
-    let a3 = d.event(la, "A3", a3_stamps.label());
+    let a3 = d.event(la, "A3", a3_stamps.spans());
 
     let lamports = [
         &a1_stamps, &m1, &b1_stamps, &b2_stamps, &c1_stamps, &m2, &c2_stamps, &a3_stamps,
@@ -159,31 +215,75 @@ fn clock_comparison() -> Figure {
     assert_eq!(a3_b3, Causality::Concurrent);
     assert!(a3_stamps.lamport < m2.lamport);
     assert!(a3_stamps.hlc > m2.hlc);
+    // As in vector_clock_trace: the hand-wired arrows must agree with the
+    // vector clocks about every pair of events.
+    let stamped = [
+        (a1, &a1_stamps),
+        (a2, &m1),
+        (b1, &b1_stamps),
+        (b2, &b2_stamps),
+        (c1, &c1_stamps),
+        (b3, &m2),
+        (c2, &c2_stamps),
+        (a3, &a3_stamps),
+    ];
+    assert_eq!(
+        stamped.len(),
+        d.events().len(),
+        "every event's clock is checked"
+    );
+    let pasts = d.pasts();
+    for (x, sx) in &stamped {
+        for (y, sy) in &stamped {
+            assert_eq!(
+                pasts[y.0].contains(x),
+                sx.vector < sy.vector,
+                "the drawn arrows and the clocks disagree about {} and {}",
+                sx.vector.label(),
+                sy.vector.label()
+            );
+        }
+    }
 
     d.callout(
         a2,
         b2,
-        format!(
-            "B's clock runs {B_BEHIND} behind: m1 left A at {} but arrives when B reads {}, so B2 keeps A's wall time and counts on: {}",
-            m1.hlc.label(),
-            b2_stamps.physical,
-            b2_stamps.hlc.label()
-        ),
+        rich![
+            format!("B's clock runs {B_BEHIND} behind: m1 left A at "),
+            v(&m1.hlc),
+            " but arrives when B reads ",
+            Span::value(b2_stamps.physical.to_string()),
+            ", so B2 keeps A's wall time and counts on: ",
+            v(&b2_stamps.hlc)
+        ],
     );
-    d.callout(
+    d.callout_concurrent(
         a3,
         b3,
-        format!(
-            "A3 {} B3, yet Lamport puts A3 first ({} < {}) and the HLC puts B3 first ({} < {}); only {} and {} show neither happened first",
-            a3_b3.label(),
-            a3_stamps.lamport,
-            m2.lamport,
-            m2.hlc.label(),
-            a3_stamps.hlc.label(),
-            a3_stamps.vector.label(),
-            m2.vector.label()
-        ),
+        rich![
+            "A3 ",
+            phrase(a3_b3),
+            " B3, yet Lamport puts A3 first (",
+            Span::value(a3_stamps.lamport.to_string()),
+            " < ",
+            Span::value(m2.lamport.to_string()),
+            ") and the HLC puts B3 first (",
+            v(&m2.hlc),
+            " < ",
+            v(&a3_stamps.hlc),
+            "); only ",
+            v(&a3_stamps.vector),
+            " and ",
+            v(&m2.vector),
+            " show neither happened first"
+        ],
     );
+    for (e, _) in &stamped {
+        let key = d.events()[e.0].name.to_lowercase();
+        d.pin_event(*e, &key);
+    }
+    d.pin_message(m1_msg, "m1");
+    d.pin_message(m2_msg, "m2");
     Figure {
         stem: "clock-comparison",
         diagram: Diagram::SpaceTime(d),
@@ -253,15 +353,24 @@ impl Process {
     }
 }
 
+/// One line per clock, the values in a column (see [`fields`]): the physical
+/// reading, then Lamport, hybrid logical and vector clocks. Short names keep
+/// the figure narrow: `phys 10` / `L 1` / `HLC 10,0` / `VC {A:1}`.
 impl Label for Stamps {
     fn label(&self) -> String {
-        format!(
-            "clock {}\nLamport {}\nHLC {}\nVC {}",
-            self.physical,
-            self.lamport,
-            self.hlc.label(),
-            self.vector.label()
-        )
+        self.spans().plain()
+    }
+
+    fn spans(&self) -> Rich {
+        fields(vec![
+            (
+                "phys",
+                Span::part(self.physical.to_string(), "physical").into(),
+            ),
+            ("L", Span::part(self.lamport.to_string(), "lamport").into()),
+            ("HLC", self.hlc.spans()),
+            ("VC", self.vector.spans()),
+        ])
     }
 }
 
@@ -272,7 +381,7 @@ impl Label for Stamps {
 /// with shorter values.
 fn mv_register_siblings() -> Figure {
     let mut d = SpaceTime::new("Multi-value register: concurrent writes become siblings");
-    let (l1, l2) = (d.lane("r1"), d.lane("r2"));
+    let (l1, l2) = (d.actor_lane("r1", 'A'), d.actor_lane("r2", 'B'));
     let (mut r1, mut r2): (MvRegister<char, &str>, MvRegister<char, &str>) =
         (MvRegister::new(), MvRegister::new());
 
@@ -284,9 +393,9 @@ fn mv_register_siblings() -> Figure {
             counter: 1
         }
     );
-    let e1 = d.event(l1, "write", r1.label());
+    let e1 = d.event(l1, "write", r1.spans());
     r2.sync_from(&r1);
-    let e2 = d.event(l2, "sync", r2.label());
+    let e2 = d.event(l2, "sync", r2.spans());
     d.message(e1, e2, "");
     let stale = r2.clone(); // a peer that hears nothing more until the end
 
@@ -301,12 +410,12 @@ fn mv_register_siblings() -> Figure {
         shown_only_draft(shown);
         "edit A"
     });
-    let e3 = d.event(l1, "write", r1.label());
+    let e3 = d.event(l1, "write", r1.spans());
     let b1 = r2.update(&'B', |shown| {
         shown_only_draft(shown);
         "edit B"
     });
-    d.event(l2, "write", r2.label());
+    d.event(l2, "write", r2.spans());
     assert_eq!(
         (&a2, &b1),
         (
@@ -321,10 +430,10 @@ fn mv_register_siblings() -> Figure {
         )
     );
     r2.sync_from(&r1);
-    let e5 = d.event(l2, "sync", r2.label());
+    let e5 = d.event(l2, "sync", r2.spans());
     d.message(e3, e5, "");
     r1.sync_from(&r2);
-    let e6 = d.event(l1, "sync", r1.label());
+    let e6 = d.event(l1, "sync", r1.spans());
     d.message(e5, e6, "");
     assert_eq!(sorted_dots(&r1), [a2.label(), b1.label()]);
     assert_eq!(r1.label(), r2.label());
@@ -335,12 +444,13 @@ fn mv_register_siblings() -> Figure {
         assert_eq!(dots, [&a2, &b1]); // the writer is handed both siblings
         "merged"
     });
-    let e7 = d.event(l2, "write", r2.label());
+    let e7 = d.event(l2, "write", r2.spans());
     r1.sync_from(&r2);
-    let e8 = d.event(l1, "sync", r1.label());
+    let e8 = d.event(l1, "sync", r1.spans());
     d.message(e7, e8, "");
     r1.sync_from(&stale);
-    let e9 = d.event(l1, "sync (stale)", r1.label());
+    let e9 = d.event(l1, "sync (stale)", r1.spans());
+    d.pin_event(e9, "stale-sync");
     let live: Vec<_> = r1.entries().map(|(dot, v)| (dot.clone(), *v)).collect();
     assert_eq!(live, [(merged, "merged")]);
     assert!(
@@ -354,19 +464,22 @@ fn mv_register_siblings() -> Figure {
     d.callout(
         e5,
         e6,
-        format!(
-            "r1 and r2 agree: {} and {} are siblings, since neither writer was shown the other's value",
-            a2.label(),
-            b1.label()
-        ),
+        rich![
+            "r1 and r2 agree: ",
+            v(&a2),
+            " and ",
+            v(&b1),
+            " are siblings, since neither writer was shown the other's value"
+        ],
     );
     d.callout(
         e2,
         e9,
-        format!(
-            "a copy of r2 taken right after its first sync still holds {}, but r1 has already seen that write, so \"draft\" is not resurrected",
-            draft.label()
-        ),
+        rich![
+            "a copy of r2 taken right after its first sync still holds ",
+            v(&draft),
+            ", but r1 has already seen that write, so \"draft\" is not resurrected"
+        ],
     );
     Figure {
         stem: "mv-register-siblings",
@@ -379,7 +492,7 @@ fn mv_register_siblings() -> Figure {
 /// `reusing_an_actor_id_after_state_loss_corrupts_replicas`.
 fn actor_id_reuse() -> Figure {
     let mut d = SpaceTime::new("Reusing an actor id after state loss: two writes share one name");
-    let (la, lb) = (d.lane("A"), d.lane("B"));
+    let (la, lb) = (d.actor_lane("A", 'A'), d.actor_lane("B", 'B'));
     let (mut a, mut b): (MvRegister<char, &str>, MvRegister<char, &str>) =
         (MvRegister::new(), MvRegister::new());
 
@@ -391,21 +504,22 @@ fn actor_id_reuse() -> Figure {
             counter: 1
         }
     );
-    let e1 = d.event(la, "write", a.label());
+    let e1 = d.event(la, "write", a.spans());
     b.sync_from(&a);
-    let e2 = d.event(lb, "sync", b.label());
+    let e2 = d.event(lb, "sync", b.spans());
     d.message(e1, e2, "");
 
     let mut a_reborn: MvRegister<char, &str> = MvRegister::new(); // disk wiped, same id
-    d.event(la, "state lost", a_reborn.label());
+    let lost = d.event(la, "state lost", a_reborn.spans());
+    d.pin_event(lost, "state-lost");
     let second = a_reborn.update(&'A', |_| "y");
-    let e4 = d.event(la, "write", a_reborn.label());
+    let e4 = d.event(la, "write", a_reborn.spans());
     assert_eq!(first, second);
     b.sync_from(&a_reborn);
-    let e5 = d.event(lb, "sync", b.label());
+    let e5 = d.event(lb, "sync", b.spans());
     d.message(e4, e5, "");
     a_reborn.sync_from(&b);
-    let e6 = d.event(la, "sync", a_reborn.label());
+    let e6 = d.event(la, "sync", a_reborn.spans());
     d.message(e5, e6, "");
     assert_eq!(
         (sorted_values(&b), sorted_values(&a_reborn)),
@@ -422,10 +536,11 @@ fn actor_id_reuse() -> Figure {
     d.callout(
         e1,
         e4,
-        format!(
-            "both writes are dot {}: the reborn replica reissued a name it had already used",
-            first.label()
-        ),
+        rich![
+            "both writes are dot ",
+            v(&first),
+            ": the reborn replica reissued a name it had already used"
+        ],
     );
     d.callout(
         e5,
@@ -473,12 +588,12 @@ fn causal_context_gap() -> Figure {
         vec![
             Claim {
                 title: "CausalContext".into(),
-                text: cc.label(),
+                text: cc.spans(),
                 counters: inserted.to_vec(),
             },
             Claim {
                 title: "VectorClock".into(),
-                text: naive.label(),
+                text: naive.spans(),
                 counters: claimed_by_vector,
             },
         ],

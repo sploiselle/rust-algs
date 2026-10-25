@@ -45,7 +45,9 @@ fn committed_figures_are_up_to_date() {
     if let Ok(entries) = fs::read_dir(&dir) {
         for entry in entries.flatten() {
             let name = entry.file_name().to_string_lossy().into_owned();
-            let generated = name.ends_with(".svg") || name.ends_with(".mmd");
+            let generated = [".svg", ".mmd", ".html", ".json"]
+                .iter()
+                .any(|ext| name.ends_with(ext));
             if generated && !expected.contains(&name) {
                 problems.push(format!(
                     "figures/{name}: stray; delete it or add it to the catalog"

@@ -14,6 +14,6 @@ sequenceDiagram
     Note over L1: B3<br/>{A:2, B:3}
     L1->>L2: m2 {A:2, B:3}
     Note over L2: C2<br/>{A:2, B:3, C:2}
-    Note over L0,L2: A1 → C2: {A:1} #60; {A:2, B:3, C:2}, carried by m1 then m2
+    Note over L0,L2: A1 happened before C2: {A:1} #60; {A:2, B:3, C:2}, carried by m1 then m2
     Note over L0: A3<br/>{A:3}
-    Note over L0,L1: A3 ∥ B3: {A:3} and {A:2, B:3} are incomparable, though A3 happened last
+    Note over L0,L1: A3 is concurrent with B3: {A:3} and {A:2, B:3} are incomparable, though A3 is later in real time

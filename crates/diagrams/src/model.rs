@@ -6,28 +6,174 @@
 //! which check their arguments, so a renderer can rely on every message going
 //! forward in time between two different lanes.
 
+use std::collections::BTreeSet;
+
 /// One actor's timeline in a [`SpaceTime`] diagram.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LaneId(pub(crate) usize);
 
 /// One recorded event. Only [`SpaceTime::event`] hands these out, so a message
 /// can only ever join two events that were actually recorded.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct EventId(pub(crate) usize);
+
+/// A run of text and what it is. Renderers turn each role into a `ds-<role>` class
+/// and each `data` pair into a `data-<key>` attribute, so a page can style, say,
+/// one actor's clock entries or one dot wherever they appear. `value` marks text
+/// that came from a library value, which is set in monospace.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Span {
+    pub text: String,
+    pub roles: Vec<&'static str>,
+    pub data: Vec<(&'static str, String)>,
+    pub value: bool,
+}
+
+impl Span {
+    pub fn plain(text: impl Into<String>) -> Span {
+        Span {
+            text: text.into(),
+            roles: Vec::new(),
+            data: Vec::new(),
+            value: false,
+        }
+    }
+
+    /// Part of a library value, with no role of its own (punctuation, say).
+    pub fn value(text: impl Into<String>) -> Span {
+        Span {
+            value: true,
+            ..Span::plain(text)
+        }
+    }
+
+    /// Part of a library value with a role, such as `entry` or `dot-id`.
+    pub fn part(text: impl Into<String>, role: &'static str) -> Span {
+        Span {
+            roles: vec![role],
+            ..Span::value(text)
+        }
+    }
+
+    /// One more role, such as `cloud` on a dot past a causal context's gap.
+    pub fn also(mut self, role: &'static str) -> Span {
+        self.roles.push(role);
+        self
+    }
+
+    /// Sets `data-<key>`, replacing any earlier value for the same key.
+    pub fn with(mut self, key: &'static str, value: impl Into<String>) -> Span {
+        self.data.retain(|(k, _)| *k != key);
+        self.data.push((key, value.into()));
+        self
+    }
+}
+
+/// Text as lines of [`Span`]s. A plain string converts with one line per `\n`.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Rich {
+    pub lines: Vec<Vec<Span>>,
+}
+
+impl Rich {
+    pub fn is_empty(&self) -> bool {
+        self.lines
+            .iter()
+            .all(|l| l.iter().all(|s| s.text.is_empty()))
+    }
+
+    /// The text alone, lines joined by `\n`.
+    pub fn plain(&self) -> String {
+        self.lines
+            .iter()
+            .map(|l| l.iter().map(|s| s.text.as_str()).collect::<String>())
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    /// `other` continues this text: its first line joins the last line here,
+    /// and any further lines follow.
+    pub fn then(mut self, other: impl Into<Rich>) -> Rich {
+        let mut more = other.into().lines.into_iter();
+        if let Some(first) = more.next() {
+            match self.lines.last_mut() {
+                Some(last) => last.extend(first),
+                None => self.lines.push(first),
+            }
+        }
+        self.lines.extend(more);
+        self
+    }
+}
+
+impl From<&str> for Rich {
+    fn from(s: &str) -> Rich {
+        if s.is_empty() {
+            return Rich::default();
+        }
+        Rich {
+            lines: s
+                .split('\n')
+                .map(|l| {
+                    if l.is_empty() {
+                        Vec::new()
+                    } else {
+                        vec![Span::plain(l)]
+                    }
+                })
+                .collect(),
+        }
+    }
+}
+
+impl From<String> for Rich {
+    fn from(s: String) -> Rich {
+        Rich::from(s.as_str())
+    }
+}
+
+impl From<&String> for Rich {
+    fn from(s: &String) -> Rich {
+        Rich::from(s.as_str())
+    }
+}
+
+impl From<Span> for Rich {
+    fn from(s: Span) -> Rich {
+        Rich {
+            lines: vec![vec![s]],
+        }
+    }
+}
+
+/// Concatenate anything that converts into [`Rich`]: `rich!["A1 ", v(&clock), "."]`.
+macro_rules! rich {
+    ($($part:expr),* $(,)?) => {
+        $crate::model::Rich::default()$(.then($part))*
+    };
+}
+pub(crate) use rich;
 
 #[derive(Debug, Clone)]
 pub struct Lane {
     pub name: String,
+    /// Its address on a page; see [`SpaceTime::lane_key`].
+    pub key: String,
+    /// The actor whose events this lane shows, when it is one: the name that
+    /// appears in clock entries and dots. Set by [`SpaceTime::actor_lane`].
+    pub actor: Option<String>,
 }
 
 /// Something that happened at one actor. `annotation` is the library value
-/// after the event, as text (see [`Label`](crate::label::Label)); it may span
-/// several lines.
+/// after the event (see [`Label`](crate::label::Label)); it may span several
+/// lines.
 #[derive(Debug, Clone)]
 pub struct Event {
     pub lane: LaneId,
     pub name: String,
-    pub annotation: String,
+    pub annotation: Rich,
+    /// Set by [`SpaceTime::pin_event`]; otherwise the key is positional.
+    pub key: Option<String>,
 }
 
 /// Information flowing from one event to a later one on another lane: a
@@ -36,7 +182,23 @@ pub struct Event {
 pub struct Message {
     pub from: EventId,
     pub to: EventId,
-    pub label: String,
+    pub label: Rich,
+    /// Set by [`SpaceTime::pin_message`]; otherwise the key is positional.
+    pub key: Option<String>,
+}
+
+/// One recorded message, as handed out by [`SpaceTime::message`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MessageId(pub(crate) usize);
+
+/// How a callout's two events are related in the drawn graph, when the callout
+/// is about that relation. The builder checks it against the graph.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Relation {
+    /// `a` happened before `b`: some chain of lane steps and messages joins them.
+    Before,
+    /// Neither event can reach the other.
+    Concurrent,
 }
 
 /// A remark about two events, which the renderer highlights. `text` is complete
@@ -45,7 +207,22 @@ pub struct Message {
 pub struct Callout {
     pub a: EventId,
     pub b: EventId,
-    pub text: String,
+    pub text: Rich,
+    pub relation: Option<Relation>,
+}
+
+/// A callout with its number and everything it is about.
+#[derive(Debug, Clone)]
+pub struct Note<'a> {
+    /// 1-based, in reading order.
+    pub n: usize,
+    pub callout: &'a Callout,
+    /// The two events, plus for a [`Relation::Before`] every event on a path
+    /// between them.
+    pub events: BTreeSet<EventId>,
+    /// Indices into [`SpaceTime::messages`] of the messages on such a path, or
+    /// for any other callout, the messages joining its two events directly.
+    pub messages: BTreeSet<usize>,
 }
 
 /// Actors as horizontal lanes, time flowing left to right. The order events
@@ -91,28 +268,120 @@ impl SpaceTime {
     }
 
     pub fn lane(&mut self, name: impl Into<String>) -> LaneId {
-        self.lanes.push(Lane { name: name.into() });
+        let name = name.into();
+        let base = slug(&name);
+        let key = (1..)
+            .map(|n| {
+                if n == 1 {
+                    base.clone()
+                } else {
+                    format!("{base}-{n}")
+                }
+            })
+            .find(|k| self.lanes.iter().all(|l| &l.key != k))
+            .expect("some suffix is free");
+        self.lanes.push(Lane {
+            name,
+            key,
+            actor: None,
+        });
         LaneId(self.lanes.len() - 1)
+    }
+
+    /// A lane that shows one actor's events. Its name may differ from the
+    /// actor's (replica `r1` writing as actor `A`); the figure links the two, so
+    /// a page can colour the lane and that actor's entries in every value alike.
+    pub fn actor_lane(&mut self, name: impl Into<String>, actor: impl std::fmt::Display) -> LaneId {
+        let id = self.lane(name);
+        self.lanes[id.0].actor = Some(actor.to_string());
+        id
+    }
+
+    /// Every actor the figure mentions, in palette order: the lanes' actors top
+    /// to bottom, then any other actor in the order its first value appears.
+    /// A renderer gives actor `i` (from 0) the palette slot `i + 1`.
+    pub fn actors(&self) -> Vec<String> {
+        let mut out: Vec<String> = self.lanes.iter().filter_map(|l| l.actor.clone()).collect();
+        let texts = self
+            .events
+            .iter()
+            .map(|e| &e.annotation)
+            .chain(self.messages.iter().map(|m| &m.label))
+            .chain(self.callouts.iter().map(|c| &c.text));
+        for span in texts.flat_map(|r| r.lines.iter().flatten()) {
+            for (k, v) in &span.data {
+                if *k == "actor" && !out.contains(v) {
+                    out.push(v.clone());
+                }
+            }
+        }
+        out
+    }
+
+    /// Apply `f` to every span of every text in the figure.
+    pub fn for_each_span(&mut self, mut f: impl FnMut(&mut Span)) {
+        let texts = self
+            .events
+            .iter_mut()
+            .map(|e| &mut e.annotation)
+            .chain(self.messages.iter_mut().map(|m| &mut m.label))
+            .chain(self.callouts.iter_mut().map(|c| &mut c.text));
+        for r in texts {
+            r.lines.iter_mut().flatten().for_each(&mut f);
+        }
     }
 
     pub fn event(
         &mut self,
         lane: LaneId,
         name: impl Into<String>,
-        annotation: impl Into<String>,
+        annotation: impl Into<Rich>,
     ) -> EventId {
         assert!(lane.0 < self.lanes.len(), "unknown lane");
         self.events.push(Event {
             lane,
             name: name.into(),
             annotation: annotation.into(),
+            key: None,
         });
         EventId(self.events.len() - 1)
     }
 
+    /// Give an event a key that survives changes to the scenario around it.
+    /// A post that styles or links one particular event should target a pinned
+    /// key: the positional ones move when an earlier event is added. Panics if
+    /// the key is not a slug or is already taken.
+    pub fn pin_event(&mut self, event: EventId, key: &str) {
+        assert!(event.0 < self.events.len(), "unknown event");
+        let others = (0..self.events.len()).filter(|&i| i != event.0);
+        self.check_new_key(key, others.map(|i| self.event_key(EventId(i))));
+        self.events[event.0].key = Some(key.to_string());
+    }
+
+    /// Give a message a key that survives changes to the scenario; see
+    /// [`SpaceTime::pin_event`].
+    pub fn pin_message(&mut self, message: MessageId, key: &str) {
+        assert!(message.0 < self.messages.len(), "unknown message");
+        let others = (0..self.messages.len()).filter(|&i| i != message.0);
+        self.check_new_key(key, others.map(|i| self.message_key(i)));
+        self.messages[message.0].key = Some(key.to_string());
+    }
+
+    fn check_new_key(&self, key: &str, taken: impl Iterator<Item = String>) {
+        assert_eq!(
+            slug(key),
+            key,
+            "a key must be lowercase letters, digits and dashes"
+        );
+        assert!(
+            taken.into_iter().all(|k| k != key),
+            "the key {key:?} is taken"
+        );
+    }
+
     /// Panics unless `from` was recorded before `to` and on a different lane: a
     /// message always goes forward in time and between actors.
-    pub fn message(&mut self, from: EventId, to: EventId, label: impl Into<String>) {
+    pub fn message(&mut self, from: EventId, to: EventId, label: impl Into<Rich>) -> MessageId {
         assert!(to.0 < self.events.len(), "unknown event");
         assert!(from.0 < to.0, "a message must arrive after it was sent");
         assert_ne!(
@@ -123,24 +392,183 @@ impl SpaceTime {
             from,
             to,
             label: label.into(),
+            key: None,
         });
+        MessageId(self.messages.len() - 1)
     }
 
-    pub fn callout(&mut self, a: EventId, b: EventId, text: impl Into<String>) {
+    pub fn callout(&mut self, a: EventId, b: EventId, text: impl Into<Rich>) {
+        self.push_callout(a, b, text.into(), None);
+    }
+
+    /// A callout claiming `a` happened before `b`. Panics unless the drawn graph
+    /// joins them, so the picture can't contradict the sentence.
+    pub fn callout_before(&mut self, a: EventId, b: EventId, text: impl Into<Rich>) {
+        self.check_events(a, b);
+        assert!(
+            self.happened_before(a, b),
+            "the figure draws no path from the first event to the second"
+        );
+        self.push_callout(a, b, text.into(), Some(Relation::Before));
+    }
+
+    /// A callout claiming `a` and `b` are concurrent. Panics if the drawn graph
+    /// joins them either way.
+    pub fn callout_concurrent(&mut self, a: EventId, b: EventId, text: impl Into<Rich>) {
+        self.check_events(a, b);
+        assert!(
+            a != b && !self.happened_before(a, b) && !self.happened_before(b, a),
+            "the figure draws a path between the two events"
+        );
+        self.push_callout(a, b, text.into(), Some(Relation::Concurrent));
+    }
+
+    fn check_events(&self, a: EventId, b: EventId) {
         assert!(
             a.0 < self.events.len() && b.0 < self.events.len(),
             "unknown event"
         );
+    }
+
+    fn push_callout(&mut self, a: EventId, b: EventId, text: Rich, relation: Option<Relation>) {
+        self.check_events(a, b);
         self.callouts.push(Callout {
             a,
             b,
-            text: text.into(),
+            text,
+            relation,
         });
     }
 
     pub fn lane_of(&self, event: EventId) -> LaneId {
         self.events[event.0].lane
     }
+
+    /// Was `a` recorded before `b`? The figure's left-to-right order.
+    pub fn recorded_before(&self, a: EventId, b: EventId) -> bool {
+        a.0 < b.0
+    }
+
+    /// Each event's causal past in the drawn graph: every event that reaches it
+    /// through earlier events on a lane and messages. Messages only go forward,
+    /// so one pass in recorded order is enough.
+    pub fn pasts(&self) -> Vec<BTreeSet<EventId>> {
+        let mut past: Vec<BTreeSet<EventId>> = Vec::with_capacity(self.events.len());
+        for (i, e) in self.events.iter().enumerate() {
+            let lane_prev = (0..i).rev().find(|&p| self.events[p].lane == e.lane);
+            let senders = self
+                .messages
+                .iter()
+                .filter(|m| m.to.0 == i)
+                .map(|m| m.from.0);
+            let mut set = BTreeSet::new();
+            for p in lane_prev.into_iter().chain(senders) {
+                set.insert(EventId(p));
+                set.extend(past[p].iter().copied());
+            }
+            past.push(set);
+        }
+        past
+    }
+
+    /// Does the drawn graph carry `a` into `b`'s causal past?
+    pub fn happened_before(&self, a: EventId, b: EventId) -> bool {
+        self.pasts()[b.0].contains(&a)
+    }
+
+    /// The callouts numbered in reading order: by their later event, then their
+    /// earlier one, then the order they were added. Every backend uses this.
+    pub fn notes(&self) -> Vec<Note<'_>> {
+        let mut order: Vec<usize> = (0..self.callouts.len()).collect();
+        order.sort_by_key(|&j| {
+            let c = &self.callouts[j];
+            (c.a.max(c.b), c.a.min(c.b), j)
+        });
+        let pasts = self.pasts();
+        order
+            .into_iter()
+            .enumerate()
+            .map(|(k, j)| {
+                let c = &self.callouts[j];
+                let mut events = BTreeSet::from([c.a, c.b]);
+                let mut messages = BTreeSet::new();
+                let joins =
+                    |m: &Message| (m.from, m.to) == (c.a, c.b) || (m.from, m.to) == (c.b, c.a);
+                messages.extend(
+                    self.messages
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, m)| joins(m))
+                        .map(|(i, _)| i),
+                );
+                if c.relation == Some(Relation::Before) {
+                    let on_path = |e: EventId| {
+                        e == c.a
+                            || e == c.b
+                            || (pasts[e.0].contains(&c.a) && pasts[c.b.0].contains(&e))
+                    };
+                    events.extend((0..self.events.len()).map(EventId).filter(|&e| on_path(e)));
+                    messages.extend(
+                        self.messages
+                            .iter()
+                            .enumerate()
+                            .filter(|(_, m)| on_path(m.from) && on_path(m.to))
+                            .map(|(i, _)| i),
+                    );
+                }
+                Note {
+                    n: k + 1,
+                    callout: c,
+                    events,
+                    messages,
+                }
+            })
+            .collect()
+    }
+
+    /// A lane's address in the rendered figure, from its name: `"r1"` → `r1`,
+    /// `"P₁"` → `p₁`. A name whose key is taken gets a suffix: `r1-2`.
+    pub fn lane_key(&self, lane: LaneId) -> String {
+        self.lanes[lane.0].key.clone()
+    }
+
+    /// An event's address: its pinned key if it has one, else its lane's key
+    /// and its position on that lane, from 1. The third event on lane B is `b-3`.
+    pub fn event_key(&self, event: EventId) -> String {
+        if let Some(k) = &self.events[event.0].key {
+            return k.clone();
+        }
+        let lane = self.events[event.0].lane;
+        let ordinal = self.events[..=event.0]
+            .iter()
+            .filter(|e| e.lane == lane)
+            .count();
+        format!("{}-{ordinal}", self.lane_key(lane))
+    }
+
+    /// A message's address: its pinned key if it has one, else its place in
+    /// recorded order from 1: `m1`, `m2`, ….
+    pub fn message_key(&self, index: usize) -> String {
+        match &self.messages[index].key {
+            Some(k) => k.clone(),
+            None => format!("m{}", index + 1),
+        }
+    }
+}
+
+/// Lowercase letters and digits (any script), anything else as `-`, trimmed.
+/// Used for keys that end up in attribute values a stylesheet will select on.
+pub fn slug(s: &str) -> String {
+    let mut out = String::new();
+    for c in s.chars() {
+        if c.is_alphanumeric() {
+            out.extend(c.to_lowercase());
+        } else if !out.ends_with('-') {
+            out.push('-');
+        }
+    }
+    let out = out.trim_matches('-').to_string();
+    if out.is_empty() { "x".to_string() } else { out }
 }
 
 /// One actor's counters on a number line, marking which dots were actually
@@ -160,7 +588,7 @@ pub struct DotLine {
 pub struct Claim {
     pub title: String,
     /// The representation itself, as text.
-    pub text: String,
+    pub text: Rich,
     pub counters: Vec<u64>,
 }
 
@@ -216,6 +644,13 @@ impl DotLine {
     pub fn claims(&self) -> &[Claim] {
         &self.claims
     }
+
+    /// Apply `f` to every span of every claim's text.
+    pub fn for_each_span(&mut self, mut f: impl FnMut(&mut Span)) {
+        for c in &mut self.claims {
+            c.text.lines.iter_mut().flatten().for_each(&mut f);
+        }
+    }
 }
 
 /// Every kind of figure a backend may be asked to draw.
@@ -223,6 +658,23 @@ impl DotLine {
 pub enum Diagram {
     SpaceTime(SpaceTime),
     DotLine(DotLine),
+}
+
+impl Diagram {
+    pub fn title(&self) -> &str {
+        match self {
+            Diagram::SpaceTime(d) => d.title(),
+            Diagram::DotLine(d) => d.title(),
+        }
+    }
+
+    /// The kind as it appears in rendered output: `space-time` or `dot-line`.
+    pub fn kind(&self) -> &'static str {
+        match self {
+            Diagram::SpaceTime(_) => "space-time",
+            Diagram::DotLine(_) => "dot-line",
+        }
+    }
 }
 
 #[cfg(test)]
@@ -272,5 +724,132 @@ mod tests {
     #[should_panic(expected = "off the line")]
     fn a_dot_line_rejects_counters_it_cannot_draw() {
         DotLine::new("t", "A", 3, vec![0], vec![]);
+    }
+
+    #[test]
+    fn lane_keys_are_unique_and_keep_any_script() {
+        let mut d = SpaceTime::new("t");
+        let (r1, r1p, p1) = (d.lane("r1"), d.lane("r1′"), d.lane("P₁"));
+        assert_eq!(
+            [d.lane_key(r1), d.lane_key(r1p), d.lane_key(p1)],
+            ["r1", "r1-2", "p₁"]
+        );
+    }
+
+    #[test]
+    fn actors_come_in_lane_order_then_by_first_mention() {
+        let mut d = SpaceTime::new("t");
+        let r1 = d.actor_lane("r1", 'B');
+        d.actor_lane("r2", 'A');
+        d.event(
+            r1,
+            "",
+            rich![
+                Span::part("Z:1", "dot-id").with("actor", "Z"),
+                Span::part("A:1", "dot-id").with("actor", "A")
+            ],
+        );
+        assert_eq!(d.actors(), ["B", "A", "Z"]);
+    }
+
+    #[test]
+    fn pinned_keys_survive_an_inserted_event() {
+        let mut d = SpaceTime::new("t");
+        let (a, b) = (d.lane("A"), d.lane("B"));
+        let a1 = d.event(a, "", "");
+        d.event(b, "", "");
+        let b2 = d.event(b, "", "");
+        let m = d.message(a1, b2, "");
+        d.pin_event(b2, "reply");
+        d.pin_message(m, "request");
+        assert_eq!(
+            (d.event_key(b2), d.message_key(m.0)),
+            ("reply".into(), "request".into())
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "is taken")]
+    fn a_pinned_key_cannot_shadow_another_event() {
+        let mut d = SpaceTime::new("t");
+        let a = d.lane("A");
+        d.event(a, "", "");
+        let a2 = d.event(a, "", "");
+        d.pin_event(a2, "a-1");
+    }
+
+    #[test]
+    fn a_plain_note_includes_the_message_joining_its_events() {
+        let (mut d, [a1, b1, ..]) = trace();
+        d.callout(b1, a1, "about m1");
+        assert_eq!(d.notes()[0].messages, BTreeSet::from([0]));
+    }
+
+    #[test]
+    fn keys_name_lanes_events_and_messages() {
+        let mut d = SpaceTime::new("t");
+        let (a, b) = (d.lane("A"), d.lane("r2′"));
+        let a1 = d.event(a, "", "");
+        let b1 = d.event(b, "", "");
+        let a2 = d.event(a, "", "");
+        d.message(a1, b1, "");
+        assert_eq!(d.lane_key(b), "r2");
+        assert_eq!(
+            [d.event_key(a1), d.event_key(b1), d.event_key(a2)],
+            ["a-1", "r2-1", "a-2"]
+        );
+        assert_eq!(d.message_key(0), "m1");
+    }
+
+    /// The textbook trace: A1 reaches C2 only through B; A3 is concurrent with B3.
+    fn trace() -> (SpaceTime, [EventId; 5]) {
+        let mut d = SpaceTime::new("t");
+        let (a, b, c) = (d.lane("A"), d.lane("B"), d.lane("C"));
+        let a1 = d.event(a, "A1", "");
+        let b1 = d.event(b, "B1", "");
+        let b2 = d.event(b, "B2", "");
+        let c1 = d.event(c, "C1", "");
+        let a2 = d.event(a, "A2", "");
+        d.message(a1, b1, "");
+        d.message(b2, c1, "");
+        (d, [a1, b1, b2, c1, a2])
+    }
+
+    #[test]
+    fn the_drawn_graph_follows_lanes_and_messages() {
+        let (d, [a1, b1, b2, c1, a2]) = trace();
+        assert!(d.happened_before(a1, c1)); // A1 → B1 → B2 → C1
+        assert!(d.happened_before(a1, a2)); // along A's lane
+        assert!(!d.happened_before(a2, b2) && !d.happened_before(b2, a2));
+        assert!(!d.happened_before(b1, a1));
+    }
+
+    #[test]
+    fn notes_follow_reading_order_and_light_the_path() {
+        let (mut d, [a1, b1, b2, c1, a2]) = trace();
+        d.callout_concurrent(a2, b2, "late"); // added first, but its later event comes last
+        d.callout_before(a1, c1, "early");
+        let notes = d.notes();
+        assert_eq!(notes[0].callout.text.plain(), "early");
+        assert_eq!(notes[0].events, BTreeSet::from([a1, b1, b2, c1]));
+        assert_eq!(notes[0].messages, BTreeSet::from([0, 1]));
+        assert_eq!(notes[1].n, 2);
+        assert_eq!(notes[1].events, BTreeSet::from([a2, b2]));
+        assert!(notes[1].messages.is_empty());
+    }
+
+    #[test]
+    #[should_panic(expected = "draws no path")]
+    fn a_before_callout_needs_a_drawn_path() {
+        let (mut d, [_, _, b2, _, a2]) = trace();
+        d.callout_before(a2, b2, "");
+    }
+
+    #[test]
+    fn rich_text_joins_and_flattens() {
+        let r = rich!["a ", Span::part("A:1", "dot-id"), "\nb"];
+        assert_eq!(r.lines.len(), 2);
+        assert_eq!(r.plain(), "a A:1\nb");
+        assert!(Rich::from("").is_empty());
     }
 }

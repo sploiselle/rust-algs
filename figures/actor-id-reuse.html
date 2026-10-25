@@ -1,0 +1,132 @@
+<figure class="ds-fig" data-figure="actor-id-reuse" data-kind="space-time">
+<div class="ds-fig-canvas">
+<svg xmlns="http://www.w3.org/2000/svg" class="ds-figure" data-figure="actor-id-reuse" data-kind="space-time" role="img" viewBox="0 0 557 178" width="557" height="178" style="--ds-w: 557" fill="currentColor" font-family="system-ui, sans-serif">
+  <title>Reusing an actor id after state loss: two writes share one name</title>
+  <desc>Timelines for A, B. write on A: A:1→"x". sync on B, receiving a message from write on A: A:1→"x". state lost on A: (empty). write on A: A:1→"y". sync on B, receiving a message from write on A: A:1→"x". sync on A, receiving a message from sync on B: A:1→"y".</desc>
+  <style>
+    @layer ds-figure {
+      .ds-figure { max-width: 100%; height: auto; font-family: var(--ds-font-sans, system-ui, -apple-system, "Segoe UI", sans-serif); }
+      .ds-figure:root { color-scheme: light dark; color: CanvasText; }
+      .ds-figure text { fill: var(--ds-ink, currentColor); }
+      .ds-figure :is(.ds-event-value, .ds-row-value, .ds-v) { font-family: var(--ds-font-mono, ui-monospace, "SF Mono", Menlo, Consolas, monospace); }
+      .ds-figure .ds-sym { font-family: var(--ds-font-sym, system-ui, sans-serif); }
+      .ds-figure .ds-lane-line { stroke: var(--ds-lane-line, var(--ds-rule, var(--ds-ink, currentColor))); stroke-opacity: var(--ds-lane-opacity, .5); stroke-width: var(--ds-lane-width, 1); }
+      .ds-figure .ds-lane-head { fill: var(--ds-lane-line, var(--ds-rule, var(--ds-ink, currentColor))); fill-opacity: var(--ds-lane-opacity, .5); }
+      .ds-figure [data-actor-n="1"] { --ds-actor: var(--ds-actor-1); }
+      .ds-figure [data-actor-n="2"] { --ds-actor: var(--ds-actor-2); }
+      .ds-figure [data-actor-n="3"] { --ds-actor: var(--ds-actor-3); }
+      .ds-figure [data-actor-n="4"] { --ds-actor: var(--ds-actor-4); }
+      .ds-figure [data-actor-n="5"] { --ds-actor: var(--ds-actor-5); }
+      .ds-figure [data-actor-n="6"] { --ds-actor: var(--ds-actor-6); }
+      .ds-figure [data-actor-n="7"] { --ds-actor: var(--ds-actor-7); }
+      .ds-figure [data-actor-n="8"] { --ds-actor: var(--ds-actor-8); }
+      .ds-figure .ds-actor { fill: var(--ds-actor); }
+      .ds-figure .ds-lane-name { fill: var(--ds-lane-name, var(--ds-actor, var(--ds-ink, currentColor))); font-weight: 600; }
+      .ds-figure .ds-row-name { fill: var(--ds-lane-name, var(--ds-ink, currentColor)); font-weight: 600; }
+      .ds-figure .ds-event-dot { fill: var(--ds-event-dot, var(--ds-ink, currentColor)); }
+      .ds-figure .ds-event-name { fill: var(--ds-event-name, var(--ds-muted, var(--ds-ink, currentColor))); }
+      .ds-figure .ds-field { fill: var(--ds-field, var(--ds-muted, var(--ds-ink, currentColor))); }
+      .ds-figure :is(.ds-event-value, .ds-row-value) { fill: var(--ds-value, var(--ds-ink, currentColor)); }
+      .ds-figure .ds-message-line { fill: none; stroke: var(--ds-message-line, var(--ds-ink, currentColor)); stroke-width: var(--ds-message-width, 1.5); }
+      .ds-figure .ds-message-head { fill: var(--ds-message-line, var(--ds-ink, currentColor)); }
+      .ds-figure .ds-message-label { fill: var(--ds-message-label, var(--ds-muted, var(--ds-ink, currentColor))); }
+      .ds-figure .ds-ring { fill: none; stroke: var(--ds-accent, var(--ds-ink, currentColor)); stroke-width: var(--ds-ring-width, 1.5); stroke-dasharray: var(--ds-ring-dash, none); }
+      .ds-figure .ds-badge-disc { fill: var(--ds-accent, var(--ds-ink, currentColor)); }
+      .ds-figure .ds-badge-n { fill: var(--ds-on-accent, Canvas); font-weight: 700; }
+      .ds-figure .ds-caption { fill: var(--ds-caption, var(--ds-ink, currentColor)); }
+      .ds-figure :is(.ds-counter, .ds-legend) { fill: var(--ds-muted, var(--ds-ink, currentColor)); }
+      .ds-figure :is(.ds-dot, .ds-claim) { fill: var(--ds-dot, var(--ds-ink, currentColor)); }
+      .ds-figure .ds-dot.ds-gap { fill: none; stroke: var(--ds-gap, var(--ds-ink, currentColor)); stroke-width: 1.5; stroke-dasharray: 3 2; }
+      .ds-figure .ds-wrong { fill: var(--ds-wrong, var(--ds-accent, var(--ds-ink, currentColor))); font-weight: 700; }
+    }
+  </style>
+  <g class="ds-lanes">
+    <g class="ds-lane" data-lane="a" data-actor="A" data-actor-n="1">
+      <line class="ds-lane-line" x1="28" y1="33" x2="549" y2="33" stroke="currentColor" stroke-opacity=".5"/>
+      <polygon class="ds-lane-head" points="549,29 557,33 549,37" fill-opacity=".5"/>
+      <text class="ds-lane-name" x="18" y="38" text-anchor="end" font-size="14">A</text>
+    </g>
+    <g class="ds-lane" data-lane="b" data-actor="B" data-actor-n="2">
+      <line class="ds-lane-line" x1="28" y1="116" x2="549" y2="116" stroke="currentColor" stroke-opacity=".5"/>
+      <polygon class="ds-lane-head" points="549,112 557,116 549,120" fill-opacity=".5"/>
+      <text class="ds-lane-name" x="18" y="121" text-anchor="end" font-size="14">B</text>
+    </g>
+  </g>
+  <g class="ds-messages">
+    <g class="ds-message" data-message="m1" data-from="a-1" data-to="b-1">
+      <line class="ds-message-line" x1="105.2" y1="41.3" x2="158.9" y2="103.2" stroke="currentColor" stroke-width="1.5"/>
+      <polygon class="ds-message-head" points="164.8,110 156.2,105.5 161.5,100.9"/>
+    </g>
+    <g class="ds-message" data-message="m2" data-from="a-3" data-to="b-2">
+      <line class="ds-message-line" x1="349.7" y1="41.3" x2="400.7" y2="100.1" stroke="currentColor" stroke-width="1.5"/>
+      <polygon class="ds-message-head" points="406.6,106.9 398.1,102.4 403.4,97.8"/>
+    </g>
+    <g class="ds-message" data-message="m3" data-from="b-2" data-to="a-4" data-notes="2">
+      <line class="ds-message-line" x1="421.7" y1="107.7" x2="472.7" y2="48.9" stroke="currentColor" stroke-width="1.5"/>
+      <polygon class="ds-message-head" points="478.6,42.1 475.4,51.2 470.1,46.6"/>
+    </g>
+  </g>
+  <g class="ds-events">
+    <g class="ds-event" data-event="a-1" data-lane="a" data-actor="A" data-actor-n="1" data-notes="1">
+      <circle class="ds-event-dot" cx="98" cy="33" r="5"/>
+      <text class="ds-event-name" x="98" y="17.8" text-anchor="middle" font-size="13">write</text>
+      <text class="ds-event-value" x="102" y="54.8" text-anchor="end" font-size="13" font-family="ui-monospace, Menlo, Consolas, monospace"><tspan class="ds-dot-id ds-actor" data-actor="A" data-dot="A:1" data-actor-n="1">A</tspan><tspan class="ds-dot-id ds-count" data-actor="A" data-dot="A:1" data-actor-n="1">:1</tspan><tspan class="ds-sym">→</tspan><tspan class="ds-str">"x"</tspan></text>
+    </g>
+    <g class="ds-event" data-event="b-1" data-lane="b" data-actor="B" data-actor-n="2">
+      <circle class="ds-event-dot" cx="170" cy="116" r="5"/>
+      <text class="ds-event-name" x="166" y="100.8" text-anchor="start" font-size="13">sync</text>
+      <text class="ds-event-value" x="170" y="137.8" text-anchor="middle" font-size="13" font-family="ui-monospace, Menlo, Consolas, monospace"><tspan class="ds-dot-id ds-actor" data-actor="A" data-dot="A:1" data-actor-n="1">A</tspan><tspan class="ds-dot-id ds-count" data-actor="A" data-dot="A:1" data-actor-n="1">:1</tspan><tspan class="ds-sym">→</tspan><tspan class="ds-str">"x"</tspan></text>
+    </g>
+    <g class="ds-event" data-event="state-lost" data-lane="a" data-actor="A" data-actor-n="1">
+      <circle class="ds-event-dot" cx="242" cy="33" r="5"/>
+      <text class="ds-event-name" x="242" y="17.8" text-anchor="middle" font-size="13">state lost</text>
+      <text class="ds-event-value" x="242" y="54.8" text-anchor="middle" font-size="13" font-family="ui-monospace, Menlo, Consolas, monospace"><tspan class="ds-empty">(empty)</tspan></text>
+    </g>
+    <g class="ds-event" data-event="a-3" data-lane="a" data-actor="A" data-actor-n="1" data-notes="1">
+      <circle class="ds-event-dot" cx="342.5" cy="33" r="5"/>
+      <text class="ds-event-name" x="342.5" y="17.8" text-anchor="middle" font-size="13">write</text>
+      <text class="ds-event-value" x="346.5" y="54.8" text-anchor="end" font-size="13" font-family="ui-monospace, Menlo, Consolas, monospace"><tspan class="ds-dot-id ds-actor" data-actor="A" data-dot="A:1" data-actor-n="1">A</tspan><tspan class="ds-dot-id ds-count" data-actor="A" data-dot="A:1" data-actor-n="1">:1</tspan><tspan class="ds-sym">→</tspan><tspan class="ds-str">"y"</tspan></text>
+    </g>
+    <g class="ds-event" data-event="b-2" data-lane="b" data-actor="B" data-actor-n="2" data-notes="2">
+      <circle class="ds-event-dot" cx="414.5" cy="116" r="5"/>
+      <text class="ds-event-name" x="414.5" y="137.8" text-anchor="middle" font-size="13">sync</text>
+      <text class="ds-event-value" x="414.5" y="154.8" text-anchor="middle" font-size="13" font-family="ui-monospace, Menlo, Consolas, monospace"><tspan class="ds-dot-id ds-actor" data-actor="A" data-dot="A:1" data-actor-n="1">A</tspan><tspan class="ds-dot-id ds-count" data-actor="A" data-dot="A:1" data-actor-n="1">:1</tspan><tspan class="ds-sym">→</tspan><tspan class="ds-str">"x"</tspan></text>
+    </g>
+    <g class="ds-event" data-event="a-4" data-lane="a" data-actor="A" data-actor-n="1" data-notes="2">
+      <circle class="ds-event-dot" cx="486.5" cy="33" r="5"/>
+      <text class="ds-event-name" x="486.5" y="17.8" text-anchor="middle" font-size="13">sync</text>
+      <text class="ds-event-value" x="482.5" y="54.8" text-anchor="start" font-size="13" font-family="ui-monospace, Menlo, Consolas, monospace"><tspan class="ds-dot-id ds-actor" data-actor="A" data-dot="A:1" data-actor-n="1">A</tspan><tspan class="ds-dot-id ds-count" data-actor="A" data-dot="A:1" data-actor-n="1">:1</tspan><tspan class="ds-sym">→</tspan><tspan class="ds-str">"y"</tspan></text>
+    </g>
+  </g>
+  <g class="ds-marks">
+    <circle class="ds-ring" data-event="a-1" data-notes="1" cx="98" cy="33" r="9" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <circle class="ds-ring" data-event="a-3" data-notes="1" cx="342.5" cy="33" r="9" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <circle class="ds-ring" data-event="b-2" data-notes="2" cx="414.5" cy="116" r="9" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <circle class="ds-ring" data-event="a-4" data-notes="2" cx="486.5" cy="33" r="9" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <g class="ds-badge" data-note="1" data-event="a-1">
+      <circle class="ds-badge-disc" cx="128" cy="14.5" r="7.5"/>
+      <text class="ds-badge-n" x="128" y="18.5" text-anchor="middle" font-size="11" fill="Canvas">1</text>
+    </g>
+    <g class="ds-badge" data-note="1" data-event="a-3">
+      <circle class="ds-badge-disc" cx="372.5" cy="14.5" r="7.5"/>
+      <text class="ds-badge-n" x="372.5" y="18.5" text-anchor="middle" font-size="11" fill="Canvas">1</text>
+    </g>
+    <g class="ds-badge" data-note="2" data-event="b-2">
+      <circle class="ds-badge-disc" cx="441" cy="134.5" r="7.5"/>
+      <text class="ds-badge-n" x="441" y="138.5" text-anchor="middle" font-size="11" fill="Canvas">2</text>
+    </g>
+    <g class="ds-badge" data-note="2" data-event="a-4">
+      <circle class="ds-badge-disc" cx="513" cy="14.5" r="7.5"/>
+      <text class="ds-badge-n" x="513" y="18.5" text-anchor="middle" font-size="11" fill="Canvas">2</text>
+    </g>
+  </g>
+</svg>
+</div>
+<figcaption class="ds-fig-caption">
+<p class="ds-fig-title">Reusing an actor id after state loss: two writes share one name</p>
+<ol class="ds-notes">
+<li class="ds-note" data-note="1"><span class="ds-note-n" aria-hidden="true">1</span> <span class="ds-note-body">both writes are dot <code class="ds-v"><span class="ds-dot-id ds-actor" data-actor="A" data-dot="A:1" data-actor-n="1">A</span><span class="ds-dot-id ds-count" data-actor="A" data-dot="A:1" data-actor-n="1">:1</span></code>: the reborn replica reissued a name it had already used</span></li>
+<li class="ds-note" data-note="2"><span class="ds-note-n" aria-hidden="true">2</span> <span class="ds-note-body">B keeps "x" and A keeps "y": each believes it already holds the other's write, so they never converge</span></li>
+</ol>
+</figcaption>
+</figure>

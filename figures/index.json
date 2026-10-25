@@ -1,0 +1,9 @@
+{
+  "figures": [
+    { "stem": "vector-clock-trace", "kind": "space-time", "title": "Vector clocks: three processes, two messages" },
+    { "stem": "clock-comparison", "kind": "space-time", "title": "Three clocks, one trace: Lamport, hybrid logical, and vector" },
+    { "stem": "mv-register-siblings", "kind": "space-time", "title": "Multi-value register: concurrent writes become siblings" },
+    { "stem": "actor-id-reuse", "kind": "space-time", "title": "Reusing an actor id after state loss: two writes share one name" },
+    { "stem": "causal-context-gap", "kind": "dot-line", "title": "A causal context tracks a gap a vector clock cannot" }
+  ]
+}
