@@ -286,19 +286,19 @@ fn lamport_clock_trace() -> Figure {
 /// from 0.
 fn lamport_clock_steps() -> Figure {
     let mut t = lamport_trace();
-    for lane in t.lanes {
-        t.d.start_value(lane, LamportClock::new().spans());
+    for (lane, process) in t.lanes.into_iter().zip(['A', 'B', 'C']) {
+        t.d.start_value(lane, LamportClock::new(process).spans());
     }
-    for (event, before, stamp, after) in [t.b2, t.c2] {
-        assert_eq!(before.max(stamp) + 1, after, "rule 2: the larger, plus one");
+    for (event, before, sent, after) in [t.b2, t.c2] {
+        assert_eq!(before.max(sent) + 1, after, "rule 2: the larger, plus one");
         t.d.narrate(
             event,
             rich![
-                "receives a message stamped ",
-                Span::value(stamp.to_string()),
+                "receives a message sent at time ",
+                Span::value(sent.to_string()),
                 ": its clock takes the larger of its own ",
                 Span::value(before.to_string()),
-                " and the stamp, then adds one, reaching ",
+                " and that, then adds one, reaching ",
                 Span::value(after.to_string())
             ],
         );
@@ -328,7 +328,7 @@ struct LamportTrace {
     d: SpaceTime,
     lanes: [LaneId; 3],
     /// B2 and C2, the receives: each event, its process's time before it,
-    /// the message's stamp, and its time after.
+    /// the time the message was sent at, and its time after.
     b2: (EventId, u64, u64, u64),
     c2: (EventId, u64, u64, u64),
     /// A3, its time, and B3's.
@@ -343,12 +343,12 @@ fn lamport_trace() -> LamportTrace {
         d.actor_lane("C", 'C'),
     );
     let (mut a, mut b, mut c) = (
-        LamportClock::new(),
-        LamportClock::new(),
-        LamportClock::new(),
+        LamportClock::new('A'),
+        LamportClock::new('B'),
+        LamportClock::new('C'),
     );
     let mut times: Vec<(EventId, u64)> = Vec::new();
-    let mut record = |d: &mut SpaceTime, lane, name, clock: &LamportClock| {
+    let mut record = |d: &mut SpaceTime, lane, name, clock: &LamportClock<char>| {
         let e = d.event(lane, name, clock.spans());
         times.push((e, clock.time()));
         e
@@ -356,7 +356,7 @@ fn lamport_trace() -> LamportTrace {
 
     a.tick();
     let a1 = record(&mut d, la, "A1", &a);
-    let m1 = a.send();
+    let m1 = a.send().time;
     let a2 = record(&mut d, la, "A2", &a);
     b.tick();
     record(&mut d, lb, "B1", &b);
@@ -367,7 +367,7 @@ fn lamport_trace() -> LamportTrace {
     c.tick();
     record(&mut d, lc, "C1", &c);
     let c1_time = c.time();
-    let m2 = b.send();
+    let m2 = b.send().time;
     let b3 = record(&mut d, lb, "B3", &b);
     c.receive(m2);
     let c2 = record(&mut d, lc, "C2", &c);
@@ -563,7 +563,7 @@ fn clock_comparison() -> Figure {
 struct Process {
     id: char,
     physical: Arc<ManualClock>,
-    lamport: LamportClock,
+    lamport: LamportClock<char>,
     hlc: Hlc<Arc<ManualClock>>,
     vector: VectorClock<char>,
 }
@@ -583,14 +583,14 @@ impl Process {
             id,
             hlc: Hlc::new(Arc::clone(&physical)),
             physical,
-            lamport: LamportClock::new(),
+            lamport: LamportClock::new(id),
             vector: VectorClock::new(),
         }
     }
 
     fn local(&mut self, physical: u64) -> Stamps {
         self.physical.set(physical);
-        let lamport = self.lamport.tick();
+        let lamport = self.lamport.tick().time;
         let hlc = self.hlc.now();
         self.vector.tick(&self.id);
         self.stamps(physical, lamport, hlc)
@@ -598,7 +598,7 @@ impl Process {
 
     fn send(&mut self, physical: u64) -> Stamps {
         self.physical.set(physical);
-        let lamport = self.lamport.send();
+        let lamport = self.lamport.send().time;
         let hlc = self.hlc.now();
         self.vector.send(&self.id);
         self.stamps(physical, lamport, hlc)
@@ -606,7 +606,7 @@ impl Process {
 
     fn receive(&mut self, physical: u64, message: &Stamps) -> Stamps {
         self.physical.set(physical);
-        let lamport = self.lamport.receive(message.lamport);
+        let lamport = self.lamport.receive(message.lamport).time;
         let hlc = self.hlc.update(message.hlc).expect("no max offset is set");
         self.vector.receive(&self.id, &message.vector);
         self.stamps(physical, lamport, hlc)
@@ -1357,7 +1357,7 @@ fn mutex_fifo_run() -> MutexRun {
     assert!(!b.holds());
 
     let ack_a_label = message_label(&ack_a);
-    assert_eq!((ack_a.kind, ack_a.time), (Kind::Ack, 3));
+    assert_eq!((ack_a.kind, ack_a.stamp.time), (Kind::Ack, 3));
     b.receive(ack_a);
     let b3 = d.event(lb, "ack from A", b.spans());
     times.push((b3, b.clock().time()));
@@ -1381,7 +1381,7 @@ fn mutex_fifo_run() -> MutexRun {
     let a4 = d.event(la, "release", a.spans());
     times.push((a4, a.clock().time()));
     let release_label = message_label(&release);
-    assert_eq!((release.kind, release.time), (Kind::Release, 5));
+    assert_eq!((release.kind, release.stamp.time), (Kind::Release, 5));
     b.receive(release);
     let b4 = d.event(lb, "release from A", b.spans());
     times.push((b4, b.clock().time()));
@@ -1505,7 +1505,7 @@ fn mutex_overtaking_run() -> MutexRun {
     assert!(a.holds(), "rightly: A's request is the earliest");
 
     let ack_label = message_label(&ack);
-    assert_eq!((ack.kind, ack.time), (Kind::Ack, 3));
+    assert_eq!((ack.kind, ack.stamp.time), (Kind::Ack, 3));
     b.receive(ack);
     let b2 = d.event(lb, "ack from A", b.spans());
     times.push((b2, b.clock().time()));
@@ -1823,7 +1823,7 @@ fn message_label<P>(m: &Message<P>) -> Rich {
         Kind::Ack => "ack ",
         Kind::Release => "release ",
     };
-    rich![kind, Span::value(m.time.to_string())]
+    rich![kind, Span::value(m.stamp.time.to_string())]
 }
 
 fn sorted_values(r: &MvRegister<char, &'static str>) -> Vec<&'static str> {

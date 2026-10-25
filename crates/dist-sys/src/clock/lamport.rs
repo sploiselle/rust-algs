@@ -33,6 +33,9 @@
 //! concurrent events is arbitrary, though: whichever process has the smaller
 //! id wins a tie.
 //!
+//! A [`LamportClock`] knows its process, so the stamps it hands out are these
+//! pairs. Rule 2 needs only the time: a receive takes `m`, not who sent it.
+//!
 //! ## What it can't do
 //!
 //! - **Detect concurrency.** The implication only runs one way. `L(e) < L(f)`
@@ -50,37 +53,49 @@
 //! physical time, which fixes the last two; on a physical clock stuck at 0 it
 //! *is* a Lamport clock.
 
-/// A Lamport clock: one process's counter.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct LamportClock {
+/// A Lamport clock: one process's counter, and the process it stamps events
+/// for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LamportClock<P> {
     time: u64,
+    /// Breaks ties between this process's stamps and others' at the same time.
+    process: P,
 }
 
-impl LamportClock {
-    pub fn new() -> Self {
-        Self::default()
+impl<P: Clone> LamportClock<P> {
+    pub fn new(process: P) -> Self {
+        Self { time: 0, process }
     }
 
-    /// The stamp of the last event, or 0 before the first.
+    pub fn process(&self) -> &P {
+        &self.process
+    }
+
+    /// The time of the last event, or 0 before the first.
     pub fn time(&self) -> u64 {
         self.time
     }
 
     /// Rule 1: record a local event and return its stamp.
-    pub fn tick(&mut self) -> u64 {
+    pub fn tick(&mut self) -> LamportStamp<P> {
         self.time += 1;
-        self.time
+        LamportStamp {
+            time: self.time,
+            process: self.process.clone(),
+        }
     }
 
-    /// Rule 1: record a send event and return the stamp to attach to the message.
-    pub fn send(&mut self) -> u64 {
+    /// Rule 1: record a send event and return its stamp, to attach to the
+    /// message.
+    pub fn send(&mut self) -> LamportStamp<P> {
         self.tick()
     }
 
-    /// Rule 2: absorb an incoming message's stamp, record the receive event, and
-    /// return its stamp.
-    pub fn receive(&mut self, stamp: u64) -> u64 {
-        self.time = self.time.max(stamp);
+    /// Rule 2: absorb the time of an incoming message, record the receive
+    /// event, and return its stamp. Only the time matters to the clock, not
+    /// who sent it.
+    pub fn receive(&mut self, time: u64) -> LamportStamp<P> {
+        self.time = self.time.max(time);
         self.tick()
     }
 }
@@ -120,48 +135,47 @@ mod tests {
     #[test]
     fn three_process_trace() {
         let (mut la, mut lb, mut lc) = (
-            LamportClock::new(),
-            LamportClock::new(),
-            LamportClock::new(),
+            LamportClock::new('A'),
+            LamportClock::new('B'),
+            LamportClock::new('C'),
         );
 
         let a1 = la.tick();
         let m1 = la.send();
         let a2 = m1;
         let b1 = lb.tick();
-        let b2 = lb.receive(m1);
+        let b2 = lb.receive(m1.time);
         let c1 = lc.tick();
         let m2 = lb.send();
         let b3 = m2;
-        let c2 = lc.receive(m2);
+        let c2 = lc.receive(m2.time);
         let a3 = la.tick();
 
-        assert_eq!([a1, a2, a3], [1, 2, 3]);
-        assert_eq!([b1, b2, b3], [1, 3, 4]);
-        assert_eq!([c1, c2], [1, 5]);
+        assert_eq!([a1, a2, a3].map(|s| s.time), [1, 2, 3]);
+        assert_eq!([b1, b2, b3].map(|s| s.time), [1, 3, 4]);
+        assert_eq!([c1, c2].map(|s| s.time), [1, 5]);
 
         // Happened-before shows up as a smaller stamp, transitively too.
         assert!(a1 < b2 && b2 < c2 && a1 < c2);
         // But A3 and B3 are concurrent, and the clock orders them anyway.
         assert!(a3 < b3);
         // A1, B1 and C1 are concurrent and tie; the process breaks the tie.
-        let stamp = |time, process| LamportStamp { time, process };
-        let mut firsts = [stamp(c1, 'C'), stamp(a1, 'A'), stamp(b1, 'B')];
+        let mut firsts = [c1, a1, b1];
         firsts.sort();
         assert_eq!(firsts.map(|s| s.process), ['A', 'B', 'C']);
     }
 
     #[test]
     fn a_busy_sender_drags_the_receiver_forward() {
-        let (mut busy, mut quiet) = (LamportClock::new(), LamportClock::new());
+        let (mut busy, mut quiet) = (LamportClock::new('B'), LamportClock::new('Q'));
         for _ in 0..1_000 {
             busy.tick();
         }
         quiet.tick();
-        assert_eq!(busy.send(), 1_001);
-        assert_eq!(quiet.receive(1_001), 1_002);
+        assert_eq!(busy.send().time, 1_001);
+        assert_eq!(quiet.receive(1_001).time, 1_002);
         // A message from the past changes nothing but the receive itself.
-        assert_eq!(quiet.receive(1), 1_003);
+        assert_eq!(quiet.receive(1).time, 1_003);
     }
 
     /// On random executions with non-FIFO delivery: happened-before always
@@ -174,9 +188,9 @@ mod tests {
         let mut concurrent_but_ordered = 0;
         for seed in 1..=100u64 {
             let mut rng = Rng(seed.wrapping_mul(0x9E37_79B9_7F4A_7C15));
-            let mut clocks = [LamportClock::new(); PROCS];
+            let mut clocks: [_; PROCS] = std::array::from_fn(LamportClock::new);
             let mut last_event: Vec<Option<usize>> = vec![None; PROCS];
-            // (destination, id of the send event, stamp)
+            // (destination, id of the send event, time)
             let mut in_flight: Vec<(usize, usize, u64)> = Vec::new();
             let mut stamps: Vec<LamportStamp<usize>> = Vec::new();
             let mut parents: Vec<Vec<usize>> = Vec::new();
@@ -188,23 +202,23 @@ mod tests {
                 let deliverable: Vec<usize> = (0..in_flight.len())
                     .filter(|&i| in_flight[i].0 == p)
                     .collect();
-                let time = match rng.below(3) {
+                let stamp = match rng.below(3) {
                     0 => {
                         let to = (p + 1 + rng.below(PROCS - 1)) % PROCS;
                         let stamp = clocks[p].send();
-                        in_flight.push((to, id, stamp));
+                        in_flight.push((to, id, stamp.time));
                         stamp
                     }
                     1 if !deliverable.is_empty() => {
                         let i = deliverable[rng.below(deliverable.len())];
-                        let (_, send_id, stamp) = in_flight.swap_remove(i);
+                        let (_, send_id, time) = in_flight.swap_remove(i);
                         ps.push(send_id);
-                        clocks[p].receive(stamp)
+                        clocks[p].receive(time)
                     }
                     _ => clocks[p].tick(),
                 };
                 last_event[p] = Some(id);
-                stamps.push(LamportStamp { time, process: p });
+                stamps.push(stamp);
                 parents.push(ps);
             }
 
@@ -253,7 +267,7 @@ mod tests {
         let stopped = ManualClock::new(0);
         for seed in 1..=50u64 {
             let mut rng = Rng(seed.wrapping_mul(0x9E37_79B9_7F4A_7C15));
-            let mut lamports = [LamportClock::new(); PROCS];
+            let mut lamports: [_; PROCS] = std::array::from_fn(LamportClock::new);
             let hlcs: Vec<Hlc<&ManualClock>> = (0..PROCS).map(|_| Hlc::new(&stopped)).collect();
             // (destination, Lamport stamp, HLC stamp)
             let mut in_flight: Vec<(usize, u64, Timestamp)> = Vec::new();
@@ -265,16 +279,16 @@ mod tests {
                 let (lamport, hlc) = match rng.below(3) {
                     0 => {
                         let to = (p + 1 + rng.below(PROCS - 1)) % PROCS;
-                        let stamps = (lamports[p].send(), hlcs[p].now());
+                        let stamps = (lamports[p].send().time, hlcs[p].now());
                         in_flight.push((to, stamps.0, stamps.1));
                         stamps
                     }
                     1 if !deliverable.is_empty() => {
                         let i = deliverable[rng.below(deliverable.len())];
                         let (_, l, h) = in_flight.swap_remove(i);
-                        (lamports[p].receive(l), hlcs[p].update(h).unwrap())
+                        (lamports[p].receive(l).time, hlcs[p].update(h).unwrap())
                     }
-                    _ => (lamports[p].tick(), hlcs[p].now()),
+                    _ => (lamports[p].tick().time, hlcs[p].now()),
                 };
                 assert_eq!(
                     (hlc.wall, u64::from(hlc.logical)),

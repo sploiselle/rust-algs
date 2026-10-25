@@ -231,7 +231,7 @@ impl<A: Ord + Clone + Display, V: Clone + Debug> Label for LamportRegister<A, V>
 
 /// `L 3`: the clock's time (role `lamport`), named as in the other Lamport
 /// values, so a trace of bare clocks reads like the mutex and register figures.
-impl Label for LamportClock {
+impl<P: Clone> Label for LamportClock<P> {
     fn label(&self) -> String {
         self.spans().plain()
     }
@@ -518,7 +518,7 @@ mod tests {
 
     #[test]
     fn lamport_clock() {
-        let mut c = LamportClock::new();
+        let mut c = LamportClock::new('A');
         c.receive(2);
         assert_eq!(c.label(), "L\u{a0}3");
     }

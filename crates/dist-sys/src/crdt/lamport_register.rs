@@ -52,10 +52,9 @@ use crate::clock::{LamportClock, LamportStamp};
 /// A last-writer-wins register at one replica `A`, holding values `V`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LamportRegister<A, V> {
-    /// Breaks ties between this replica's writes and others' at the same time.
-    replica: A,
-    /// Advanced by every write, sync and [`tick`](Self::tick).
-    clock: LamportClock,
+    /// Advanced by every write, sync and [`tick`](Self::tick), and names this
+    /// replica.
+    clock: LamportClock<A>,
     /// The value with the largest stamp this replica has heard of, and that
     /// stamp.
     entry: Option<(LamportStamp<A>, V)>,
@@ -64,17 +63,16 @@ pub struct LamportRegister<A, V> {
 impl<A: Ord + Clone, V: Clone> LamportRegister<A, V> {
     pub fn new(replica: A) -> Self {
         Self {
-            replica,
-            clock: LamportClock::new(),
+            clock: LamportClock::new(replica),
             entry: None,
         }
     }
 
     pub fn replica(&self) -> &A {
-        &self.replica
+        self.clock.process()
     }
 
-    pub fn clock(&self) -> &LamportClock {
+    pub fn clock(&self) -> &LamportClock<A> {
         &self.clock
     }
 
@@ -90,7 +88,7 @@ impl<A: Ord + Clone, V: Clone> LamportRegister<A, V> {
 
     /// Record an event at this replica that isn't a write to the register,
     /// such as a write to some other key. It moves the clock all the same.
-    pub fn tick(&mut self) -> u64 {
+    pub fn tick(&mut self) -> LamportStamp<A> {
         self.clock.tick()
     }
 
@@ -98,10 +96,7 @@ impl<A: Ord + Clone, V: Clone> LamportRegister<A, V> {
     /// larger than every stamp this replica has heard of, so the write wins
     /// here. Returns the stamp.
     pub fn write(&mut self, value: V) -> LamportStamp<A> {
-        let stamp = LamportStamp {
-            time: self.clock.tick(),
-            process: self.replica.clone(),
-        };
+        let stamp = self.clock.tick();
         self.entry = Some((stamp.clone(), value));
         stamp
     }

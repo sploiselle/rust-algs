@@ -79,10 +79,9 @@ pub enum Kind {
 /// A message from one process to another.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Message<P> {
-    pub from: P,
     pub to: P,
-    /// The sender's Lamport time when it sent this.
-    pub time: u64,
+    /// The stamp of the send, whose process is the sender.
+    pub stamp: LamportStamp<P>,
     pub kind: Kind,
 }
 
@@ -90,13 +89,13 @@ pub struct Message<P> {
 /// `P`.
 #[derive(Debug, Clone)]
 pub struct LamportMutex<P> {
-    me: P,
-    /// Stamps this process's requests, acks and releases.
-    clock: LamportClock,
+    /// Stamps this process's requests, acks and releases, and names this
+    /// process.
+    clock: LamportClock<P>,
     /// Every outstanding request this process knows of, its own included,
     /// earliest first.
     queue: BTreeSet<LamportStamp<P>>,
-    /// For each other process, the latest stamp received from it, 0 before
+    /// For each other process, the latest time received from it, 0 before
     /// anything arrives: what the second half of rule 5 compares against.
     heard: BTreeMap<P, u64>,
     /// This process's own request, from [`request`](Self::request) until
@@ -115,8 +114,7 @@ impl<P: Ord + Clone> LamportMutex<P> {
             .map(|p| (p, 0))
             .collect();
         Self {
-            me,
-            clock: LamportClock::new(),
+            clock: LamportClock::new(me),
             queue: BTreeSet::new(),
             heard,
             pending: None,
@@ -124,10 +122,10 @@ impl<P: Ord + Clone> LamportMutex<P> {
     }
 
     pub fn me(&self) -> &P {
-        &self.me
+        self.clock.process()
     }
 
-    pub fn clock(&self) -> &LamportClock {
+    pub fn clock(&self) -> &LamportClock<P> {
         &self.clock
     }
 
@@ -136,7 +134,7 @@ impl<P: Ord + Clone> LamportMutex<P> {
         self.queue.iter()
     }
 
-    /// For each other process, the latest stamp received from it, 0 if
+    /// For each other process, the latest time received from it, 0 if
     /// nothing yet: what the second half of rule 5 compares against.
     pub fn heard(&self) -> impl Iterator<Item = (&P, u64)> {
         self.heard.iter().map(|(p, &time)| (p, time))
@@ -174,14 +172,10 @@ impl<P: Ord + Clone> LamportMutex<P> {
     /// If this process already has a request outstanding.
     pub fn request(&mut self) -> Vec<Message<P>> {
         assert!(self.pending.is_none(), "already requested");
-        let time = self.clock.send();
-        let mine = LamportStamp {
-            time,
-            process: self.me.clone(),
-        };
+        let mine = self.clock.send();
         self.queue.insert(mine.clone());
-        self.pending = Some(mine);
-        self.broadcast(time, Kind::Request)
+        self.pending = Some(mine.clone());
+        self.broadcast(mine, Kind::Request)
     }
 
     /// Rule 3: give the resource up. Returns the release to send to every other
@@ -194,8 +188,8 @@ impl<P: Ord + Clone> LamportMutex<P> {
         assert!(self.holds(), "released without holding");
         let mine = self.pending.take().expect("a holder has a request");
         self.queue.remove(&mine);
-        let time = self.clock.send();
-        self.broadcast(time, Kind::Release)
+        let stamp = self.clock.send();
+        self.broadcast(stamp, Kind::Release)
     }
 
     /// Rules 2 and 4: handle a message from another process, returning the
@@ -203,43 +197,38 @@ impl<P: Ord + Clone> LamportMutex<P> {
     ///
     /// Messages from each sender must arrive in the order it sent them.
     pub fn receive(&mut self, msg: Message<P>) -> Option<Message<P>> {
-        debug_assert!(msg.to == self.me, "delivered to the wrong process");
-        self.clock.receive(msg.time);
+        debug_assert!(msg.to == *self.me(), "delivered to the wrong process");
+        self.clock.receive(msg.stamp.time);
         let heard = self
             .heard
-            .get_mut(&msg.from)
+            .get_mut(&msg.stamp.process)
             .expect("message from an unknown process");
-        *heard = (*heard).max(msg.time);
+        *heard = (*heard).max(msg.stamp.time);
         match msg.kind {
             Kind::Request => {
-                self.queue.insert(LamportStamp {
-                    time: msg.time,
-                    process: msg.from.clone(),
-                });
-                let time = self.clock.send();
+                let to = msg.stamp.process.clone();
+                self.queue.insert(msg.stamp);
                 Some(Message {
-                    from: self.me.clone(),
-                    to: msg.from,
-                    time,
+                    to,
+                    stamp: self.clock.send(),
                     kind: Kind::Ack,
                 })
             }
             Kind::Ack => None,
             Kind::Release => {
                 // A process has at most one request outstanding, so this is it.
-                self.queue.retain(|s| s.process != msg.from);
+                self.queue.retain(|s| s.process != msg.stamp.process);
                 None
             }
         }
     }
 
-    fn broadcast(&self, time: u64, kind: Kind) -> Vec<Message<P>> {
+    fn broadcast(&self, stamp: LamportStamp<P>, kind: Kind) -> Vec<Message<P>> {
         self.heard
             .keys()
             .map(|p| Message {
-                from: self.me.clone(),
                 to: p.clone(),
-                time,
+                stamp: stamp.clone(),
                 kind,
             })
             .collect()
@@ -272,7 +261,7 @@ mod tests {
         let mut b = LamportMutex::new('B', ['A', 'B']);
         let req_a = a.request().pop().unwrap();
         let req_b = b.request().pop().unwrap();
-        assert_eq!((req_a.time, req_b.time), (1, 1));
+        assert_eq!((req_a.stamp.time, req_b.stamp.time), (1, 1));
 
         let ack_from_b = b.receive(req_a).unwrap();
         let ack_from_a = a.receive(req_b).unwrap();
@@ -359,7 +348,7 @@ mod tests {
                             msgs: Vec<Message<usize>>| {
                 for m in msgs {
                     sent += 1;
-                    channels[m.from][m.to].push_back(m);
+                    channels[m.stamp.process][m.to].push_back(m);
                 }
             };
 
