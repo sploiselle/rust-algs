@@ -7,6 +7,8 @@
 //!   name and collect individual events, the
 //!   [`LamportClock`](clock::LamportClock), and the hybrid logical clock
 //!   [`Hlc`](clock::Hlc).
+//! - [`counter`]: the simplest source of order, a
+//!   [`MonotonicCounter`](counter::MonotonicCounter).
 //! - [`crdt`]: replicated data types that converge without coordination.
 //!   [`MvRegister`](crdt::MvRegister).
 //! - [`coordination`]: getting processes to agree on an order.
@@ -14,6 +16,7 @@
 
 pub mod clock;
 pub mod coordination;
+pub mod counter;
 pub mod crdt;
 
 #[cfg(test)]
