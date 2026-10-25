@@ -57,6 +57,7 @@ pub fn all() -> Vec<Figure> {
         mv_register_siblings(),
         actor_id_reuse(),
         causal_context_gap(),
+        causal_context_steps(),
         mutex_fifo(),
         mutex_overtaking(),
     ]
@@ -705,6 +706,108 @@ fn causal_context_gap() -> Figure {
         stem: "causal-context-gap",
         diagram: Diagram::DotLine(d),
         form: Form::Static,
+    }
+}
+
+/// The causal context gap one insert at a time: A:1, then A:3 past a gap at
+/// A:2. Each frame is read back from the library: what the causal context
+/// contains, and the smallest vector clock holding everything it has seen,
+/// whose wrong claim appears as the gap opens.
+fn causal_context_steps() -> Figure {
+    let dot = |counter| Dot {
+        actor: 'A',
+        counter,
+    };
+    let top = 3;
+    let mut d = DotLine::frames(
+        "A causal context tracks a gap a vector clock cannot",
+        "A",
+        top,
+    );
+    let mut cc = CausalContext::new();
+    let mut inserted: Vec<u64> = Vec::new();
+    let mut wrong_per_frame = Vec::new();
+    // Snapshot the line after each step. `say` gets the frame's vector clock.
+    let mut frame = |d: &mut DotLine,
+                     cc: &CausalContext<char>,
+                     inserted: &[u64],
+                     say: &dyn Fn(&VectorClock<char>) -> Rich| {
+        let mut present = inserted.to_vec();
+        present.sort();
+        let contains: Vec<u64> = (1..=top).filter(|&c| cc.contains(&dot(c))).collect();
+        assert_eq!(
+            contains, present,
+            "the causal context holds exactly what was inserted"
+        );
+        // The smallest vector clock holding every dot the context has seen.
+        let naive: VectorClock<char> = [('A', cc.next_counter(&'A') - 1)].into_iter().collect();
+        let claimed: Vec<u64> = (1..=top).filter(|&c| c <= naive.get(&'A')).collect();
+        wrong_per_frame.push(
+            claimed
+                .iter()
+                .copied()
+                .filter(|c| !present.contains(c))
+                .collect::<Vec<_>>(),
+        );
+        let narration = say(&naive);
+        d.frame(
+            present,
+            vec![
+                Claim {
+                    title: "CausalContext".into(),
+                    text: cc.spans(),
+                    counters: contains,
+                },
+                Claim {
+                    title: "VectorClock".into(),
+                    text: naive.spans(),
+                    counters: claimed,
+                },
+            ],
+            narration,
+        );
+    };
+
+    frame(&mut d, &cc, &inserted, &|naive| {
+        rich![
+            "Nothing seen yet: the causal context is ",
+            v(&CausalContext::<char>::new()),
+            " and the vector clock ",
+            v(naive)
+        ]
+    });
+    cc.insert(dot(1));
+    inserted.push(1);
+    frame(&mut d, &cc, &inserted, &|naive| {
+        assert_eq!(naive, &VectorClock::from_iter([('A', 1)]));
+        rich!["Insert ", v(&dot(1)), ": both claim exactly ", v(&dot(1))]
+    });
+    cc.insert(dot(3));
+    inserted.push(3);
+    let after = cc.clone();
+    frame(&mut d, &cc, &inserted, &|naive| {
+        rich![
+            "Insert ",
+            v(&dot(3)),
+            ", skipping ",
+            v(&dot(2)),
+            ": the causal context keeps it apart, ",
+            v(&after),
+            ", but the smallest vector clock holding it, ",
+            v(naive),
+            ", also claims ",
+            v(&dot(2))
+        ]
+    });
+    assert_eq!(
+        wrong_per_frame,
+        [vec![], vec![], vec![2]],
+        "the vector clock overclaims exactly when the gap opens"
+    );
+    Figure {
+        stem: "causal-context-steps",
+        diagram: Diagram::DotLine(d),
+        form: Form::Steps,
     }
 }
 

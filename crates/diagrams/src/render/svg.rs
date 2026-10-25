@@ -37,7 +37,7 @@ use std::fmt::Write as _;
 
 use super::Render;
 use super::steps::{At, timed};
-use crate::model::{DotLine, EventId, Message, Note, Relation, Rich, SpaceTime, Span, rich};
+use crate::model::{Claim, DotLine, EventId, Message, Note, Relation, Rich, SpaceTime, Span, rich};
 
 pub struct Svg;
 
@@ -1304,6 +1304,14 @@ pub(crate) fn with_actor_slots(d: &SpaceTime) -> SpaceTime {
     d
 }
 
+/// A number line with its actor's spans tagged, as [`with_actor_slots`] does.
+pub(crate) fn dot_line_with_slots(d: &DotLine) -> DotLine {
+    let actors = vec![d.actor().to_string()];
+    let mut d = d.clone();
+    d.for_each_span(|s| tag_slot(s, &actors));
+    d
+}
+
 fn tag_slot(s: &mut Span, actors: &[String]) {
     let slot = s
         .data
@@ -1563,12 +1571,13 @@ fn dist(a: Pt, b: Pt) -> f64 {
     ((b.0 - a.0).powi(2) + (b.1 - a.1).powi(2)).sqrt()
 }
 
-/// The SVG for a dot number line.
-pub(crate) fn dot_line_svg(stem: &str, d: &DotLine) -> String {
+/// The SVG for a dot number line at `at` (see [`space_time_svg`]). The rows
+/// and counters stay put from frame to frame; each dot, claim and value is
+/// drawn as the frame at that step has it, all laid out to fit every frame.
+pub(crate) fn dot_line_svg(stem: &str, d: &DotLine, at: At) -> String {
     let actors = vec![d.actor().to_string()];
-    let mut d = d.clone();
-    d.for_each_span(|s| tag_slot(s, &actors));
-    let d = &d;
+    let d = &dot_line_with_slots(d);
+    let timed = |mark: &dyn Fn(usize) -> Option<String>| timed(at, d.last_step(), OFF, mark);
     const STEP: f64 = 56.0;
     const R_DOT: f64 = 7.0;
     let n = d.counters();
@@ -1588,12 +1597,13 @@ pub(crate) fn dot_line_svg(stem: &str, d: &DotLine) -> String {
     let line_end = x_of(n) + STEP / 2.0;
     let y_line = 40.0;
     let text_x = line_end + 14.0;
-    let claim_texts: Vec<Text> = d
-        .claims()
+    let claim_text = |c: &Claim| Text::rich(&c.text, ANN_PX, Font::Mono, "ds-row-value");
+    let text_w = d
+        .all_frames()
         .iter()
-        .map(|c| Text::rich(&c.text, ANN_PX, Font::Mono, "ds-row-value"))
-        .collect();
-    let text_w = claim_texts.iter().map(Text::width).fold(0.0, f64::max);
+        .flat_map(|f| &f.claims)
+        .map(|c| claim_text(c).width())
+        .fold(0.0, f64::max);
     let legend = Text::plain(
         "filled: dot seen · dashed: never seen · ×: claimed but never seen",
         LABEL_PX,
@@ -1655,25 +1665,31 @@ pub(crate) fn dot_line_svg(stem: &str, d: &DotLine) -> String {
             anchor: Anchor::Middle,
         }
         .emit(&mut out, "    ", &format!(r#" data-counter="{c}""#));
-        if d.present().contains(&c) {
-            emit!(
-                out,
-                r#"    <circle class="ds-dot"{} cx="{}" cy="{}" r="{}"/>"#,
-                dot_attrs(c),
-                num(x),
-                num(y_line),
-                num(R_DOT)
-            );
-        } else {
-            emit!(
-                out,
-                r#"    <circle class="ds-dot ds-gap"{} cx="{}" cy="{}" r="{}" fill="none" stroke="currentColor" stroke-dasharray="3 2"/>"#,
-                dot_attrs(c),
-                num(x),
-                num(y_line),
-                num(R_DOT)
-            );
-        }
+        let mut seen = String::new();
+        emit!(
+            seen,
+            r#"    <circle class="ds-dot"{} cx="{}" cy="{}" r="{}"/>"#,
+            dot_attrs(c),
+            num(x),
+            num(y_line),
+            num(R_DOT)
+        );
+        let mut gap = String::new();
+        emit!(
+            gap,
+            r#"    <circle class="ds-dot ds-gap"{} cx="{}" cy="{}" r="{}" fill="none" stroke="currentColor" stroke-dasharray="3 2"/>"#,
+            dot_attrs(c),
+            num(x),
+            num(y_line),
+            num(R_DOT)
+        );
+        out.push_str(&timed(&|s| {
+            Some(if d.frame_at(s).present.contains(&c) {
+                seen.clone()
+            } else {
+                gap.clone()
+            })
+        }));
     }
     emit!(out, "  </g>");
     for (k, claim) in d.claims().iter().enumerate() {
@@ -1690,33 +1706,46 @@ pub(crate) fn dot_line_svg(stem: &str, d: &DotLine) -> String {
             anchor: Anchor::End,
         }
         .emit(&mut out, "    ", "");
-        for &c in &claim.counters {
+        for c in 1..=n {
             let x = x_of(c);
-            if d.present().contains(&c) {
-                emit!(
-                    out,
-                    r#"    <circle class="ds-claim"{} cx="{}" cy="{}" r="4"/>"#,
-                    dot_attrs(c),
-                    num(x),
-                    num(y)
-                );
-            } else {
-                Placed {
-                    text: Text::plain("×", LANE_PX, Font::Sans, "ds-wrong"),
-                    x,
-                    y: y + 5.0,
-                    anchor: Anchor::Middle,
-                }
-                .emit(&mut out, "    ", &dot_attrs(c));
+            let mut held = String::new();
+            emit!(
+                held,
+                r#"    <circle class="ds-claim"{} cx="{}" cy="{}" r="4"/>"#,
+                dot_attrs(c),
+                num(x),
+                num(y)
+            );
+            let mut wrong = String::new();
+            Placed {
+                text: Text::plain("×", LANE_PX, Font::Sans, "ds-wrong"),
+                x,
+                y: y + 5.0,
+                anchor: Anchor::Middle,
             }
+            .emit(&mut wrong, "    ", &dot_attrs(c));
+            out.push_str(&timed(&|s| {
+                let f = d.frame_at(s);
+                f.claims[k].counters.contains(&c).then(|| {
+                    if f.present.contains(&c) {
+                        held.clone()
+                    } else {
+                        wrong.clone()
+                    }
+                })
+            }));
         }
-        Placed {
-            text: claim_texts[k].clone(),
-            x: text_x,
-            y: y + 4.0,
-            anchor: Anchor::Start,
-        }
-        .emit(&mut out, "    ", "");
+        out.push_str(&timed(&|s| {
+            let mut value = String::new();
+            Placed {
+                text: claim_text(&d.frame_at(s).claims[k]),
+                x: text_x,
+                y: y + 4.0,
+                anchor: Anchor::Start,
+            }
+            .emit(&mut value, "    ", "");
+            Some(value)
+        }));
         emit!(out, "  </g>");
     }
     Placed {
@@ -1740,7 +1769,7 @@ impl Render for Svg {
     }
 
     fn dot_line(&self, stem: &str, d: &DotLine) -> Option<String> {
-        Some(dot_line_svg(stem, d))
+        Some(dot_line_svg(stem, d, At::End))
     }
 }
 

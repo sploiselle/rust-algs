@@ -21,8 +21,8 @@
 use super::Render;
 use super::steps::{At, timed};
 use super::svg::{
-    actor_attrs, dot_line_svg, escape_attr, event_sentence, lanes_sentence, one_line,
-    relation_attr, role_classes, space_time_svg, subject, with_actor_slots,
+    actor_attrs, dot_line_svg, dot_line_with_slots, escape_attr, event_sentence, lanes_sentence,
+    one_line, relation_attr, role_classes, space_time_svg, subject, with_actor_slots,
 };
 use crate::label::split_fields;
 use crate::model::{Beat, Diagram, DotLine, LaneId, Note, Rich, SpaceTime, Span, Timeline};
@@ -39,14 +39,7 @@ impl Render for Html {
     }
 
     fn dot_line(&self, stem: &str, d: &DotLine) -> Option<String> {
-        Some(figure(
-            stem,
-            "dot-line",
-            d.title(),
-            &dot_line_svg(stem, d),
-            &[],
-            None,
-        ))
+        Some(dot_line_html(stem, d, At::End))
     }
 }
 
@@ -54,7 +47,7 @@ impl Render for Html {
 pub fn steps_html(stem: &str, d: &Diagram) -> String {
     match d {
         Diagram::SpaceTime(d) => space_time_html(stem, d, At::Every),
-        Diagram::DotLine(_) => panic!("{stem}: a dot line has no step-through form"),
+        Diagram::DotLine(d) => dot_line_html(stem, d, At::Every),
     }
 }
 
@@ -72,7 +65,10 @@ pub(crate) fn space_time_html(stem: &str, d: &SpaceTime, at: At) -> String {
             })
         })
         .collect();
-    let play = (at != At::End).then(|| (t.last(), play(d, &t, at)));
+    let play = (at != At::End).then(|| {
+        let beats = timed(at, t.last(), "", |s| Some(beat(d, &t, s)));
+        (t.last(), play(&beats, state_table(d, &t, at)))
+    });
     figure(
         stem,
         "space-time",
@@ -92,15 +88,44 @@ fn note_item(notes: &[Note], n: &Note) -> String {
     ) + "\n"
 }
 
-/// The block a page's player fills in: an empty bar for its controls, a
-/// sentence for each step, and what each lane holds.
-fn play(d: &SpaceTime, t: &Timeline, at: At) -> String {
+/// A number line at `at`: at [`At::End`] the finished figure alone,
+/// otherwise its frames, each with what it says.
+pub(crate) fn dot_line_html(stem: &str, d: &DotLine, at: At) -> String {
+    let d = &dot_line_with_slots(d);
+    let last = d.last_step();
+    let play = (at != At::End).then(|| {
+        let beats = timed(at, last, "", |s| {
+            let body = if s == last {
+                text(&one_line(d.title()))
+            } else {
+                rich_html(&squeezed(&d.frame_at(s).narration))
+            };
+            Some(
+                format!(r#"<p class="ds-beat"><span class="ds-beat-body">{body}</span></p>"#)
+                    + "\n",
+            )
+        });
+        (last, play(&beats, None))
+    });
+    figure(
+        stem,
+        "dot-line",
+        d.title(),
+        &dot_line_svg(stem, d, at),
+        &[],
+        play,
+    )
+}
+
+/// The block a page's player fills in: an empty bar for its controls, the
+/// sentences for the steps, and, for a space-time figure, what each lane holds.
+fn play(beats: &str, state: Option<String>) -> String {
     let mut out = String::from(
         "<div class=\"ds-play\" hidden>\n<div class=\"ds-play-bar\"></div>\n<div class=\"ds-beats\">\n",
     );
-    out.push_str(&timed(at, t.last(), "", |s| Some(beat(d, t, s))));
+    out.push_str(beats);
     out.push_str("</div>\n");
-    if let Some(table) = state_table(d, t, at) {
+    if let Some(table) = state {
         out.push_str(&table);
     }
     out.push_str("</div>\n");
@@ -353,12 +378,12 @@ mod tests {
     /// the figure drawn at that step.
     #[test]
     fn every_step_is_the_figure_at_that_step() {
-        for (stem, d) in step_throughs() {
-            let every = space_time_html(stem, &d, At::Every);
-            for s in 0..=d.timeline().last() {
+        for (stem, d) in every_step_through() {
+            let every = render(stem, &d, At::Every);
+            for s in 0..=last_step(&d) {
                 assert_eq!(
                     at_step(&every, s, true),
-                    space_time_html(stem, &d, At::Step(s)),
+                    render(stem, &d, At::Step(s)),
                     "{stem} at step {s}"
                 );
             }
@@ -367,11 +392,84 @@ mod tests {
 
     #[test]
     fn without_a_player_a_step_through_is_the_finished_figure() {
-        for (stem, d) in step_throughs() {
-            let every = space_time_html(stem, &d, At::Every);
-            let finished = Html.space_time(stem, &d).unwrap();
-            assert_eq!(at_step(&every, d.timeline().last(), false), finished);
+        for (stem, d) in every_step_through() {
+            let every = render(stem, &d, At::Every);
+            let finished = Html.render(stem, &d).unwrap();
+            assert_eq!(at_step(&every, last_step(&d), false), finished);
             assert_eq!(without_player(&every), finished, "{stem}");
+        }
+    }
+
+    fn every_step_through() -> Vec<(&'static str, Diagram)> {
+        crate::catalog::all()
+            .into_iter()
+            .filter(|f| f.form == Form::Steps)
+            .map(|f| (f.stem, f.diagram))
+            .collect()
+    }
+
+    fn render(stem: &str, d: &Diagram, at: At) -> String {
+        match d {
+            Diagram::SpaceTime(d) => space_time_html(stem, d, at),
+            Diagram::DotLine(d) => dot_line_html(stem, d, at),
+        }
+    }
+
+    fn last_step(d: &Diagram) -> usize {
+        match d {
+            Diagram::SpaceTime(d) => d.timeline().last(),
+            Diagram::DotLine(d) => d.last_step(),
+        }
+    }
+
+    /// At each frame a dot is filled or dashed as the frame has it, and a row
+    /// shows × exactly where it claims a dot that wasn't seen; what a frame
+    /// says quotes only values on the line.
+    #[test]
+    fn a_number_line_shows_each_frame() {
+        for (stem, d) in every_step_through() {
+            let Diagram::DotLine(d) = d else { continue };
+            for s in 0..=d.last_step() {
+                let html = dot_line_html(stem, &d, At::Step(s));
+                let f = d.frame_at(s);
+                for c in 1..=d.counters() {
+                    let dot = format!(r#" data-counter="{c}" data-dot="A:{c}""#);
+                    let filled = format!(r#"<circle class="ds-dot"{dot}"#);
+                    assert_eq!(html.contains(&filled), f.present.contains(&c), "{stem}");
+                }
+                for claim in &f.claims {
+                    let at = html
+                        .find(&format!(
+                            r#"data-row="{}""#,
+                            crate::model::slug(&claim.title)
+                        ))
+                        .unwrap();
+                    let row = &html[at..at + html[at..].find("</g>").unwrap()];
+                    for c in 1..=d.counters() {
+                        let wrong = claim.counters.contains(&c) && !f.present.contains(&c);
+                        let needle = format!(r#"class="ds-wrong" data-counter="{c}""#);
+                        assert_eq!(row.contains(&needle), wrong, "{stem}: step {s}, {c}");
+                    }
+                }
+                let on_screen: Vec<String> = f
+                    .claims
+                    .iter()
+                    .map(|c| c.text.plain())
+                    .chain((1..=d.counters()).map(|c| format!("{}:{c}", d.actor())))
+                    .collect();
+                for line in &f.narration.lines {
+                    for run in line
+                        .chunk_by(|x, y| x.value == y.value)
+                        .filter(|r| r[0].value)
+                    {
+                        let quoted: String = run.iter().map(|x| x.text.as_str()).collect();
+                        assert!(
+                            on_screen.iter().any(|v| v.contains(&quoted)),
+                            "{stem}: {quoted:?}"
+                        );
+                    }
+                }
+            }
         }
     }
 

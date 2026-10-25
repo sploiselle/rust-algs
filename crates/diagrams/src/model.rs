@@ -769,14 +769,23 @@ pub fn slug(s: &str) -> String {
 }
 
 /// One actor's counters on a number line, marking which dots were actually
-/// seen, against what one or more representations *claim* to contain.
+/// seen, against what one or more representations *claim* to contain. A
+/// finished figure has one frame; a step-through shows its frames in turn.
 #[derive(Debug, Clone)]
 pub struct DotLine {
     title: String,
     actor: String,
     counters: u64,
-    present: Vec<u64>,
-    claims: Vec<Claim>,
+    frames: Vec<Frame>,
+}
+
+/// One moment of a number line: the counters whose dot has been seen, what
+/// each representation claims, and what a step-through says about it.
+#[derive(Debug, Clone)]
+pub struct Frame {
+    pub present: Vec<u64>,
+    pub claims: Vec<Claim>,
+    pub narration: Rich,
 }
 
 /// What one representation says it contains. A counter claimed here but absent
@@ -800,11 +809,31 @@ impl DotLine {
         present: Vec<u64>,
         claims: Vec<Claim>,
     ) -> Self {
+        let mut d = Self::frames(title, actor, counters);
+        d.frame(present, claims, Rich::default());
+        d
+    }
+
+    /// A number line to show frame by frame, as [`DotLine::frame`] adds them.
+    pub fn frames(title: impl Into<String>, actor: impl Into<String>, counters: u64) -> Self {
         assert!(
             (1..=64).contains(&counters),
             "a number line needs 1 to 64 counters"
         );
-        let on_line = |c: &u64| (1..=counters).contains(c);
+        Self {
+            title: title.into(),
+            actor: actor.into(),
+            counters,
+            frames: Vec::new(),
+        }
+    }
+
+    /// The next frame. Panics unless every present or claimed counter is on
+    /// the line, each claim's counters ascend, and the rows are those of the
+    /// first frame: a step-through changes what the rows say, not which rows
+    /// there are.
+    pub fn frame(&mut self, present: Vec<u64>, claims: Vec<Claim>, narration: impl Into<Rich>) {
+        let on_line = |c: &u64| (1..=self.counters).contains(c);
         assert!(
             present.iter().all(on_line),
             "a present counter is off the line"
@@ -813,13 +842,25 @@ impl DotLine {
             claims.iter().all(|c| c.counters.iter().all(on_line)),
             "a claimed counter is off the line"
         );
-        Self {
-            title: title.into(),
-            actor: actor.into(),
-            counters,
+        assert!(
+            claims.iter().all(|c| c.counters.is_sorted_by(|a, b| a < b)),
+            "a claim's counters ascend"
+        );
+        if let Some(first) = self.frames.first() {
+            assert!(
+                first
+                    .claims
+                    .iter()
+                    .map(|c| &c.title)
+                    .eq(claims.iter().map(|c| &c.title)),
+                "every frame has the same rows"
+            );
+        }
+        self.frames.push(Frame {
             present,
             claims,
-        }
+            narration: narration.into(),
+        });
     }
 
     pub fn title(&self) -> &str {
@@ -834,18 +875,46 @@ impl DotLine {
         self.counters
     }
 
+    /// Every frame, in order.
+    pub fn all_frames(&self) -> &[Frame] {
+        &self.frames
+    }
+
+    /// The last frame: the finished figure.
+    fn finished(&self) -> &Frame {
+        self.frames.last().expect("a number line needs a frame")
+    }
+
     pub fn present(&self) -> &[u64] {
-        &self.present
+        &self.finished().present
     }
 
     pub fn claims(&self) -> &[Claim] {
-        &self.claims
+        &self.finished().claims
     }
 
-    /// Apply `f` to every span of every claim's text.
+    /// The step that shows the finished figure: one step per frame, then the
+    /// finished figure again, as a space-time step-through ends.
+    pub fn last_step(&self) -> usize {
+        self.frames.len()
+    }
+
+    /// The frame shown at `step`.
+    pub fn frame_at(&self, step: usize) -> &Frame {
+        &self.frames[step.min(self.frames.len() - 1)]
+    }
+
+    /// Apply `f` to every span of every frame's text.
     pub fn for_each_span(&mut self, mut f: impl FnMut(&mut Span)) {
-        for c in &mut self.claims {
-            c.text.lines.iter_mut().flatten().for_each(&mut f);
+        for frame in &mut self.frames {
+            let texts = frame
+                .claims
+                .iter_mut()
+                .map(|c| &mut c.text)
+                .chain([&mut frame.narration]);
+            for r in texts {
+                r.lines.iter_mut().flatten().for_each(&mut f);
+            }
         }
     }
 }
@@ -921,6 +990,50 @@ mod tests {
     #[should_panic(expected = "off the line")]
     fn a_dot_line_rejects_counters_it_cannot_draw() {
         DotLine::new("t", "A", 3, vec![0], vec![]);
+    }
+
+    fn claim(title: &str, counters: Vec<u64>) -> Claim {
+        Claim {
+            title: title.into(),
+            text: Rich::default(),
+            counters,
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "same rows")]
+    fn every_frame_has_the_same_rows() {
+        let mut d = DotLine::frames("t", "A", 3);
+        d.frame(vec![], vec![claim("x", vec![])], "");
+        d.frame(vec![], vec![claim("y", vec![])], "");
+    }
+
+    #[test]
+    #[should_panic(expected = "ascend")]
+    fn claimed_counters_ascend() {
+        let mut d = DotLine::frames("t", "A", 3);
+        d.frame(vec![], vec![claim("x", vec![2, 1])], "");
+    }
+
+    #[test]
+    #[should_panic(expected = "needs a frame")]
+    fn a_dot_line_needs_a_frame() {
+        DotLine::frames("t", "A", 3).present();
+    }
+
+    #[test]
+    fn a_dot_line_steps_through_its_frames_then_ends() {
+        let mut d = DotLine::frames("t", "A", 3);
+        d.frame(vec![1], vec![], "one");
+        d.frame(vec![1, 3], vec![], "two");
+        assert_eq!(d.last_step(), 2);
+        assert_eq!(d.frame_at(0).present, [1]);
+        assert_eq!(
+            d.frame_at(2).present,
+            [1, 3],
+            "the end shows the last frame"
+        );
+        assert_eq!(d.present(), [1, 3]);
     }
 
     #[test]

@@ -78,10 +78,15 @@ can say things at each step, start from values, or tell a different story
 from any finished figure. Where it tells the same story, the two entries share
 a scenario function, and with it the asserts (`vector_trace` in the catalog).
 
-The steps are the lanes, then each event in recorded order with each note
-right after its later event, then the finished figure. The figure is laid out
-once, finished, and every version of every mark is tagged with the steps it
-shows at:
+A space-time step-through's steps are the lanes, then each event in recorded
+order with each note right after its later event, then the finished figure.
+It can give each lane a start value (`SpaceTime::start_value`) and say what an
+event does (`SpaceTime::narrate`, beside an assert of what it claims); a panel
+shows what each lane holds at each step, with what its event changed marked.
+A number line steps through frames (`DotLine::frames`, then `frame` after each
+library call), then the finished figure. Either way the figure is laid out
+once, to fit every step, and every version of every mark is tagged with the
+steps it shows at:
 
 | Hook | Means |
 |---|---|
@@ -90,6 +95,7 @@ shows at:
 | `[data-cont]` | the version takes over from the one before it (a message moving on, a value changing), rather than appearing afresh |
 | `.ds-flight` | a message line or head in flight: between its send and its arrival it reaches as far as the latest event's column |
 | `.ds-play[hidden]` | the block a player fills and shows: an empty `.ds-play-bar` for its controls and one `p.ds-beat[data-event]` / `[data-note]` per step, whose `.ds-beat-body` says what happened (`.ds-lead` is the event's name) |
+| `.ds-state`, `tr.ds-state-lane[data-lane]`, `.ds-cell[data-event]`, `.ds-changed` | in a space-time step-through's block, what each lane holds: a row per lane, a version of its value per event, and the parts that event changed |
 
 A player shows step `s` by hiding every tagged element whose steps exclude
 `s`. Tests filter the tagged figure that way at every step and compare it with
