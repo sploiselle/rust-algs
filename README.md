@@ -11,8 +11,10 @@ crates/dist-sys/          the library
   src/clock/              tracking causality
     vector.rs             vector clocks
     dot.rs                dots and causal contexts
+    hybrid.rs             hybrid logical clocks
   src/crdt/               replicated data types
     mv_register.rs        multi-value register
+  examples/               programs to run against the library
 crates/diagrams/          figures drawn from the library (SVG and Mermaid)
 figures/                  the rendered figures, committed
 ```
@@ -28,6 +30,13 @@ cargo doc --open
 ```
 
 The rendered module docs are the write-ups.
+
+```bash
+cargo run --release -p dist-sys --example hlc_system_clock
+```
+
+That runs the hybrid logical clock against this machine's real clock and
+reports how often it needs its logical counter.
 
 ## Figures
 
