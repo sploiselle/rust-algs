@@ -210,6 +210,9 @@ pub struct Lane {
     /// What the lane holds before its first event, for a step-through's
     /// state panel. Set by [`SpaceTime::start_value`].
     pub start: Rich,
+    /// The event at which the actor crashed, if it did: its timeline ends
+    /// there, and nothing happens on it afterwards. Set by [`SpaceTime::crash`].
+    pub crash: Option<EventId>,
 }
 
 /// Something that happened at one actor. `annotation` is the library value
@@ -414,6 +417,7 @@ impl SpaceTime {
             key,
             actor: None,
             start: Rich::default(),
+            crash: None,
         });
         LaneId(self.lanes.len() - 1)
     }
@@ -475,6 +479,10 @@ impl SpaceTime {
         annotation: impl Into<Rich>,
     ) -> EventId {
         assert!(lane.0 < self.lanes.len(), "unknown lane");
+        assert!(
+            self.lanes[lane.0].crash.is_none(),
+            "nothing happens on a lane after its actor crashes"
+        );
         self.events.push(Event {
             lane,
             name: name.into(),
@@ -483,6 +491,16 @@ impl SpaceTime {
             narration: Rich::default(),
         });
         EventId(self.events.len() - 1)
+    }
+
+    /// The actor on `lane` crashes: an event, named `name`, after which its
+    /// timeline ends. It sends nothing and receives nothing, so a message sent
+    /// to it is never drawn; a note should say so. Panics if the lane has
+    /// already crashed.
+    pub fn crash(&mut self, lane: LaneId, name: impl Into<String>) -> EventId {
+        let e = self.event(lane, name, Rich::default());
+        self.lanes[lane.0].crash = Some(e);
+        e
     }
 
     /// What a step-through says at `event`'s step, in place of the account
@@ -540,6 +558,10 @@ impl SpaceTime {
         assert_ne!(
             self.events[from.0].lane, self.events[to.0].lane,
             "a message must go to another lane"
+        );
+        assert!(
+            self.lanes.iter().all(|l| l.crash != Some(from)),
+            "a crash sends nothing"
         );
         self.messages.push(Message {
             from,
@@ -1138,6 +1160,20 @@ mod tests {
         d.message(a1, b1, "");
         d.message(b2, c1, "");
         (d, [a1, b1, b2, c1, a2])
+    }
+
+    #[test]
+    fn a_crash_ends_its_lane() {
+        let mut d = SpaceTime::new("t");
+        let (a, b) = (d.lane("A"), d.lane("B"));
+        d.event(a, "A1", "");
+        let crash = d.crash(a, "crash");
+        assert_eq!(d.lanes()[a.0].crash, Some(crash));
+        let b1 = d.event(b, "B1", "");
+        let after = std::panic::catch_unwind(|| d.clone().event(a, "A2", ""));
+        assert!(after.is_err(), "nothing happens on a crashed lane");
+        let sends = std::panic::catch_unwind(|| d.clone().message(crash, b1, ""));
+        assert!(sends.is_err(), "a crash sends nothing");
     }
 
     #[test]

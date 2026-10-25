@@ -65,7 +65,8 @@ it any more. For each figure:
   that render Mermaid. The causal-context figure is a number line, which has
   no Mermaid form. Mermaid draws every message straight across, so the
   overtaking message in the mutex figure doesn't cross there; its notes
-  still say so.
+  still say so. Nor does a lane end at a crash there: the crash is a note
+  like any other event.
 
 `index.json` lists the figures in the order a reader should meet them, with
 their kinds, forms (`static` or `steps`) and titles.
@@ -128,6 +129,7 @@ figure and a new role picks up the right tier without a mapping of its own.
 | `--ds-font-sym` | the `→` inside register entries, for monospace fonts that lack it |
 | `--ds-lane-line`, `--ds-lane-opacity`, `--ds-lane-width`, `--ds-lane-name` | timelines (opacity defaults to .5) and their names |
 | `--ds-event-dot`, `--ds-event-name`, `--ds-value` | event markers, event names, library values under events and beside number-line rows |
+| `--ds-crash` | the × where an actor crashes (falls back to `--ds-event-dot`) |
 | `--ds-field` | the names in a value made of named fields, such as `Lamport` in a clock reading (falls back to `--ds-muted`) |
 | `--ds-message-line`, `--ds-message-width`, `--ds-message-label` | arrows and their labels |
 | `--ds-accent`, `--ds-on-accent`, `--ds-ring-width`, `--ds-ring-dash` | note rings and badges; the badge numeral (defaults to `Canvas`) |
@@ -158,7 +160,7 @@ the parts set their own paint, and a stroke on a group outlines its text.
 |---|---|
 | `[data-figure="<stem>"][data-kind]` | the `<figure>` and the `<svg>`; `data-kind` is `space-time` or `dot-line` |
 | `g.ds-lane[data-lane]` | a timeline (`.ds-lane-line`, `.ds-lane-head`, `.ds-lane-name`); the key is the lane name, lowercased |
-| `g.ds-event[data-event][data-lane]` | an event (`.ds-event-dot`, `.ds-event-name`, `.ds-event-value`) |
+| `g.ds-event[data-event][data-lane]` | an event (`.ds-event-dot`, `.ds-event-name`, `.ds-event-value`); a crash has `.ds-event-crash`, a ×, in place of the dot, and its lane's line ends there |
 | `[data-actor][data-actor-n]` | a lane showing an actor, its events, and every part of a value naming that actor; `data-actor-n` is the palette slot |
 | `g.ds-message[data-message][data-from][data-to]` | an arrow (`.ds-message-line`, `.ds-message-head`, `.ds-message-label`) |
 | `data-notes="1 2"` | every event, message and ring a note is about; for a happened-before note, the whole path |

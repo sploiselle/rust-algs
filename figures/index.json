@@ -1,5 +1,7 @@
 {
   "figures": [
+    { "stem": "lamport-clock-trace", "kind": "space-time", "form": "static", "title": "Lamport clocks: three processes, two messages" },
+    { "stem": "lamport-clock-steps", "kind": "space-time", "form": "steps", "title": "Lamport clocks: three processes, two messages" },
     { "stem": "vector-clock-trace", "kind": "space-time", "form": "static", "title": "Vector clocks: three processes, two messages" },
     { "stem": "vector-clock-steps", "kind": "space-time", "form": "steps", "title": "Vector clocks: three processes, two messages" },
     { "stem": "clock-comparison", "kind": "space-time", "form": "static", "title": "Three clocks, one trace: Lamport, hybrid logical, and vector" },
@@ -14,6 +16,8 @@
     { "stem": "mutex-fifo", "kind": "space-time", "form": "static", "title": "Lamport's mutex over FIFO channels: B waits its turn" },
     { "stem": "mutex-fifo-steps", "kind": "space-time", "form": "steps", "title": "Lamport's mutex over FIFO channels: B waits its turn" },
     { "stem": "mutex-overtaking", "kind": "space-time", "form": "static", "title": "Lamport's mutex: an overtaking message lets two processes in" },
-    { "stem": "mutex-overtaking-steps", "kind": "space-time", "form": "steps", "title": "Lamport's mutex: an overtaking message lets two processes in" }
+    { "stem": "mutex-overtaking-steps", "kind": "space-time", "form": "steps", "title": "Lamport's mutex: an overtaking message lets two processes in" },
+    { "stem": "mutex-crash", "kind": "space-time", "form": "static", "title": "Lamport's mutex: A crashes, and no one enters again" },
+    { "stem": "mutex-crash-steps", "kind": "space-time", "form": "steps", "title": "Lamport's mutex: A crashes, and no one enters again" }
   ]
 }

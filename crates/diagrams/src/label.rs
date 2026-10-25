@@ -7,7 +7,9 @@
 
 use std::fmt::{Debug, Display};
 
-use dist_sys::clock::{CausalContext, Causality, Dot, LamportStamp, Timestamp, VectorClock};
+use dist_sys::clock::{
+    CausalContext, Causality, Dot, LamportClock, LamportStamp, Timestamp, VectorClock,
+};
 use dist_sys::coordination::LamportMutex;
 use dist_sys::crdt::{LamportRegister, MvRegister};
 
@@ -224,6 +226,21 @@ impl<A: Ord + Clone + Display, V: Clone + Debug> Label for LamportRegister<A, V>
             ),
             ("x", entry),
         ])
+    }
+}
+
+/// `L 3`: the clock's time (role `lamport`), named as in the other Lamport
+/// values, so a trace of bare clocks reads like the mutex and register figures.
+impl Label for LamportClock {
+    fn label(&self) -> String {
+        self.spans().plain()
+    }
+
+    fn spans(&self) -> Rich {
+        fields(vec![(
+            "L",
+            Span::part(self.time().to_string(), "lamport").into(),
+        )])
     }
 }
 
@@ -497,6 +514,13 @@ mod tests {
             a.label(),
             "L\u{a0}\u{a0}\u{a0}\u{a0}\u{a0}1\nqueue\u{a0}(1,A)\nheard\u{a0}B:0\nholds\u{a0}no"
         );
+    }
+
+    #[test]
+    fn lamport_clock() {
+        let mut c = LamportClock::new();
+        c.receive(2);
+        assert_eq!(c.label(), "L\u{a0}3");
     }
 
     #[test]

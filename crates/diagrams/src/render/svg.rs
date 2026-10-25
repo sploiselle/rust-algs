@@ -44,6 +44,7 @@ pub struct Svg;
 const COL_W: f64 = 72.0; // minimum pitch between consecutive events
 const R: f64 = 5.0; // event marker radius
 const RING: f64 = 9.0; // note ring radius
+const CROSS: f64 = 5.0; // half the width of a crash marker
 const GAP: f64 = 12.0; // clear space between neighbouring text on one lane
 const NEAR: f64 = 12.0; // an event's first text block starts this far from its lane
 const STACK_GAP: f64 = 4.0; // between stacked text blocks
@@ -90,6 +91,7 @@ const STYLE: &[&str] = &[
     ".ds-figure .ds-lane-name { fill: var(--ds-lane-name, var(--ds-actor, var(--ds-ink, currentColor))); font-weight: 600; }",
     ".ds-figure .ds-row-name { fill: var(--ds-lane-name, var(--ds-ink, currentColor)); font-weight: 600; }",
     ".ds-figure .ds-event-dot { fill: var(--ds-event-dot, var(--ds-ink, currentColor)); }",
+    ".ds-figure .ds-event-crash { stroke: var(--ds-crash, var(--ds-event-dot, var(--ds-ink, currentColor))); stroke-width: 2; }",
     ".ds-figure .ds-event-name { fill: var(--ds-event-name, var(--ds-muted, var(--ds-ink, currentColor))); }",
     ".ds-figure .ds-field { fill: var(--ds-field, var(--ds-muted, var(--ds-ink, currentColor))); }",
     ".ds-figure :is(.ds-event-value, .ds-row-value) { fill: var(--ds-value, var(--ds-ink, currentColor)); }",
@@ -1290,22 +1292,44 @@ fn open(
     emit!(out, "  </style>");
 }
 
-/// A horizontal timeline from `x0` to `x1` with an arrowhead at the right,
-/// named at the left, grouped under its key.
-fn timeline(out: &mut String, x0: f64, x1: f64, y: f64, name: &str, key: &str, attrs: &str) {
+/// A horizontal timeline from `x0`, named at the left, grouped under its key.
+/// `ends` is its line and arrowhead, which [`lane_line`] and [`lane_head`] draw.
+fn timeline(out: &mut String, x0: f64, y: f64, name: &str, key: &str, attrs: &str, ends: &str) {
     emit!(
         out,
         r#"    <g class="ds-lane" data-lane="{}"{attrs}>"#,
         escape_attr(key)
     );
+    out.push_str(ends);
+    Placed {
+        text: Text::plain(name, LANE_PX, Font::Sans, "ds-lane-name"),
+        x: x0 - 10.0,
+        y: y + 5.0,
+        anchor: Anchor::End,
+    }
+    .emit(out, "      ", "");
+    emit!(out, "    </g>");
+}
+
+/// A timeline's line from `x0`: to the arrowhead at `x1`, or, once its actor
+/// has crashed, to the crash at `x1`.
+fn lane_line(x0: f64, x1: f64, y: f64, crashed: bool) -> String {
+    let end = if crashed { x1 } else { x1 - 8.0 };
+    let mut out = String::new();
     emit!(
         out,
         r#"      <line class="ds-lane-line" x1="{}" y1="{}" x2="{}" y2="{}" stroke="currentColor" stroke-opacity=".5"/>"#,
         num(x0),
         num(y),
-        num(x1 - 8.0),
+        num(end),
         num(y)
     );
+    out
+}
+
+/// A timeline's arrowhead, ending at `x1`.
+fn lane_head(x1: f64, y: f64) -> String {
+    let mut out = String::new();
     emit!(
         out,
         r#"      <polygon class="ds-lane-head" points="{},{} {},{} {},{}" fill-opacity=".5"/>"#,
@@ -1316,14 +1340,7 @@ fn timeline(out: &mut String, x0: f64, x1: f64, y: f64, name: &str, key: &str, a
         num(x1 - 8.0),
         num(y + 4.0)
     );
-    Placed {
-        text: Text::plain(name, LANE_PX, Font::Sans, "ds-lane-name"),
-        x: x0 - 10.0,
-        y: y + 5.0,
-        anchor: Anchor::End,
-    }
-    .emit(out, "      ", "");
-    emit!(out, "    </g>");
+    out
 }
 
 /// ` data-relation="before"` or `"concurrent"` when note `n` claims one.
@@ -1418,15 +1435,19 @@ pub(crate) fn space_time_svg(stem: &str, d: &SpaceTime, captions: bool, at: At) 
     for (k, lane) in d.lanes().iter().enumerate() {
         let key = d.lane_key(crate::model::LaneId(k));
         let attrs = actor_attrs(lane.actor.as_deref(), &actors);
-        timeline(
-            &mut out,
-            l.label_w,
-            l.width,
-            l.lane_y[k],
-            &lane.name,
-            &key,
-            &attrs,
-        );
+        let y = l.lane_y[k];
+        // From its crash on, a lane ends there, with no arrowhead.
+        let crashed = |s: usize| lane.crash.filter(|&e| s >= t.event(e));
+        let mut ends = timed(&|s| {
+            Some(match crashed(s) {
+                Some(e) => lane_line(l.label_w, l.x[e.0], y, true),
+                None => lane_line(l.label_w, l.width, y, false),
+            })
+        });
+        ends.push_str(&timed(&|s| {
+            crashed(s).is_none().then(|| lane_head(l.width, y))
+        }));
+        timeline(&mut out, l.label_w, y, &lane.name, &key, &attrs, &ends);
     }
     emit!(out, "  </g>");
 
@@ -1504,13 +1525,29 @@ pub(crate) fn space_time_svg(stem: &str, d: &SpaceTime, captions: bool, at: At) 
             actor_attrs(d.lanes()[e.lane.0].actor.as_deref(), &actors),
             notes_attr(&notes, |n| n.events.contains(&id))
         );
-        emit!(
-            g,
-            r#"      <circle class="ds-event-dot" cx="{}" cy="{}" r="{}"/>"#,
-            num(l.x[i]),
-            num(l.lane_y[e.lane.0]),
-            num(R)
-        );
+        let (cx, cy) = (l.x[i], l.lane_y[e.lane.0]);
+        if d.lanes()[e.lane.0].crash == Some(id) {
+            emit!(
+                g,
+                r#"      <path class="ds-event-crash" d="M{} {}L{} {}M{} {}L{} {}" fill="none" stroke="currentColor" stroke-width="2"/>"#,
+                num(cx - CROSS),
+                num(cy - CROSS),
+                num(cx + CROSS),
+                num(cy + CROSS),
+                num(cx - CROSS),
+                num(cy + CROSS),
+                num(cx + CROSS),
+                num(cy - CROSS)
+            );
+        } else {
+            emit!(
+                g,
+                r#"      <circle class="ds-event-dot" cx="{}" cy="{}" r="{}"/>"#,
+                num(cx),
+                num(cy),
+                num(R)
+            );
+        }
         for p in [&l.names[i], &l.annotations[i]].into_iter().flatten() {
             p.emit(&mut g, "      ", "");
         }
@@ -1746,7 +1783,8 @@ pub(crate) fn dot_line_svg(stem: &str, d: &DotLine, at: At) -> String {
     // The number line reuses the lane mark, indented one level deeper.
     let mut lane = String::new();
     let attrs = actor_attrs(Some(d.actor()), &actors);
-    timeline(&mut lane, left_w, line_end, y_line, d.actor(), &key, &attrs);
+    let ends = lane_line(left_w, line_end, y_line, false) + &lane_head(line_end, y_line);
+    timeline(&mut lane, left_w, y_line, d.actor(), &key, &attrs, &ends);
     for l in lane.lines() {
         emit!(out, "  {l}");
     }
@@ -2203,6 +2241,30 @@ mod tests {
 
     /// At each step a message is in flight, its head is drawn at the
     /// playhead's column and its line runs to the head's base.
+    #[test]
+    fn a_crashed_lane_ends_at_its_crash_from_that_step_on() {
+        let mut d = SpaceTime::new("t");
+        let (a, b) = (d.lane("A"), d.lane("B"));
+        d.event(a, "A1", "");
+        let crash = d.crash(a, "crash");
+        d.event(b, "B1", "");
+        d.step_through();
+        let (l, t) = (layout(&d, false), d.timeline());
+        let lane_a = |svg: &str| {
+            let at = svg.find(r#"data-lane="a""#).unwrap();
+            svg[at..at + svg[at..].find("</g>").unwrap()].to_string()
+        };
+        for s in 0..=t.last() {
+            let g = lane_a(&space_time_svg("t", &d, false, At::Step(s)));
+            let crashed = s >= t.event(crash);
+            let end = if crashed { l.x[crash.0] } else { l.width - 8.0 };
+            assert!(g.contains(&format!(r#"x2="{}""#, num(end))), "step {s}");
+            assert_eq!(g.contains("ds-lane-head"), !crashed, "step {s}");
+        }
+        let svg = space_time_svg("t", &d, false, At::End);
+        assert!(svg.contains("ds-event-crash"));
+    }
+
     #[test]
     fn a_message_in_flight_is_drawn_to_the_playhead() {
         for figure in crate::catalog::all() {

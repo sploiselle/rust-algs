@@ -51,6 +51,8 @@ impl Form {
 /// Every figure, in the order their files are written.
 pub fn all() -> Vec<Figure> {
     let mut figures = vec![
+        lamport_clock_trace(),
+        lamport_clock_steps(),
         vector_clock_trace(),
         vector_clock_steps(),
         clock_comparison(),
@@ -66,6 +68,8 @@ pub fn all() -> Vec<Figure> {
         mutex_fifo_steps(),
         mutex_overtaking(),
         mutex_overtaking_steps(),
+        mutex_crash(),
+        mutex_crash_steps(),
     ];
     for f in &mut figures {
         if let (Form::Steps, Diagram::SpaceTime(d)) = (f.form, &mut f.diagram) {
@@ -263,6 +267,157 @@ fn vector_trace() -> VectorTrace {
         lanes: [la, lb, lc],
         b2: (b2, b1_clock, m1, b2_clock),
         c2: (c2, c2_clock),
+    }
+}
+
+/// The vector clock trace stamped by Lamport clocks alone: the scenario in
+/// the library test `three_process_trace`. A1 reaches C2 through B, and its
+/// time is smaller; A3 and B3 are concurrent, and their times are ordered
+/// anyway.
+fn lamport_clock_trace() -> Figure {
+    Figure {
+        stem: "lamport-clock-trace",
+        diagram: Diagram::SpaceTime(lamport_trace().d),
+        form: Form::Static,
+    }
+}
+
+/// The Lamport trace one event at a time, each process's clock in a panel
+/// from 0.
+fn lamport_clock_steps() -> Figure {
+    let mut t = lamport_trace();
+    for lane in t.lanes {
+        t.d.start_value(lane, LamportClock::new().spans());
+    }
+    for (event, before, stamp, after) in [t.b2, t.c2] {
+        assert_eq!(before.max(stamp) + 1, after, "rule 2: the larger, plus one");
+        t.d.narrate(
+            event,
+            rich![
+                "receives a message stamped ",
+                Span::value(stamp.to_string()),
+                ": its clock takes the larger of its own ",
+                Span::value(before.to_string()),
+                " and the stamp, then adds one, reaching ",
+                Span::value(after.to_string())
+            ],
+        );
+    }
+    let (a3, a3_time, b3_time) = t.a3;
+    assert!(a3_time < b3_time);
+    t.d.narrate(
+        a3,
+        rich![
+            "ticks to ",
+            Span::value(a3_time.to_string()),
+            ", below B3's ",
+            Span::value(b3_time.to_string()),
+            ", though nothing passed between them"
+        ],
+    );
+    Figure {
+        stem: "lamport-clock-steps",
+        diagram: Diagram::SpaceTime(t.d),
+        form: Form::Steps,
+    }
+}
+
+/// The Lamport trace and what both of its figures say about it, with
+/// everything either one claims asserted.
+struct LamportTrace {
+    d: SpaceTime,
+    lanes: [LaneId; 3],
+    /// B2 and C2, the receives: each event, its process's time before it,
+    /// the message's stamp, and its time after.
+    b2: (EventId, u64, u64, u64),
+    c2: (EventId, u64, u64, u64),
+    /// A3, its time, and B3's.
+    a3: (EventId, u64, u64),
+}
+
+fn lamport_trace() -> LamportTrace {
+    let mut d = SpaceTime::new("Lamport clocks: three processes, two messages");
+    let (la, lb, lc) = (
+        d.actor_lane("A", 'A'),
+        d.actor_lane("B", 'B'),
+        d.actor_lane("C", 'C'),
+    );
+    let (mut a, mut b, mut c) = (
+        LamportClock::new(),
+        LamportClock::new(),
+        LamportClock::new(),
+    );
+    let mut times: Vec<(EventId, u64)> = Vec::new();
+    let mut record = |d: &mut SpaceTime, lane, name, clock: &LamportClock| {
+        let e = d.event(lane, name, clock.spans());
+        times.push((e, clock.time()));
+        e
+    };
+
+    a.tick();
+    let a1 = record(&mut d, la, "A1", &a);
+    let m1 = a.send();
+    let a2 = record(&mut d, la, "A2", &a);
+    b.tick();
+    record(&mut d, lb, "B1", &b);
+    let b1_time = b.time();
+    b.receive(m1);
+    let b2 = record(&mut d, lb, "B2", &b);
+    let m1_msg = d.message(a2, b2, rich!["m1 ", Span::value(m1.to_string())]);
+    c.tick();
+    record(&mut d, lc, "C1", &c);
+    let c1_time = c.time();
+    let m2 = b.send();
+    let b3 = record(&mut d, lb, "B3", &b);
+    c.receive(m2);
+    let c2 = record(&mut d, lc, "C2", &c);
+    let m2_msg = d.message(b3, c2, rich!["m2 ", Span::value(m2.to_string())]);
+    a.tick();
+    let a3 = record(&mut d, la, "A3", &a);
+
+    assert_eq!(
+        times.iter().map(|&(_, t)| t).collect::<Vec<_>>(),
+        [1, 2, 1, 3, 1, 4, 5, 3]
+    );
+    assert_clock_condition(&d, &times);
+    let time = |e: EventId| times.iter().find(|(x, _)| *x == e).unwrap().1;
+    assert!(
+        d.recorded_before(b3, a3),
+        "the note says A3 is later in real time"
+    );
+    for (e, _) in &times {
+        let key = d.events()[e.0].name.to_lowercase();
+        d.pin_event(*e, &key);
+    }
+    d.pin_message(m1_msg, "m1");
+    d.pin_message(m2_msg, "m2");
+    d.callout_concurrent(
+        a3,
+        b3,
+        rich![
+            "A3 is concurrent with B3, yet its time is smaller, ",
+            Span::value(time(a3).to_string()),
+            " < ",
+            Span::value(time(b3).to_string()),
+            ", though A3 is later in real time: the clock orders events neither could have influenced"
+        ],
+    );
+    d.callout_before(
+        a1,
+        c2,
+        rich![
+            "A1 happened before C2, carried by m1 then m2, and its time is smaller: ",
+            Span::value(time(a1).to_string()),
+            " < ",
+            Span::value(time(c2).to_string())
+        ],
+    );
+    LamportTrace {
+        d,
+        lanes: [la, lb, lc],
+        b2: (b2, b1_time, m1, time(b2)),
+        c2: (c2, c1_time, m2, time(c2)),
+        a3: (a3, time(a3), time(b3)),
     }
 }
 
@@ -1413,11 +1568,227 @@ fn mutex_overtaking_run() -> MutexRun {
     }
 }
 
-/// The clock condition on the drawn graph: whatever an arrow or a lane carries
-/// into an event's past has a smaller Lamport time. `times` holds every event's.
-fn assert_clock_condition(d: &SpaceTime, times: &[(EventId, u64)]) {
+/// Lamport's mutual exclusion with a crash. B, C and A request in turn; A's
+/// request, the earliest, reaches B and C, and A crashes before it hears from
+/// anyone. B and C hear from each other past their own requests, but A's
+/// request heads both queues for good, and neither ever enters.
+fn mutex_crash() -> Figure {
+    Figure {
+        stem: "mutex-crash",
+        diagram: Diagram::SpaceTime(mutex_crash_run().d),
+        form: Form::Static,
+    }
+}
+
+/// The crash one event at a time, each process's state in the panel from
+/// where it starts.
+fn mutex_crash_steps() -> Figure {
+    let mut r = mutex_crash_run();
+    let stamp = |time, process| LamportStamp { time, process };
+    for (lane, me) in r.lanes.into_iter().zip(['A', 'B', 'C']) {
+        r.d.start_value(lane, LamportMutex::new(me, ['A', 'B', 'C']).spans());
+    }
+    // The run asserts each request's stamp and how they sort.
+    let [a, b, c] = [&r.a, &r.b, &r.c];
+    r.d.narrate(
+        b[0],
+        rich![
+            "asks for the resource: stamps its request ",
+            v(&stamp(1, 'B')),
+            ", queues it, and sends it to A and C"
+        ],
+    );
+    r.d.narrate(
+        c[0],
+        rich![
+            "asks too: ",
+            v(&stamp(1, 'C')),
+            " ranks after ",
+            v(&stamp(1, 'B'))
+        ],
+    );
+    r.d.narrate(
+        a[0],
+        rich![
+            "asks too: ",
+            v(&stamp(1, 'A')),
+            " ranks first of the three, since A's id is the smallest"
+        ],
+    );
+    r.d.narrate(
+        a[1],
+        "crashes before anything reaches it. B's and C's requests, already on their way, are never delivered",
+    );
+    r.d.narrate(
+        b[1],
+        rich![
+            "queues ",
+            v(&stamp(1, 'A')),
+            " ahead of its own request and acks it, but the ack goes to a process that has crashed"
+        ],
+    );
+    r.d.narrate(
+        b[3],
+        rich![
+            "has now heard from C past its request, but ",
+            v(&stamp(1, 'A')),
+            " is first in its queue, and only A can release it"
+        ],
+    );
+    Figure {
+        stem: "mutex-crash-steps",
+        diagram: Diagram::SpaceTime(r.d),
+        form: Form::Steps,
+    }
+}
+
+/// The run behind both crash figures: its figure, lanes, and each process's
+/// events in order (A's second is its crash).
+struct CrashRun {
+    d: SpaceTime,
+    lanes: [LaneId; 3],
+    a: Vec<EventId>,
+    b: Vec<EventId>,
+    c: Vec<EventId>,
+}
+
+fn mutex_crash_run() -> CrashRun {
+    let everyone = ['A', 'B', 'C'];
+    let mut d = SpaceTime::new("Lamport's mutex: A crashes, and no one enters again");
+    let (la, lb, lc) = (
+        d.actor_lane("A", 'A'),
+        d.actor_lane("B", 'B'),
+        d.actor_lane("C", 'C'),
+    );
+    let mut a = LamportMutex::new('A', everyone);
+    let mut b = LamportMutex::new('B', everyone);
+    let mut c = LamportMutex::new('C', everyone);
+    let stamp = |time, process| LamportStamp { time, process };
+    let mut times: Vec<(EventId, u64)> = Vec::new();
+    let mut record = |d: &mut SpaceTime, lane, name, p: &LamportMutex<char>| {
+        let e = d.event(lane, name, p.spans());
+        times.push((e, p.clock().time()));
+        e
+    };
+    // Messages sent but never delivered: everything addressed to A.
+    let mut undelivered: Vec<Message<char>> = Vec::new();
+
+    let reqs_b = b.request();
+    let b1 = record(&mut d, lb, "request", &b);
+    let reqs_c = c.request();
+    let c1 = record(&mut d, lc, "request", &c);
+    let reqs_a = a.request();
+    let a1 = record(&mut d, la, "request", &a);
+    assert!(stamp(1, 'A') < stamp(1, 'B') && stamp(1, 'B') < stamp(1, 'C'));
     assert_eq!(
-        times.len(),
+        [a.pending(), b.pending(), c.pending()],
+        [
+            Some(&stamp(1, 'A')),
+            Some(&stamp(1, 'B')),
+            Some(&stamp(1, 'C'))
+        ]
+    );
+    let crash = d.crash(la, "crash");
+    undelivered.push(to(&reqs_b, 'A'));
+    undelivered.push(to(&reqs_c, 'A'));
+
+    // A's request reaches B and C, and heads both queues.
+    let req = to(&reqs_a, 'B');
+    let label = message_label(&req);
+    undelivered.push(b.receive(req).expect("a request is acknowledged"));
+    let b2 = record(&mut d, lb, "req from A", &b);
+    let req_a_to_b = d.message(a1, b2, label);
+    let req = to(&reqs_a, 'C');
+    let label = message_label(&req);
+    undelivered.push(c.receive(req).expect("a request is acknowledged"));
+    let c2 = record(&mut d, lc, "req from A", &c);
+    let req_a_to_c = d.message(a1, c2, label);
+
+    // B and C swap requests and acks.
+    let req = to(&reqs_c, 'B');
+    let label = message_label(&req);
+    let ack_b = b.receive(req).expect("a request is acknowledged");
+    let b3 = record(&mut d, lb, "req from C", &b);
+    d.message(c1, b3, label);
+    let req = to(&reqs_b, 'C');
+    let label = message_label(&req);
+    let ack_c = c.receive(req).expect("a request is acknowledged");
+    let c3 = record(&mut d, lc, "req from B", &c);
+    d.message(b1, c3, label);
+    let label = message_label(&ack_c);
+    b.receive(ack_c);
+    let b4 = record(&mut d, lb, "ack from C", &b);
+    d.message(c3, b4, label);
+    let label = message_label(&ack_b);
+    c.receive(ack_b);
+    let c4 = record(&mut d, lc, "ack from B", &c);
+    d.message(b3, c4, label);
+
+    assert!(
+        undelivered.iter().all(|m| m.to == 'A'),
+        "every message between live processes was delivered"
+    );
+    assert_eq!(undelivered.len(), 4);
+    for p in [&b, &c] {
+        assert_eq!(
+            p.queue().collect::<Vec<_>>(),
+            [&stamp(1, 'A'), &stamp(1, 'B'), &stamp(1, 'C')]
+        );
+        assert!(!p.holds(), "{} waits on A's request", p.me());
+        // It has heard from its live peer past its own request, but from A
+        // only at A's request, which is earlier.
+        let mine = *p.pending().unwrap();
+        for (q, time) in p.heard() {
+            if *q == 'A' {
+                assert_eq!(time, 1);
+                assert!(stamp(time, 'A') < mine);
+            } else {
+                assert!(stamp(time, *q) > mine);
+            }
+        }
+    }
+    assert_clock_condition(&d, &times);
+
+    d.pin_event(a1, "a-requests");
+    d.pin_event(crash, "a-crashes");
+    d.pin_event(b4, "b-waits");
+    d.pin_event(c4, "c-waits");
+    d.pin_message(req_a_to_b, "req-a-b");
+    d.pin_message(req_a_to_c, "req-a-c");
+    d.callout(
+        a1,
+        crash,
+        rich![
+            "A crashes holding the earliest request, ",
+            v(&stamp(1, 'A')),
+            ". Everything sent to it afterwards, B's and C's requests and their acks, goes nowhere"
+        ],
+    );
+    d.callout(
+        b4,
+        c4,
+        rich![
+            "B and C have each heard from the other past their own requests, but ",
+            v(&stamp(1, 'A')),
+            " heads both queues, and only A can release it: neither ever enters"
+        ],
+    );
+    CrashRun {
+        d,
+        lanes: [la, lb, lc],
+        a: vec![a1, crash],
+        b: vec![b1, b2, b3, b4],
+        c: vec![c1, c2, c3, c4],
+    }
+}
+
+/// The clock condition on the drawn graph: whatever an arrow or a lane carries
+/// into an event's past has a smaller Lamport time. `times` holds every event's
+/// but a crash's, which the clock never stamps.
+fn assert_clock_condition(d: &SpaceTime, times: &[(EventId, u64)]) {
+    let crashes = d.lanes().iter().filter(|l| l.crash.is_some()).count();
+    assert_eq!(
+        times.len() + crashes,
         d.events().len(),
         "every event's time is checked"
     );
@@ -1429,6 +1800,14 @@ fn assert_clock_condition(d: &SpaceTime, times: &[(EventId, u64)]) {
             }
         }
     }
+}
+
+/// The message in a broadcast addressed to `to`.
+fn to<P: PartialEq + Clone>(msgs: &[Message<P>], to: P) -> Message<P> {
+    msgs.iter()
+        .find(|m| m.to == to)
+        .cloned()
+        .expect("no message for that process")
 }
 
 /// The one message a two-process broadcast sends.
