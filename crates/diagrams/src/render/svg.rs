@@ -36,7 +36,8 @@
 use std::fmt::Write as _;
 
 use super::Render;
-use crate::model::{DotLine, EventId, Message, Note, Relation, Rich, SpaceTime, Span};
+use super::steps::{At, timed};
+use crate::model::{DotLine, EventId, Message, Note, Relation, Rich, SpaceTime, Span, rich};
 
 pub struct Svg;
 
@@ -1115,31 +1116,9 @@ fn finish(d: &SpaceTime, mut geo: Geo, captions: bool) -> Layout {
 /// A plain-language account of a space-time figure, for `<desc>`: what screen
 /// readers get in place of the picture.
 fn describe(d: &SpaceTime, with_notes: bool) -> String {
-    let lane = |e: EventId| d.lanes()[d.lane_of(e).0].name.as_str();
-    let names: Vec<&str> = d.lanes().iter().map(|l| l.name.as_str()).collect();
-    let mut parts = vec![format!("Timelines for {}.", names.join(", "))];
-    for (i, e) in d.events().iter().enumerate() {
-        let id = EventId(i);
-        let mut s = format!("{} on {}", e.name, lane(id));
-        for m in d.messages().iter().filter(|m| m.to == id) {
-            let what = if m.label.is_empty() {
-                "a message".to_string()
-            } else {
-                m.label.plain()
-            };
-            write!(
-                s,
-                ", receiving {what} from {} on {}",
-                d.events()[m.from.0].name,
-                lane(m.from)
-            )
-            .expect("writing to a String cannot fail");
-        }
-        if !e.annotation.is_empty() {
-            write!(s, ": {}", e.annotation.plain().replace('\n', "; "))
-                .expect("writing to a String cannot fail");
-        }
-        parts.push(format!("{s}."));
+    let mut parts = vec![format!("{}.", lanes_sentence(d))];
+    for i in 0..d.events().len() {
+        parts.push(format!("{}.", event_sentence(d, EventId(i), false).plain()));
     }
     if with_notes {
         for note in d.notes() {
@@ -1151,6 +1130,77 @@ fn describe(d: &SpaceTime, with_notes: bool) -> String {
         }
     }
     parts.join(" ")
+}
+
+/// "Timelines for A, B, C": what there is before anything happens.
+pub(crate) fn lanes_sentence(d: &SpaceTime) -> String {
+    let names: Vec<&str> = d.lanes().iter().map(|l| l.name.as_str()).collect();
+    format!("Timelines for {}", names.join(", "))
+}
+
+/// An event's name (role `lead`; its key if it has no name) and lane: "B2 on B".
+pub(crate) fn subject(d: &SpaceTime, id: EventId) -> Rich {
+    let e = &d.events()[id.0];
+    let name = if e.name.is_empty() {
+        d.event_key(id)
+    } else {
+        e.name.clone()
+    };
+    rich![
+        Span::plain(name).also("lead"),
+        format!(" on {}", lane_name(d, id))
+    ]
+}
+
+/// What happened at an event, as one line: "B2 on B, receiving m1 {A:2} from
+/// A2 on A: {A:2, B:2}", a value's lines joined by "; ". With `sends`, also
+/// what it sent, which a step-through tells as it is sent and a description
+/// of the finished figure tells where it arrives.
+pub(crate) fn event_sentence(d: &SpaceTime, id: EventId, sends: bool) -> Rich {
+    let what = |m: &Message| {
+        if m.label.is_empty() {
+            Rich::from("a message")
+        } else {
+            joined(&m.label, " ")
+        }
+    };
+    let mut s = subject(d, id);
+    for m in d.messages().iter().filter(|m| m.to == id) {
+        s = s.then(", receiving ").then(what(m)).then(format!(
+            " from {} on {}",
+            d.events()[m.from.0].name,
+            lane_name(d, m.from)
+        ));
+    }
+    if sends {
+        for m in d.messages().iter().filter(|m| m.from == id) {
+            s = s
+                .then(", sending ")
+                .then(what(m))
+                .then(format!(" to {}", lane_name(d, m.to)));
+        }
+    }
+    let e = &d.events()[id.0];
+    if !e.annotation.is_empty() {
+        s = s.then(": ").then(joined(&e.annotation, "; "));
+    }
+    s
+}
+
+fn lane_name(d: &SpaceTime, e: EventId) -> &str {
+    &d.lanes()[d.lane_of(e).0].name
+}
+
+/// `r` on one line, its lines separated by `sep`.
+fn joined(r: &Rich, sep: &str) -> Rich {
+    let mut line = Vec::new();
+    for (k, l) in r.lines.iter().enumerate() {
+        if k > 0 {
+            line.push(Span::plain(sep));
+        }
+        line.extend(l.iter().cloned());
+    }
+    Rich { lines: vec![line] }
 }
 
 /// `<title>` and `<desc>` are read as one run of text, and a page may paste
@@ -1244,9 +1294,6 @@ fn notes_attr(notes: &[Note], has: impl Fn(&Note) -> bool) -> String {
     }
 }
 
-/// The SVG for a space-time figure. With `captions`, the notes are set as text
-/// under the drawing, for a figure used on its own; without, a page sets them
-/// itself (see the HTML backend).
 /// The figure with every span that names an actor also tagged `data-actor-n`,
 /// that actor's palette slot (see [`SpaceTime::actors`]). Tagging twice is
 /// harmless.
@@ -1282,11 +1329,17 @@ fn actor_attrs(actor: Option<&str>, actors: &[String]) -> String {
     }
 }
 
-pub(crate) fn space_time_svg(stem: &str, d: &SpaceTime, captions: bool) -> String {
+/// The SVG for a space-time figure. With `captions`, the notes are set as text
+/// under the drawing, for a figure used on its own; without, a page sets them
+/// itself (see the HTML backend). `at` picks the step to draw, or every step
+/// (see [`steps`](super::steps)), always on the finished figure's layout.
+pub(crate) fn space_time_svg(stem: &str, d: &SpaceTime, captions: bool, at: At) -> String {
     let d = &with_actor_slots(d);
     let actors = d.actors();
     let l = layout(d, captions);
     let notes = d.notes();
+    let t = d.timeline();
+    let timed = |mark: &dyn Fn(usize) -> Option<String>| timed(at, t.last(), OFF, mark);
     let mut out = String::new();
     open(
         &mut out,
@@ -1316,10 +1369,16 @@ pub(crate) fn space_time_svg(stem: &str, d: &SpaceTime, captions: bool) -> Strin
 
     emit!(out, r#"  <g class="ds-messages">"#);
     for (mi, m) in d.messages().iter().enumerate() {
-        let (a, tip) = l.segments[mi];
-        let (ux, uy) = unit(a, tip);
-        let (nx, ny) = (-uy, ux);
-        let base = (tip.0 - ux * 9.0, tip.1 - uy * 9.0);
+        let seg = l.segments[mi];
+        let (sent, arrives) = (t.event(m.from), t.event(m.to));
+        // Between its send and its receipt, a message reaches as far as the
+        // column of the latest event: the playhead.
+        let flight = |s: usize| {
+            (sent..arrives).contains(&s).then(|| {
+                let now = t.now(s).expect("the sender has happened");
+                front(seg, l.x[now.0])
+            })
+        };
         emit!(
             out,
             r#"    <g class="ds-message" data-message="{}" data-from="{}" data-to="{}"{}>"#,
@@ -1328,26 +1387,26 @@ pub(crate) fn space_time_svg(stem: &str, d: &SpaceTime, captions: bool) -> Strin
             d.event_key(m.to),
             notes_attr(&notes, |n| n.messages.contains(&mi))
         );
-        emit!(
-            out,
-            r#"      <line class="ds-message-line" x1="{}" y1="{}" x2="{}" y2="{}" stroke="currentColor" stroke-width="1.5"/>"#,
-            num(a.0),
-            num(a.1),
-            num(base.0),
-            num(base.1)
-        );
-        emit!(
-            out,
-            r#"      <polygon class="ds-message-head" points="{},{} {},{} {},{}"/>"#,
-            num(tip.0),
-            num(tip.1),
-            num(base.0 + nx * 3.5),
-            num(base.1 + ny * 3.5),
-            num(base.0 - nx * 3.5),
-            num(base.1 - ny * 3.5)
-        );
+        out.push_str(&timed(&|s| {
+            if s >= arrives {
+                Some(message_line("ds-message-line", seg))
+            } else {
+                flight(s)
+                    .filter(|&tip| dist(seg.0, tip) - HEAD >= 0.5)
+                    .map(|tip| message_line("ds-message-line ds-flight", (seg.0, tip)))
+            }
+        }));
+        out.push_str(&timed(&|s| {
+            if s >= arrives {
+                Some(message_head("ds-message-head", seg))
+            } else {
+                flight(s).map(|tip| message_head("ds-message-head ds-flight", (seg.0, tip)))
+            }
+        }));
         if let Some(label) = &l.labels[mi] {
-            label.emit(&mut out, "      ", "");
+            let mut text = String::new();
+            label.emit(&mut text, "      ", "");
+            out.push_str(&timed(&|s| (s >= arrives).then(|| text.clone())));
         }
         emit!(out, "    </g>");
     }
@@ -1356,8 +1415,9 @@ pub(crate) fn space_time_svg(stem: &str, d: &SpaceTime, captions: bool) -> Strin
     emit!(out, r#"  <g class="ds-events">"#);
     for (i, e) in d.events().iter().enumerate() {
         let id = EventId(i);
+        let mut g = String::new();
         emit!(
-            out,
+            g,
             r#"    <g class="ds-event" data-event="{}" data-lane="{}"{}{}>"#,
             d.event_key(id),
             d.lane_key(e.lane),
@@ -1365,16 +1425,17 @@ pub(crate) fn space_time_svg(stem: &str, d: &SpaceTime, captions: bool) -> Strin
             notes_attr(&notes, |n| n.events.contains(&id))
         );
         emit!(
-            out,
+            g,
             r#"      <circle class="ds-event-dot" cx="{}" cy="{}" r="{}"/>"#,
             num(l.x[i]),
             num(l.lane_y[e.lane.0]),
             num(R)
         );
         for p in [&l.names[i], &l.annotations[i]].into_iter().flatten() {
-            p.emit(&mut out, "      ", "");
+            p.emit(&mut g, "      ", "");
         }
-        emit!(out, "    </g>");
+        emit!(g, "    </g>");
+        out.push_str(&timed(&|s| (s >= t.event(id)).then(|| g.clone())));
     }
     emit!(out, "  </g>");
 
@@ -1384,8 +1445,16 @@ pub(crate) fn space_time_svg(stem: &str, d: &SpaceTime, captions: bool) -> Strin
             if !l.ringed[i] {
                 continue;
             }
+            // A ring marks the event from the first note it ends.
+            let from = notes
+                .iter()
+                .filter(|n| n.callout.a.0 == i || n.callout.b.0 == i)
+                .map(|n| t.note(n.n))
+                .min()
+                .expect("a ringed event ends a note");
+            let mut ring = String::new();
             emit!(
-                out,
+                ring,
                 r#"    <circle class="ds-ring" data-event="{}"{} cx="{}" cy="{}" r="{}" fill="none" stroke="currentColor" stroke-width="1.5"/>"#,
                 d.event_key(EventId(i)),
                 notes_attr(&notes, |n| n.callout.a.0 == i || n.callout.b.0 == i),
@@ -1393,31 +1462,34 @@ pub(crate) fn space_time_svg(stem: &str, d: &SpaceTime, captions: bool) -> Strin
                 num(l.lane_y[e.lane.0]),
                 num(RING)
             );
+            out.push_str(&timed(&|s| (s >= from).then(|| ring.clone())));
         }
         for b in &l.badges {
             for (k, &n) in b.notes.iter().enumerate() {
                 let (cx, cy) = b.centre(k);
+                let mut g = String::new();
                 emit!(
-                    out,
+                    g,
                     r#"    <g class="ds-badge" data-note="{n}" data-event="{}"{}>"#,
                     d.event_key(EventId(b.event)),
                     relation_attr(&notes, n)
                 );
                 emit!(
-                    out,
+                    g,
                     r#"      <circle class="ds-badge-disc" cx="{}" cy="{}" r="{}"/>"#,
                     num(cx),
                     num(cy),
                     num(BADGE_R)
                 );
                 emit!(
-                    out,
+                    g,
                     r#"      <text class="ds-badge-n" x="{}" y="{}" text-anchor="middle" font-size="{}" fill="Canvas">{n}</text>"#,
                     num(cx),
                     num(cy + 0.36 * BADGE_PX),
                     num(BADGE_PX)
                 );
-                emit!(out, "    </g>");
+                emit!(g, "    </g>");
+                out.push_str(&timed(&|s| (s >= t.note(n)).then(|| g.clone())));
             }
         }
         emit!(out, "  </g>");
@@ -1426,12 +1498,69 @@ pub(crate) fn space_time_svg(stem: &str, d: &SpaceTime, captions: bool) -> Strin
     if !l.captions.is_empty() {
         emit!(out, r#"  <g class="ds-captions">"#);
         for (n, p) in &l.captions {
-            p.emit(&mut out, "    ", &format!(r#" data-note="{n}""#));
+            let mut line = String::new();
+            p.emit(&mut line, "    ", &format!(r#" data-note="{n}""#));
+            out.push_str(&timed(&|s| (s >= t.note(*n)).then(|| line.clone())));
         }
         emit!(out, "  </g>");
     }
     emit!(out, "</svg>");
     out
+}
+
+/// What a version hidden until a page's player runs carries.
+const OFF: &str = r#" display="none""#;
+
+/// A message's arrowhead, tip to base.
+const HEAD: f64 = 9.0;
+
+/// A message's line, from its start to the base of its head at `tip`.
+fn message_line(class: &str, (start, tip): (Pt, Pt)) -> String {
+    let (ux, uy) = unit(start, tip);
+    let base = (tip.0 - ux * HEAD, tip.1 - uy * HEAD);
+    let mut out = String::new();
+    emit!(
+        out,
+        r#"      <line class="{class}" x1="{}" y1="{}" x2="{}" y2="{}" stroke="currentColor" stroke-width="1.5"/>"#,
+        num(start.0),
+        num(start.1),
+        num(base.0),
+        num(base.1)
+    );
+    out
+}
+
+/// A message's arrowhead at `tip`, pointing away from `start`.
+fn message_head(class: &str, (start, tip): (Pt, Pt)) -> String {
+    let (ux, uy) = unit(start, tip);
+    let (nx, ny) = (-uy, ux);
+    let base = (tip.0 - ux * HEAD, tip.1 - uy * HEAD);
+    let mut out = String::new();
+    emit!(
+        out,
+        r#"      <polygon class="{class}" points="{},{} {},{} {},{}"/>"#,
+        num(tip.0),
+        num(tip.1),
+        num(base.0 + nx * 3.5),
+        num(base.1 + ny * 3.5),
+        num(base.0 - nx * 3.5),
+        num(base.1 - ny * 3.5)
+    );
+    out
+}
+
+/// How far a message in flight has got by the time of the column at `x`:
+/// where its segment crosses that column, but at least a head's length out of
+/// the sender, so that a message just sent already shows which way it goes.
+/// Messages always point right, so the segment does cross each column once.
+fn front((start, tip): (Pt, Pt), x: f64) -> Pt {
+    let (ux, uy) = unit(start, tip);
+    let along = ((x - start.0) / ux).max(HEAD).min(dist(start, tip));
+    (start.0 + ux * along, start.1 + uy * along)
+}
+
+fn dist(a: Pt, b: Pt) -> f64 {
+    ((b.0 - a.0).powi(2) + (b.1 - a.1).powi(2)).sqrt()
 }
 
 /// The SVG for a dot number line.
@@ -1607,7 +1736,7 @@ impl Render for Svg {
     }
 
     fn space_time(&self, stem: &str, d: &SpaceTime) -> Option<String> {
-        Some(space_time_svg(stem, d, true))
+        Some(space_time_svg(stem, d, true, At::End))
     }
 
     fn dot_line(&self, stem: &str, d: &DotLine) -> Option<String> {
@@ -1824,7 +1953,7 @@ mod tests {
         let mut d = SpaceTime::new("t");
         let a = d.lane("A");
         d.event(a, "", "ab\nabcd\nabc");
-        let svg = space_time_svg("fig", &d, false);
+        let svg = space_time_svg("fig", &d, false, At::End);
         assert!(svg.contains("ab\u{a0}\u{a0}<tspan"), "{svg}");
         assert!(svg.contains(">abcd</tspan>"), "{svg}");
         assert!(svg.contains(">abc\u{a0}</tspan>"), "{svg}");
@@ -1871,7 +2000,7 @@ mod tests {
         let b1 = d.event(b, "B1", "");
         d.message(a1, b1, "m1");
         d.callout(a1, b1, "note");
-        let svg = space_time_svg("fig", &d, false);
+        let svg = space_time_svg("fig", &d, false, At::End);
         for needle in [
             r#"data-figure="fig""#,
             r#"data-kind="space-time""#,
@@ -1886,7 +2015,7 @@ mod tests {
         }
         assert!(!svg.contains("ds-captions"));
         assert!(
-            space_time_svg("fig", &d, true).contains(r#"<text class="ds-caption" data-note="1""#)
+            space_time_svg("fig", &d, true, At::End).contains(r#"<text class="ds-caption" data-note="1""#)
         );
     }
 }

@@ -11,6 +11,7 @@
 //! HTML block.
 
 use super::Render;
+use super::steps::At;
 use super::svg::{
     dot_line_svg, escape_attr, one_line, relation_attr, role_classes, space_time_svg,
     with_actor_slots,
@@ -42,7 +43,7 @@ impl Render for Html {
             stem,
             "space-time",
             d.title(),
-            &space_time_svg(stem, d, false),
+            &space_time_svg(stem, d, false, At::End),
             &items,
         ))
     }

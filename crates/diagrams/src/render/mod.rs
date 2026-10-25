@@ -2,6 +2,7 @@
 
 mod html;
 mod mermaid;
+mod steps;
 mod svg;
 
 pub use html::Html;

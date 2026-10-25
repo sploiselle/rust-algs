@@ -225,6 +225,60 @@ pub struct Note<'a> {
     pub messages: BTreeSet<usize>,
 }
 
+/// One step of a step-through figure.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Beat {
+    /// The lanes, before anything has happened.
+    Start,
+    Event(EventId),
+    /// A note, by its number in [`SpaceTime::notes`].
+    Note(usize),
+    /// The finished figure.
+    End,
+}
+
+/// The order a step-through shows a figure in: the lanes, then each event in
+/// recorded order, each note right after its later event, then the finished
+/// figure. One change per step, and the notes come in the order they are
+/// numbered.
+#[derive(Debug, Clone)]
+pub struct Timeline {
+    beats: Vec<Beat>,
+    event_step: Vec<usize>,
+    /// Indexed by note number less one.
+    note_step: Vec<usize>,
+}
+
+impl Timeline {
+    pub fn beats(&self) -> &[Beat] {
+        &self.beats
+    }
+
+    /// The step that shows the finished figure.
+    pub fn last(&self) -> usize {
+        self.beats.len() - 1
+    }
+
+    /// The step at which `event` happens.
+    pub fn event(&self, event: EventId) -> usize {
+        self.event_step[event.0]
+    }
+
+    /// The step at which note `n` (from 1) is made.
+    pub fn note(&self, n: usize) -> usize {
+        self.note_step[n - 1]
+    }
+
+    /// The latest event to have happened by `step`, if any: the playhead's
+    /// column.
+    pub fn now(&self, step: usize) -> Option<EventId> {
+        self.beats[..=step].iter().rev().find_map(|b| match b {
+            Beat::Event(e) => Some(*e),
+            _ => None,
+        })
+    }
+}
+
 /// Actors as horizontal lanes, time flowing left to right. The order events
 /// were recorded in *is* the time axis.
 #[derive(Debug, Clone)]
@@ -524,6 +578,29 @@ impl SpaceTime {
                 }
             })
             .collect()
+    }
+
+    /// The figure as a step-through: see [`Timeline`].
+    pub fn timeline(&self) -> Timeline {
+        let notes = self.notes();
+        let mut beats = vec![Beat::Start];
+        let mut event_step = Vec::with_capacity(self.events.len());
+        let mut note_step = vec![0; notes.len()];
+        let mut pending = notes.iter().peekable();
+        for i in 0..self.events.len() {
+            event_step.push(beats.len());
+            beats.push(Beat::Event(EventId(i)));
+            while let Some(n) = pending.next_if(|n| n.callout.a.max(n.callout.b).0 == i) {
+                note_step[n.n - 1] = beats.len();
+                beats.push(Beat::Note(n.n));
+            }
+        }
+        beats.push(Beat::End);
+        Timeline {
+            beats,
+            event_step,
+            note_step,
+        }
     }
 
     /// A lane's address in the rendered figure, from its name: `"r1"` → `r1`,
@@ -836,6 +913,32 @@ mod tests {
         assert_eq!(notes[1].n, 2);
         assert_eq!(notes[1].events, BTreeSet::from([a2, b2]));
         assert!(notes[1].messages.is_empty());
+    }
+
+    #[test]
+    fn the_timeline_puts_each_note_right_after_its_later_event() {
+        let (mut d, [a1, b1, b2, c1, a2]) = trace();
+        d.callout_concurrent(a2, b2, "late");
+        d.callout_before(a1, c1, "early");
+        let t = d.timeline();
+        assert_eq!(
+            t.beats(),
+            [
+                Beat::Start,
+                Beat::Event(a1),
+                Beat::Event(b1),
+                Beat::Event(b2),
+                Beat::Event(c1),
+                Beat::Note(1),
+                Beat::Event(a2),
+                Beat::Note(2),
+                Beat::End
+            ]
+        );
+        assert_eq!((t.event(c1), t.note(1), t.note(2), t.last()), (4, 5, 7, 8));
+        assert_eq!(t.now(0), None);
+        assert_eq!(t.now(5), Some(c1), "a note doesn't move the playhead");
+        assert_eq!(t.now(t.last()), Some(a2));
     }
 
     #[test]
