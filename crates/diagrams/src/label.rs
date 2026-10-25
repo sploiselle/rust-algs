@@ -7,7 +7,7 @@
 
 use std::fmt::{Debug, Display};
 
-use dist_sys::clock::{CausalContext, Causality, Dot, VectorClock};
+use dist_sys::clock::{CausalContext, Causality, Dot, Timestamp, VectorClock};
 use dist_sys::crdt::MvRegister;
 
 /// Compact text for a library value, for use inside a figure. May contain `\n`
@@ -57,6 +57,13 @@ impl<A: Ord + Clone + Display, V: Clone + Debug> Label for MvRegister<A, V> {
             .map(|(d, v)| format!("{}→{v:?}", d.label()))
             .collect();
         lines.join("\n")
+    }
+}
+
+/// `20,1`: wall time, then the logical counter.
+impl Label for Timestamp {
+    fn label(&self) -> String {
+        format!("{},{}", self.wall, self.logical)
     }
 }
 
@@ -136,6 +143,15 @@ mod tests {
         let (_, empty_ctx) = MvRegister::<char, &str>::new().read(); // a write that replaces nothing
         r.write(&'A', &empty_ctx, "a");
         assert_eq!(r.label(), "A:1→\"a\"\nB:1→\"b\"");
+    }
+
+    #[test]
+    fn hlc_timestamp() {
+        let t = Timestamp {
+            wall: 20,
+            logical: 1,
+        };
+        assert_eq!(t.label(), "20,1");
     }
 
     #[test]

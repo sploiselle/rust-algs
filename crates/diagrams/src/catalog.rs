@@ -7,7 +7,10 @@
 //! changes under a figure the assert fails loudly instead of a wrong picture
 //! being drawn.
 
-use dist_sys::clock::{CausalContext, Causality, Dot, VectorClock};
+use std::sync::Arc;
+
+use dist_sys::clock::hybrid::ManualClock;
+use dist_sys::clock::{CausalContext, Causality, Dot, Hlc, LamportClock, Timestamp, VectorClock};
 use dist_sys::crdt::MvRegister;
 
 use crate::label::{Label, sorted_entries};
@@ -23,6 +26,7 @@ pub struct Figure {
 pub fn all() -> Vec<Figure> {
     vec![
         vector_clock_trace(),
+        clock_comparison(),
         mv_register_siblings(),
         actor_id_reuse(),
         causal_context_gap(),
@@ -94,6 +98,170 @@ fn vector_clock_trace() -> Figure {
     Figure {
         stem: "vector-clock-trace",
         diagram: Diagram::SpaceTime(d),
+    }
+}
+
+/// The vector clock trace again, stamped by a Lamport clock, a hybrid logical
+/// clock and a vector clock at once, with B's physical clock running 25 behind
+/// A's and C's. A3 and B3 are concurrent: the Lamport clock puts A3 first, the
+/// HLC puts B3 first, and only the vector clocks say neither happened first.
+fn clock_comparison() -> Figure {
+    let mut d = SpaceTime::new("Three clocks, one trace: Lamport, hybrid logical, and vector");
+    let (la, lb, lc) = (d.lane("A"), d.lane("B"), d.lane("C"));
+    let (mut a, mut b, mut c) = (Process::new('A'), Process::new('B'), Process::new('C'));
+
+    // Physical readings: A and C agree with true time, B's clock runs behind.
+    const B_BEHIND: u64 = 25;
+    let a1_stamps = a.local(10);
+    d.event(la, "A1", a1_stamps.label());
+    let m1 = a.send(20);
+    let a2 = d.event(la, "A2", m1.label());
+    let b1_stamps = b.local(30 - B_BEHIND);
+    d.event(lb, "B1", b1_stamps.label());
+    let b2_stamps = b.receive(40 - B_BEHIND, &m1);
+    let b2 = d.event(lb, "B2", b2_stamps.label());
+    d.message(a2, b2, "m1");
+    let c1_stamps = c.local(50);
+    d.event(lc, "C1", c1_stamps.label());
+    let m2 = b.send(60 - B_BEHIND);
+    let b3 = d.event(lb, "B3", m2.label());
+    let c2_stamps = c.receive(70, &m2);
+    let c2 = d.event(lc, "C2", c2_stamps.label());
+    d.message(b3, c2, "m2");
+    let a3_stamps = a.local(80);
+    let a3 = d.event(la, "A3", a3_stamps.label());
+
+    let lamports = [
+        &a1_stamps, &m1, &b1_stamps, &b2_stamps, &c1_stamps, &m2, &c2_stamps, &a3_stamps,
+    ]
+    .map(|s| s.lamport);
+    assert_eq!(lamports, [1, 2, 1, 3, 1, 4, 5, 3]);
+    let ts = |wall, logical| Timestamp { wall, logical };
+    assert_eq!(m1.hlc, ts(20, 0));
+    assert_eq!(
+        b2_stamps.hlc,
+        ts(20, 1),
+        "B2 adopts m1's wall time and counts"
+    );
+    assert_eq!(m2.hlc, ts(35, 0));
+    assert_eq!(a3_stamps.hlc, ts(80, 0));
+    assert_eq!(m2.vector, VectorClock::from_iter([('A', 2), ('B', 3)]));
+    assert_eq!(a3_stamps.vector, VectorClock::from_iter([('A', 3)]));
+
+    // A1 happened before C2, and all three clocks agree.
+    assert!(a1_stamps.lamport < c2_stamps.lamport && a1_stamps.hlc < c2_stamps.hlc);
+    assert_eq!(
+        a1_stamps.vector.compare(&c2_stamps.vector),
+        Causality::Before
+    );
+    // A3 and B3 are concurrent, and the two total orders pick opposite sides.
+    let a3_b3 = a3_stamps.vector.compare(&m2.vector);
+    assert_eq!(a3_b3, Causality::Concurrent);
+    assert!(a3_stamps.lamport < m2.lamport);
+    assert!(a3_stamps.hlc > m2.hlc);
+
+    d.callout(
+        a2,
+        b2,
+        format!(
+            "B's clock runs {B_BEHIND} behind: m1 left A at {} but arrives when B reads {}, so B2 keeps A's wall time and counts on: {}",
+            m1.hlc.label(),
+            b2_stamps.physical,
+            b2_stamps.hlc.label()
+        ),
+    );
+    d.callout(
+        a3,
+        b3,
+        format!(
+            "A3 {} B3, yet Lamport puts A3 first ({} < {}) and the HLC puts B3 first ({} < {}); only {} and {} show neither happened first",
+            a3_b3.label(),
+            a3_stamps.lamport,
+            m2.lamport,
+            m2.hlc.label(),
+            a3_stamps.hlc.label(),
+            a3_stamps.vector.label(),
+            m2.vector.label()
+        ),
+    );
+    Figure {
+        stem: "clock-comparison",
+        diagram: Diagram::SpaceTime(d),
+    }
+}
+
+/// One process carrying all three clocks, so every event is stamped by each.
+struct Process {
+    id: char,
+    physical: Arc<ManualClock>,
+    lamport: LamportClock,
+    hlc: Hlc<Arc<ManualClock>>,
+    vector: VectorClock<char>,
+}
+
+/// What each clock said about one event, and the physical reading behind the HLC.
+struct Stamps {
+    physical: u64,
+    lamport: u64,
+    hlc: Timestamp,
+    vector: VectorClock<char>,
+}
+
+impl Process {
+    fn new(id: char) -> Self {
+        let physical = Arc::new(ManualClock::new(0));
+        Self {
+            id,
+            hlc: Hlc::new(Arc::clone(&physical)),
+            physical,
+            lamport: LamportClock::new(),
+            vector: VectorClock::new(),
+        }
+    }
+
+    fn local(&mut self, physical: u64) -> Stamps {
+        self.physical.set(physical);
+        let lamport = self.lamport.tick();
+        let hlc = self.hlc.now();
+        self.vector.tick(&self.id);
+        self.stamps(physical, lamport, hlc)
+    }
+
+    fn send(&mut self, physical: u64) -> Stamps {
+        self.physical.set(physical);
+        let lamport = self.lamport.send();
+        let hlc = self.hlc.now();
+        self.vector.send(&self.id);
+        self.stamps(physical, lamport, hlc)
+    }
+
+    fn receive(&mut self, physical: u64, message: &Stamps) -> Stamps {
+        self.physical.set(physical);
+        let lamport = self.lamport.receive(message.lamport);
+        let hlc = self.hlc.update(message.hlc).expect("no max offset is set");
+        self.vector.receive(&self.id, &message.vector);
+        self.stamps(physical, lamport, hlc)
+    }
+
+    fn stamps(&self, physical: u64, lamport: u64, hlc: Timestamp) -> Stamps {
+        Stamps {
+            physical,
+            lamport,
+            hlc,
+            vector: self.vector.clone(),
+        }
+    }
+}
+
+impl Label for Stamps {
+    fn label(&self) -> String {
+        format!(
+            "clock {}\nLamport {}\nHLC {}\nVC {}",
+            self.physical,
+            self.lamport,
+            self.hlc.label(),
+            self.vector.label()
+        )
     }
 }
 
