@@ -7,16 +7,23 @@
 //! `<code class="ds-v">`, with their parts tagged as in the SVG (`data-actor`,
 //! `data-dot`), and each note carries the `data-note` number its badges show.
 //!
+//! A step-through ([`steps_html`]) is the same figure with every version of
+//! every mark tagged by the steps it is shown at (see
+//! [`steps`](super::steps)), `data-steps` on the figure, and a hidden
+//! `.ds-play` block that a page's player fills with its controls and shows:
+//! one sentence per step (`.ds-beat`) saying what happened. Without a player
+//! the page shows the finished figure.
+//!
 //! The fragment has no blank lines, so Markdown passes it through as one raw
 //! HTML block.
 
 use super::Render;
-use super::steps::At;
+use super::steps::{At, timed};
 use super::svg::{
-    dot_line_svg, escape_attr, one_line, relation_attr, role_classes, space_time_svg,
-    with_actor_slots,
+    dot_line_svg, escape_attr, event_sentence, lanes_sentence, one_line, relation_attr,
+    role_classes, space_time_svg, with_actor_slots,
 };
-use crate::model::{DotLine, Rich, SpaceTime, Span};
+use crate::model::{Beat, Diagram, DotLine, Note, Rich, SpaceTime, Span, Timeline};
 
 pub struct Html;
 
@@ -26,26 +33,7 @@ impl Render for Html {
     }
 
     fn space_time(&self, stem: &str, d: &SpaceTime) -> Option<String> {
-        let d = &with_actor_slots(d);
-        let notes = d.notes();
-        let items: Vec<String> = notes
-            .iter()
-            .map(|n| {
-                format!(
-                    r#"<li class="ds-note" data-note="{0}"{1}><span class="ds-note-n" aria-hidden="true">{0}</span> <span class="ds-note-body">{2}</span></li>"#,
-                    n.n,
-                    relation_attr(&notes, n.n),
-                    rich_html(&n.callout.text)
-                )
-            })
-            .collect();
-        Some(figure(
-            stem,
-            "space-time",
-            d.title(),
-            &space_time_svg(stem, d, false, At::End),
-            &items,
-        ))
+        Some(space_time_html(stem, d, At::End))
     }
 
     fn dot_line(&self, stem: &str, d: &DotLine) -> Option<String> {
@@ -55,22 +43,145 @@ impl Render for Html {
             d.title(),
             &dot_line_svg(stem, d),
             &[],
+            None,
         ))
     }
 }
 
-fn figure(stem: &str, kind: &str, title: &str, svg: &str, notes: &[String]) -> String {
+/// A figure as a step-through.
+pub fn steps_html(stem: &str, d: &Diagram) -> String {
+    match d {
+        Diagram::SpaceTime(d) => space_time_html(stem, d, At::Every),
+        Diagram::DotLine(_) => panic!("{stem}: a dot line has no step-through form"),
+    }
+}
+
+/// A space-time figure at `at`. At [`At::End`] it is the finished figure
+/// alone; otherwise it also carries its steps and their sentences.
+pub(crate) fn space_time_html(stem: &str, d: &SpaceTime, at: At) -> String {
+    let d = &with_actor_slots(d);
+    let notes = d.notes();
+    let t = d.timeline();
+    let items: Vec<String> = notes
+        .iter()
+        .map(|n| {
+            timed(at, t.last(), "", |s| {
+                (s >= t.note(n.n)).then(|| note_item(&notes, n))
+            })
+        })
+        .collect();
+    let play = (at != At::End).then(|| (t.last(), play(d, &t, at)));
+    figure(
+        stem,
+        "space-time",
+        d.title(),
+        &space_time_svg(stem, d, false, at),
+        &items,
+        play,
+    )
+}
+
+fn note_item(notes: &[Note], n: &Note) -> String {
+    format!(
+        r#"<li class="ds-note" data-note="{0}"{1}><span class="ds-note-n" aria-hidden="true">{0}</span> <span class="ds-note-body">{2}</span></li>"#,
+        n.n,
+        relation_attr(notes, n.n),
+        rich_html(&n.callout.text)
+    ) + "\n"
+}
+
+/// The block a page's player fills in: an empty bar for its controls and a
+/// sentence for each step.
+fn play(d: &SpaceTime, t: &Timeline, at: At) -> String {
+    let mut out = String::from(
+        "<div class=\"ds-play\" hidden>\n<div class=\"ds-play-bar\"></div>\n<div class=\"ds-beats\">\n",
+    );
+    out.push_str(&timed(at, t.last(), "", |s| Some(beat(d, t, s))));
+    out.push_str("</div>\n</div>\n");
+    out
+}
+
+/// What step `s` says: the lanes; what happened at an event, including what
+/// it sent; a note, with its number; the figure's title once it is finished.
+fn beat(d: &SpaceTime, t: &Timeline, s: usize) -> String {
+    let (attrs, lead, body) = match t.beats()[s] {
+        Beat::Start => (
+            String::new(),
+            String::new(),
+            text(&format!("{}; time runs left to right", lanes_sentence(d))),
+        ),
+        Beat::Event(e) => (
+            format!(r#" data-event="{}""#, escape_attr(&d.event_key(e))),
+            String::new(),
+            rich_html(&squeezed(&event_sentence(d, e, true))),
+        ),
+        Beat::Note(n) => {
+            let note = d
+                .notes()
+                .into_iter()
+                .find(|x| x.n == n)
+                .expect("a note's beat");
+            (
+                format!(r#" data-note="{n}""#),
+                format!(r#"<span class="ds-note-n" aria-hidden="true">{n}</span> "#),
+                rich_html(&note.callout.text),
+            )
+        }
+        Beat::End => (String::new(), String::new(), text(&one_line(d.title()))),
+    };
+    format!(r#"<p class="ds-beat"{attrs}>{lead}<span class="ds-beat-body">{body}</span></p>"#)
+        + "\n"
+}
+
+/// `r` with each run of whitespace in a span, no-break spaces included,
+/// squeezed to one space: prose has no columns to line up.
+fn squeezed(r: &Rich) -> Rich {
+    let mut r = r.clone();
+    for s in r.lines.iter_mut().flatten() {
+        let mut out = String::new();
+        for c in s.text.chars() {
+            if c.is_whitespace() {
+                if !out.ends_with(' ') {
+                    out.push(' ');
+                }
+            } else {
+                out.push(c);
+            }
+        }
+        s.text = out;
+    }
+    r
+}
+
+/// The `<figure>`. `play` is a step-through's step count and player block.
+fn figure(
+    stem: &str,
+    kind: &str,
+    title: &str,
+    svg: &str,
+    notes: &[String],
+    play: Option<(usize, String)>,
+) -> String {
+    let steps = match &play {
+        Some((n, _)) => format!(r#" data-steps="{n}" data-steps-v="1""#),
+        None => String::new(),
+    };
     let mut out = format!(
-        "<figure class=\"ds-fig\" data-figure=\"{}\" data-kind=\"{kind}\">\n<div class=\"ds-fig-canvas\">\n{}\n</div>\n<figcaption class=\"ds-fig-caption\">\n<p class=\"ds-fig-title\">{}</p>\n",
+        "<figure class=\"ds-fig\" data-figure=\"{}\" data-kind=\"{kind}\"{steps}>\n<div class=\"ds-fig-canvas\">\n{}\n</div>\n",
         escape_attr(stem),
         svg.trim_end(),
-        text(&one_line(title))
     );
+    if let Some((_, block)) = &play {
+        out.push_str(block);
+    }
+    out.push_str(&format!(
+        "<figcaption class=\"ds-fig-caption\">\n<p class=\"ds-fig-title\">{}</p>\n",
+        text(&one_line(title))
+    ));
     if !notes.is_empty() {
         out.push_str("<ol class=\"ds-notes\">\n");
         for n in notes {
             out.push_str(n);
-            out.push('\n');
         }
         out.push_str("</ol>\n");
     }
@@ -132,7 +243,119 @@ fn span_html(s: &Span) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::rich;
+    use crate::catalog::Form;
+    use crate::model::{EventId, rich};
+    use crate::render::steps::{at_step, without_player};
+
+    fn step_throughs() -> Vec<(&'static str, SpaceTime)> {
+        crate::catalog::all()
+            .into_iter()
+            .filter(|f| f.form == Form::Steps)
+            .filter_map(|f| match f.diagram {
+                Diagram::SpaceTime(d) => Some((f.stem, d)),
+                Diagram::DotLine(_) => None,
+            })
+            .collect()
+    }
+
+    /// The tagged figure, filtered as a page's player filters it, is exactly
+    /// the figure drawn at that step.
+    #[test]
+    fn every_step_is_the_figure_at_that_step() {
+        for (stem, d) in step_throughs() {
+            let every = space_time_html(stem, &d, At::Every);
+            for s in 0..=d.timeline().last() {
+                assert_eq!(
+                    at_step(&every, s, true),
+                    space_time_html(stem, &d, At::Step(s)),
+                    "{stem} at step {s}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn without_a_player_a_step_through_is_the_finished_figure() {
+        for (stem, d) in step_throughs() {
+            let every = space_time_html(stem, &d, At::Every);
+            let finished = Html.space_time(stem, &d).unwrap();
+            assert_eq!(at_step(&every, d.timeline().last(), false), finished);
+            assert_eq!(without_player(&every), finished, "{stem}");
+        }
+    }
+
+    /// Each mark shows from the step its event happens, or its message
+    /// arrives, or its note is made; a message is in flight in between.
+    #[test]
+    fn marks_appear_when_they_happen() {
+        for (stem, d) in step_throughs() {
+            let t = d.timeline();
+            for s in 0..=t.last() {
+                let html = space_time_html(stem, &d, At::Step(s));
+                for i in 0..d.events().len() {
+                    let key = d.event_key(EventId(i));
+                    assert_eq!(
+                        html.contains(&format!(r#"<g class="ds-event" data-event="{key}""#)),
+                        s >= t.event(EventId(i)),
+                        "{stem}: {key} at step {s}"
+                    );
+                }
+                for (mi, m) in d.messages().iter().enumerate() {
+                    let key = d.message_key(mi);
+                    let at = html
+                        .find(&format!(r#"data-message="{key}""#))
+                        .expect("a message's group is always there");
+                    let group = &html[at..at + html[at..].find("</g>").unwrap()];
+                    let (sent, arrived) = (t.event(m.from), t.event(m.to));
+                    let landed = s >= arrived;
+                    assert_eq!(group.contains(r#"class="ds-message-line" "#), landed);
+                    assert_eq!(group.contains(r#"class="ds-message-head" "#), landed);
+                    assert_eq!(
+                        group.contains("ds-message-head ds-flight"),
+                        (sent..arrived).contains(&s),
+                        "{stem}: {key} in flight at step {s}"
+                    );
+                    if !m.label.is_empty() {
+                        assert_eq!(group.contains("ds-message-label"), landed);
+                    }
+                }
+                for n in d.notes() {
+                    let made = s >= t.note(n.n);
+                    let li = format!(r#"<li class="ds-note" data-note="{}""#, n.n);
+                    let badge = format!(r#"<g class="ds-badge" data-note="{}""#, n.n);
+                    assert_eq!(html.contains(&li), made, "{stem}: note {} at {s}", n.n);
+                    assert_eq!(html.contains(&badge), made);
+                    assert!(t.note(n.n) > t.event(n.callout.a.max(n.callout.b)));
+                }
+                assert_eq!(html.matches(r#"<p class="ds-beat""#).count(), 1);
+            }
+        }
+    }
+
+    #[test]
+    fn a_step_through_says_what_each_step_does() {
+        let mut d = SpaceTime::new("Two lanes");
+        let (a, b) = (d.lane("A"), d.lane("B"));
+        let a1 = d.event(a, "A1", "x\u{a0}\u{a0}1\ny 2");
+        let b1 = d.event(b, "B1", "");
+        d.message(a1, b1, "m1");
+        d.callout(a1, b1, "about m1");
+        let html = steps_html("fig", &Diagram::SpaceTime(d));
+        assert!(html.starts_with(
+            r#"<figure class="ds-fig" data-figure="fig" data-kind="space-time" data-steps="4" data-steps-v="1">"#
+        ));
+        for needle in [
+            r#"<div class="ds-play" hidden>"#,
+            r#"<p class="ds-beat" data-in="0" data-out="1"><span class="ds-beat-body">Timelines for A, B; time runs left to right</span></p>"#,
+            r#"<p class="ds-beat" data-in="1" data-out="2" data-cont="" data-event="a-1"><span class="ds-beat-body"><span class="ds-lead">A1</span> on A, sending m1 to B: x 1; y 2</span></p>"#,
+            r#"<p class="ds-beat" data-in="3" data-out="4" data-cont="" data-note="1"><span class="ds-note-n" aria-hidden="true">1</span> <span class="ds-beat-body">about m1</span></p>"#,
+            r#"<p class="ds-beat" data-in="4" data-cont=""><span class="ds-beat-body">Two lanes</span></p>"#,
+            r#"<li class="ds-note" data-in="3" data-note="1">"#,
+        ] {
+            assert!(html.contains(needle), "missing {needle:?} in:\n{html}");
+        }
+        assert!(!html.contains("\n\n"));
+    }
 
     #[test]
     fn values_become_code_with_their_parts() {

@@ -1992,6 +1992,93 @@ mod tests {
     }
 
     #[test]
+    fn a_message_in_flight_reaches_the_playheads_column() {
+        let seg = ((10.0, 0.0), (110.0, 50.0));
+        let mid = front(seg, 60.0);
+        assert!((mid.0 - 60.0).abs() < 1e-9 && (mid.1 - 25.0).abs() < 1e-9);
+        let just_sent = front(seg, 0.0); // the sender's own column
+        assert!((dist(seg.0, just_sent) - HEAD).abs() < 1e-9);
+        assert_eq!(front(seg, 500.0), seg.1);
+    }
+
+    /// The line of a message in flight is part of the finished line, which
+    /// the layout keeps clear; its head is wider, so check that too, against
+    /// everything shown at that step, to the margin `assert_clear` allows.
+    #[test]
+    fn messages_in_flight_stay_clear_of_what_is_shown() {
+        for figure in crate::catalog::all() {
+            let Diagram::SpaceTime(d) = &figure.diagram else {
+                continue;
+            };
+            if figure.form != crate::catalog::Form::Steps {
+                continue;
+            }
+            let (l, t) = (layout(d, false), d.timeline());
+            for s in 0..=t.last() {
+                let shown = |e: EventId| t.event(e) <= s;
+                let mut boxes: Vec<Rect> = (0..d.events().len())
+                    .filter(|&i| shown(EventId(i)))
+                    .flat_map(|i| [&l.names[i], &l.annotations[i]])
+                    .flatten()
+                    .map(Placed::rect)
+                    .collect();
+                boxes.extend(
+                    d.messages()
+                        .iter()
+                        .zip(&l.labels)
+                        .filter(|(m, _)| shown(m.to))
+                        .filter_map(|(_, p)| p.as_ref().map(Placed::rect)),
+                );
+                for (mi, m) in d.messages().iter().enumerate() {
+                    if !(t.event(m.from)..t.event(m.to)).contains(&s) {
+                        continue;
+                    }
+                    let seg = l.segments[mi];
+                    let now = t.now(s).unwrap();
+                    let tip = front(seg, l.x[now.0]);
+                    let (ux, uy) = unit(seg.0, tip);
+                    let base = (tip.0 - ux * HEAD, tip.1 - uy * HEAD);
+                    let head = [
+                        tip,
+                        (base.0 - uy * 3.5, base.1 + ux * 3.5),
+                        (base.0 + uy * 3.5, base.1 - ux * 3.5),
+                    ];
+                    let markers = (0..d.events().len())
+                        .filter(|&i| shown(EventId(i)) && i != m.from.0)
+                        .map(|i| {
+                            let r = if l.ringed[i] { RING } else { R };
+                            Rect::around((l.x[i], l.lane_y[d.lane_of(EventId(i)).0]), r)
+                        });
+                    for r in boxes.iter().copied().chain(markers) {
+                        assert!(
+                            !triangle_hits(&r.grow(1.0), head), // as in assert_clear
+                            "{}: {} in flight at step {s} runs into {r:?} (head {head:?})",
+                            figure.stem,
+                            d.message_key(mi)
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    /// Does the triangle overlap the rectangle?
+    fn triangle_hits(r: &Rect, tri: [Pt; 3]) -> bool {
+        let side = |a: Pt, b: Pt, p: Pt| (b.0 - a.0) * (p.1 - a.1) - (b.1 - a.1) * (p.0 - a.0);
+        let corner = (r.x0, r.y0);
+        let signs = [
+            side(tri[0], tri[1], corner),
+            side(tri[1], tri[2], corner),
+            side(tri[2], tri[0], corner),
+        ];
+        let corner_inside = signs.iter().all(|&v| v >= 0.0) || signs.iter().all(|&v| v <= 0.0);
+        corner_inside
+            || [(tri[0], tri[1]), (tri[1], tri[2]), (tri[2], tri[0])]
+                .iter()
+                .any(|&(a, b)| r.crossed_by(a, b))
+    }
+
+    #[test]
     fn marks_are_keyed_and_values_carry_their_parts() {
         let mut d = SpaceTime::new("t");
         let (a, b) = (d.lane("A"), d.lane("B"));
@@ -2015,7 +2102,8 @@ mod tests {
         }
         assert!(!svg.contains("ds-captions"));
         assert!(
-            space_time_svg("fig", &d, true, At::End).contains(r#"<text class="ds-caption" data-note="1""#)
+            space_time_svg("fig", &d, true, At::End)
+                .contains(r#"<text class="ds-caption" data-note="1""#)
         );
     }
 }

@@ -14,7 +14,7 @@ fn main() -> ExitCode {
         [dir] if !dir.starts_with('-') => PathBuf::from(dir),
         _ => {
             eprintln!(
-                "usage: diagrams [OUT_DIR]\n\nWrites every figure as .svg, .html and .mmd, plus index.json, into OUT_DIR (default: the workspace's figures/)."
+                "usage: diagrams [OUT_DIR]\n\nWrites every finished figure as .svg, .html and .mmd, every step-through as .html, plus index.json, into OUT_DIR (default: the workspace's figures/)."
             );
             return ExitCode::FAILURE;
         }

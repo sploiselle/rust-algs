@@ -6,8 +6,8 @@
 //! - [`label`]: how a library value appears inside a figure, as text.
 //! - [`catalog`]: the figures themselves. Each one drives the real library API,
 //!   records every step, and asserts the claims the picture makes.
-//! - [`render`]: backends that turn a model into the text of a file, SVG and
-//!   Mermaid.
+//! - [`render`]: backends that turn a model into the text of a file: SVG, HTML
+//!   and Mermaid for a finished figure, and HTML for a step-through.
 //!
 //! `cargo run -p diagrams` writes every figure into the workspace's `figures/`
 //! directory; the test in `tests/figures.rs` fails if those files are stale.
@@ -29,19 +29,29 @@ pub fn figures_dir() -> PathBuf {
     manifest_dir.join("../..").join("figures")
 }
 
-/// Every file the binary writes, as `(file name, contents)`: each catalog entry
-/// times each backend that renders it, plus `index.json`. The staleness test
-/// compares against exactly this list, so the two can't drift apart.
+/// Every file the binary writes, as `(file name, contents)`: each finished
+/// figure times each backend that renders it, each step-through's HTML, plus
+/// `index.json`. The staleness test compares against exactly this list, so
+/// the two can't drift apart.
 pub fn outputs() -> Vec<(String, String)> {
     let figures = catalog::all();
     let mut out: Vec<(String, String)> = figures
         .iter()
-        .flat_map(|figure| {
-            render::ALL.iter().filter_map(move |backend| {
-                backend
-                    .render(figure.stem, &figure.diagram)
-                    .map(|text| (format!("{}.{}", figure.stem, backend.extension()), text))
-            })
+        .flat_map(|figure| -> Vec<(String, String)> {
+            match figure.form {
+                catalog::Form::Static => render::ALL
+                    .iter()
+                    .filter_map(|backend| {
+                        backend
+                            .render(figure.stem, &figure.diagram)
+                            .map(|text| (format!("{}.{}", figure.stem, backend.extension()), text))
+                    })
+                    .collect(),
+                catalog::Form::Steps => vec![(
+                    format!("{}.html", figure.stem),
+                    render::steps_html(figure.stem, &figure.diagram),
+                )],
+            }
         })
         .collect();
     out.push(("index.json".to_string(), index(&figures)));
@@ -49,16 +59,17 @@ pub fn outputs() -> Vec<(String, String)> {
 }
 
 /// The figures in catalog order, which is the order a reader should meet them
-/// in, with their kinds and titles: what a page or a preview script needs to
-/// list them without parsing the SVGs.
+/// in, with their kinds, forms and titles: what a page or a preview script
+/// needs to list them without parsing the SVGs.
 fn index(figures: &[catalog::Figure]) -> String {
     let rows: Vec<String> = figures
         .iter()
         .map(|f| {
             format!(
-                r#"    {{ "stem": "{}", "kind": "{}", "title": "{}" }}"#,
+                r#"    {{ "stem": "{}", "kind": "{}", "form": "{}", "title": "{}" }}"#,
                 json_escape(f.stem),
                 f.diagram.kind(),
+                f.form.name(),
                 json_escape(f.diagram.title())
             )
         })

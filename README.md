@@ -67,7 +67,34 @@ it any more. For each figure:
   still say so.
 
 `index.json` lists the figures in the order a reader should meet them, with
-their kinds and titles.
+their kinds, forms (`static` or `steps`) and titles.
+
+### Step-throughs
+
+A figure can also be written as a step-through, which a page's player shows
+one event at a time. It is opt-in: a catalog entry with `Form::Steps` writes a
+single `<stem>.html` and nothing else, and it is written for stepping, so it
+can say things at each step, start from values, or tell a different story
+from any finished figure. Where it tells the same story, the two entries share
+a scenario function, and with it the asserts (`vector_trace` in the catalog).
+
+The steps are the lanes, then each event in recorded order with each note
+right after its later event, then the finished figure. The figure is laid out
+once, finished, and every version of every mark is tagged with the steps it
+shows at:
+
+| Hook | Means |
+|---|---|
+| `.ds-fig[data-steps="N"][data-steps-v="1"]` | a step-through with steps `0` to `N`; `N` is the finished figure. `data-steps-v` is the version of these hooks |
+| `[data-in="k"]`, `[data-out="j"]` | shown from step `k`, up to but not including step `j` (or to the end). A version with a `data-out` also carries `display="none"` in the SVG, so without a player the page shows the finished figure |
+| `[data-cont]` | the version takes over from the one before it (a message moving on, a value changing), rather than appearing afresh |
+| `.ds-flight` | a message line or head in flight: between its send and its arrival it reaches as far as the latest event's column |
+| `.ds-play[hidden]` | the block a player fills and shows: an empty `.ds-play-bar` for its controls and one `p.ds-beat[data-event]` / `[data-note]` per step, whose `.ds-beat-body` says what happened (`.ds-lead` is the event's name) |
+
+A player shows step `s` by hiding every tagged element whose steps exclude
+`s`. Tests filter the tagged figure that way at every step and compare it with
+the figure drawn at that step, so a step can't show anything the code didn't
+draw.
 
 ### Styling
 

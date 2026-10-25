@@ -144,7 +144,7 @@ enum Tag {
 fn tags(markup: &str) -> impl Iterator<Item = Tag> + '_ {
     markup.match_indices('<').map(move |(i, _)| {
         let rest = &markup[i + 1..];
-        let end = rest.find('>').map_or(rest.len(), |j| j);
+        let end = rest.find('>').unwrap_or(rest.len());
         let inside = &rest[..end];
         let name: String = inside
             .chars()
@@ -345,7 +345,15 @@ mod tests {
     #[test]
     #[should_panic(expected = "has a class")]
     fn a_timed_mark_needs_a_class() {
-        tag("<g>", Shown { from: 1, until: None }, "", false);
+        tag(
+            "<g>",
+            Shown {
+                from: 1,
+                until: None,
+            },
+            "",
+            false,
+        );
     }
 
     #[test]

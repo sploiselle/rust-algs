@@ -23,12 +23,36 @@ use crate::model::{Claim, Diagram, DotLine, EventId, Rich, SpaceTime, Span, rich
 pub struct Figure {
     pub stem: &'static str,
     pub diagram: Diagram,
+    pub form: Form,
+}
+
+/// How a figure is shown.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Form {
+    /// Finished, as SVG, HTML and Mermaid.
+    Static,
+    /// As a step-through: an HTML figure a page's player steps through, one
+    /// event or note at a time. Opt-in, since a step-through is written for
+    /// stepping (what it says at each step, what it starts from), and most
+    /// figures read best finished.
+    Steps,
+}
+
+impl Form {
+    /// As it appears in `index.json`.
+    pub fn name(self) -> &'static str {
+        match self {
+            Form::Static => "static",
+            Form::Steps => "steps",
+        }
+    }
 }
 
 /// Every figure, in the order their files are written.
 pub fn all() -> Vec<Figure> {
     vec![
         vector_clock_trace(),
+        vector_clock_steps(),
         clock_comparison(),
         mv_register_siblings(),
         actor_id_reuse(),
@@ -42,6 +66,30 @@ pub fn all() -> Vec<Figure> {
 /// `three_process_trace`. A3 is the last event on the wall clock yet
 /// concurrent with B3; A1 reaches C2 only through B.
 fn vector_clock_trace() -> Figure {
+    Figure {
+        stem: "vector-clock-trace",
+        diagram: Diagram::SpaceTime(vector_trace().d),
+        form: Form::Static,
+    }
+}
+
+/// The vector clock trace one event at a time.
+fn vector_clock_steps() -> Figure {
+    let t = vector_trace();
+    Figure {
+        stem: "vector-clock-steps",
+        diagram: Diagram::SpaceTime(t.d),
+        form: Form::Steps,
+    }
+}
+
+/// The vector clock trace and what both of its figures say about it, with
+/// everything either one claims asserted.
+struct VectorTrace {
+    d: SpaceTime,
+}
+
+fn vector_trace() -> VectorTrace {
     let mut d = SpaceTime::new("Vector clocks: three processes, two messages");
     let (a, b, c) = ('A', 'B', 'C');
     let (la, lb, lc) = (
@@ -152,10 +200,7 @@ fn vector_clock_trace() -> Figure {
             ", carried by m1 then m2"
         ],
     );
-    Figure {
-        stem: "vector-clock-trace",
-        diagram: Diagram::SpaceTime(d),
-    }
+    VectorTrace { d }
 }
 
 /// The vector clock trace again, stamped by a Lamport clock, a hybrid logical
@@ -292,6 +337,7 @@ fn clock_comparison() -> Figure {
     Figure {
         stem: "clock-comparison",
         diagram: Diagram::SpaceTime(d),
+        form: Form::Static,
     }
 }
 
@@ -489,6 +535,7 @@ fn mv_register_siblings() -> Figure {
     Figure {
         stem: "mv-register-siblings",
         diagram: Diagram::SpaceTime(d),
+        form: Form::Static,
     }
 }
 
@@ -555,6 +602,7 @@ fn actor_id_reuse() -> Figure {
     Figure {
         stem: "actor-id-reuse",
         diagram: Diagram::SpaceTime(d),
+        form: Form::Static,
     }
 }
 
@@ -606,6 +654,7 @@ fn causal_context_gap() -> Figure {
     Figure {
         stem: "causal-context-gap",
         diagram: Diagram::DotLine(d),
+        form: Form::Static,
     }
 }
 
@@ -724,6 +773,7 @@ fn mutex_fifo() -> Figure {
     Figure {
         stem: "mutex-fifo",
         diagram: Diagram::SpaceTime(d),
+        form: Form::Static,
     }
 }
 
@@ -816,6 +866,7 @@ fn mutex_overtaking() -> Figure {
     Figure {
         stem: "mutex-overtaking",
         diagram: Diagram::SpaceTime(d),
+        form: Form::Static,
     }
 }
 

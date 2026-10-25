@@ -5,7 +5,7 @@ mod mermaid;
 mod steps;
 mod svg;
 
-pub use html::Html;
+pub use html::{Html, steps_html};
 pub use mermaid::Mermaid;
 pub use svg::Svg;
 
