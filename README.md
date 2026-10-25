@@ -15,6 +15,8 @@ crates/dist-sys/          the library
     hybrid.rs             hybrid logical clocks
   src/crdt/               replicated data types
     mv_register.rs        multi-value register
+  src/coordination/       agreeing on an order
+    lamport_mutex.rs      Lamport's mutual exclusion
   examples/               programs to run against the library
 crates/diagrams/          figures drawn from the library (SVG, HTML and Mermaid)
 figures/                  the rendered figures, committed

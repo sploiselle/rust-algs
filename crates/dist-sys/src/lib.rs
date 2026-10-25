@@ -9,8 +9,11 @@
 //!   [`Hlc`](clock::Hlc).
 //! - [`crdt`]: replicated data types that converge without coordination.
 //!   [`MvRegister`](crdt::MvRegister).
+//! - [`coordination`]: getting processes to agree on an order.
+//!   [`LamportMutex`](coordination::LamportMutex).
 
 pub mod clock;
+pub mod coordination;
 pub mod crdt;
 
 #[cfg(test)]

@@ -27,7 +27,8 @@
 //! by process gives a [`LamportStamp`] `(L, process)`, and these are unique and
 //! totally ordered. That order never contradicts happened-before, so every
 //! process can sort the same events into the same sequence without asking
-//! anyone. Lamport used it for distributed mutual exclusion; it's the basis of
+//! anyone. Lamport used it for [distributed mutual
+//! exclusion](crate::coordination::lamport_mutex); it's the basis of
 //! total-order broadcast and replicated state machines. The order between
 //! concurrent events is arbitrary, though: whichever process has the smaller
 //! id wins a tie.
