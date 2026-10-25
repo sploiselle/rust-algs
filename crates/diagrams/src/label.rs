@@ -9,7 +9,7 @@ use std::fmt::{Debug, Display};
 
 use dist_sys::clock::{CausalContext, Causality, Dot, LamportStamp, Timestamp, VectorClock};
 use dist_sys::coordination::LamportMutex;
-use dist_sys::crdt::MvRegister;
+use dist_sys::crdt::{LamportRegister, MvRegister};
 
 use crate::model::{Rich, Span};
 
@@ -192,6 +192,38 @@ impl<A: Ord + Clone + Display, V: Clone + Debug> Label for MvRegister<A, V> {
                 })
                 .collect(),
         }
+    }
+}
+
+/// One replica of a last-writer-wins register, as [`fields`]: its Lamport
+/// clock, then the value it holds as `stamp→value`, the stamp drawn as a
+/// [`LamportStamp`] and the field named `x` after the register in the
+/// write-up.
+///
+/// ```text
+/// L 3
+/// x (3,B)→"eggs"
+/// ```
+impl<A: Ord + Clone + Display, V: Clone + Debug> Label for LamportRegister<A, V> {
+    fn label(&self) -> String {
+        self.spans().plain()
+    }
+
+    fn spans(&self) -> Rich {
+        let entry = match self.entry() {
+            Some((stamp, value)) => stamp
+                .spans()
+                .then(Span::part("→", "sym"))
+                .then(Span::part(format!("{value:?}"), "str")),
+            None => Span::part("(empty)", "empty").into(),
+        };
+        fields(vec![
+            (
+                "L",
+                Span::part(self.clock().time().to_string(), "lamport").into(),
+            ),
+            ("x", entry),
+        ])
     }
 }
 
@@ -465,6 +497,15 @@ mod tests {
             a.label(),
             "L\u{a0}\u{a0}\u{a0}\u{a0}\u{a0}1\nqueue\u{a0}(1,A)\nheard\u{a0}B:0\nholds\u{a0}no"
         );
+    }
+
+    #[test]
+    fn lamport_register() {
+        let mut r: LamportRegister<char, &str> = LamportRegister::new('B');
+        assert_eq!(r.label(), "L\u{a0}0\nx\u{a0}(empty)");
+        r.tick();
+        r.write("eggs");
+        assert_eq!(r.label(), "L\u{a0}2\nx\u{a0}(2,B)→\"eggs\"");
     }
 
     #[test]

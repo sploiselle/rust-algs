@@ -349,6 +349,7 @@ pub struct SpaceTime {
     events: Vec<Event>,
     messages: Vec<Message>,
     callouts: Vec<Callout>,
+    step_through: bool,
 }
 
 impl SpaceTime {
@@ -359,11 +360,24 @@ impl SpaceTime {
             events: Vec::new(),
             messages: Vec::new(),
             callouts: Vec::new(),
+            step_through: false,
         }
     }
 
     pub fn title(&self) -> &str {
         &self.title
+    }
+
+    /// Mark this figure as one a page steps through, which draws each message
+    /// in flight, so its layout leaves room for that. The catalog marks every
+    /// `Form::Steps` figure.
+    pub fn step_through(&mut self) {
+        self.step_through = true;
+    }
+
+    /// Is this figure stepped through? See [`SpaceTime::step_through`].
+    pub fn is_step_through(&self) -> bool {
+        self.step_through
     }
 
     pub fn lanes(&self) -> &[Lane] {

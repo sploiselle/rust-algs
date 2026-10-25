@@ -1,0 +1,13 @@
+---
+title: "Last writer wins on Lamport stamps: B saw milk and replaced it"
+---
+sequenceDiagram
+    participant L0 as A
+    participant L1 as B
+    Note over L0: write milk<br/>L 1<br/>x (1,A)→"milk"
+    L0->>L1: (1,A)→"milk"
+    Note over L1: sync<br/>L 2<br/>x (1,A)→"milk"
+    Note over L1: write eggs<br/>L 3<br/>x (3,B)→"eggs"
+    Note over L0,L1: milk happened before eggs: B was shown milk and chose to replace it, so (3,B) winning over (1,A) is right
+    L1->>L0: (3,B)→"eggs"
+    Note over L0: sync<br/>L 4<br/>x (3,B)→"eggs"

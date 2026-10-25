@@ -14,6 +14,7 @@ crates/dist-sys/          the library
     dot.rs                dots and causal contexts
     hybrid.rs             hybrid logical clocks
   src/crdt/               replicated data types
+    lamport_register.rs   last-writer-wins on Lamport stamps, and what it loses
     mv_register.rs        multi-value register
   src/coordination/       agreeing on an order
     lamport_mutex.rs      Lamport's mutual exclusion
@@ -85,8 +86,9 @@ event does (`SpaceTime::narrate`, beside an assert of what it claims); a panel
 shows what each lane holds at each step, with what its event changed marked.
 A number line steps through frames (`DotLine::frames`, then `frame` after each
 library call), then the finished figure. Either way the figure is laid out
-once, to fit every step, and every version of every mark is tagged with the
-steps it shows at:
+once, to fit every step (a space-time step-through keeps its text clear of the
+arrowheads its messages show in flight, which a finished figure never draws),
+and every version of every mark is tagged with the steps it shows at:
 
 | Hook | Means |
 |---|---|

@@ -48,6 +48,7 @@ const GAP: f64 = 12.0; // clear space between neighbouring text on one lane
 const NEAR: f64 = 12.0; // an event's first text block starts this far from its lane
 const STACK_GAP: f64 = 4.0; // between stacked text blocks
 const CLEAR: f64 = 2.0; // an arrow must miss text by this much
+const HEAD_CLEAR: f64 = 1.0; // and a head in flight, by this much
 const PUSH: f64 = 16.0; // how far events are pushed apart per collision
 const MIN_W: f64 = 420.0; // captions wrap to the figure's width, but not below this
 const BADGE_R: f64 = 7.5; // note badge radius
@@ -59,6 +60,7 @@ const LABEL_PX: f64 = 12.0;
 const BADGE_PX: f64 = 11.0;
 const CAPTION_PX: f64 = 14.0;
 const CAPTION_LH: f64 = 20.0;
+const CAPTION_HANG: f64 = 16.0; // continuation lines of a note are indented this far
 
 /// Fallback families, used only when the stylesheet is missing.
 const SANS_ATTR: &str = "system-ui, sans-serif";
@@ -136,9 +138,10 @@ fn line_height(px: f64) -> f64 {
     px + 2.0
 }
 
-/// Greedy word wrap to an estimated width. `\n` is a hard break. A single word
-/// longer than `max_w` gets a line of its own and overflows.
-fn wrap(text: &str, max_w: f64, px: f64, font: Font) -> Vec<String> {
+/// Greedy word wrap to an estimated width. `\n` is a hard break. Every line
+/// after the first is `hang` narrower, for text set with a hanging indent. A
+/// single word longer than its line gets a line of its own and overflows.
+fn wrap(text: &str, max_w: f64, hang: f64, px: f64, font: Font) -> Vec<String> {
     let mut lines: Vec<String> = Vec::new();
     for paragraph in text.split('\n') {
         let mut line = String::new();
@@ -148,7 +151,12 @@ fn wrap(text: &str, max_w: f64, px: f64, font: Font) -> Vec<String> {
             } else {
                 format!("{line} {word}")
             };
-            if !line.is_empty() && text_width(&longer, px, font) > max_w {
+            let limit = if lines.is_empty() {
+                max_w
+            } else {
+                max_w - hang
+            };
+            if !line.is_empty() && text_width(&longer, px, font) > limit {
                 lines.push(std::mem::replace(&mut line, word.to_string()));
             } else {
                 line = longer;
@@ -467,6 +475,22 @@ impl Rect {
         }
         t0 <= t1
     }
+
+    /// Does the triangle overlap this rectangle?
+    fn touched_by(&self, tri: [Pt; 3]) -> bool {
+        let side = |a: Pt, b: Pt, p: Pt| (b.0 - a.0) * (p.1 - a.1) - (b.1 - a.1) * (p.0 - a.0);
+        let corner = (self.x0, self.y0);
+        let signs = [
+            side(tri[0], tri[1], corner),
+            side(tri[1], tri[2], corner),
+            side(tri[2], tri[0], corner),
+        ];
+        let corner_inside = signs.iter().all(|&v| v >= 0.0) || signs.iter().all(|&v| v <= 0.0);
+        corner_inside
+            || [(tri[0], tri[1]), (tri[1], tri[2]), (tri[2], tri[0])]
+                .iter()
+                .any(|&(a, b)| self.crossed_by(a, b))
+    }
 }
 
 fn unit(a: Pt, b: Pt) -> Pt {
@@ -783,7 +807,7 @@ fn first_collision(d: &SpaceTime, geo: &Geo) -> Option<(usize, usize, Kind)> {
         let (a, b) = segment(geo, d, m);
         for i in 0..d.events().len() {
             for kind in [Kind::Name, Kind::Annotation] {
-                if text_of(geo, i, kind).is_some_and(|p| p.rect().grow(CLEAR).crossed_by(a, b)) {
+                if text_of(geo, i, kind).is_some_and(|p| runs_into(d, geo, m, i, &p.rect())) {
                     return Some((mi, i, kind));
                 }
             }
@@ -800,11 +824,31 @@ fn is_hit(d: &SpaceTime, geo: &Geo, i: usize, kind: Kind) -> bool {
     let Some(p) = text_of(geo, i, kind) else {
         return false;
     };
-    let r = p.rect().grow(CLEAR);
-    d.messages().iter().any(|m| {
-        let (a, b) = segment(geo, d, m);
-        r.crossed_by(a, b)
-    })
+    let r = p.rect();
+    d.messages().iter().any(|m| runs_into(d, geo, m, i, &r))
+}
+
+/// Does message `m` run into event `i`'s text at `r`: its line, or, in a
+/// step-through, a head it shows in flight while that text is on screen?
+fn runs_into(d: &SpaceTime, geo: &Geo, m: &Message, i: usize, r: &Rect) -> bool {
+    let seg = segment(geo, d, m);
+    r.grow(CLEAR).crossed_by(seg.0, seg.1)
+        || d.is_step_through()
+            && in_flight_heads(geo, m, seg, i).any(|head| r.grow(HEAD_CLEAR).touched_by(head))
+}
+
+/// The heads a message shows in flight once event `shown` is on screen: one
+/// at each column from its send, or from `shown` if that is later, up to but
+/// not including its arrival, as far as the message has got by then (see
+/// [`front`]). Events are numbered in recorded order, which is the order of
+/// the columns and of the steps.
+fn in_flight_heads(
+    geo: &Geo,
+    m: &Message,
+    seg: (Pt, Pt),
+    shown: usize,
+) -> impl Iterator<Item = [Pt; 3]> {
+    (m.from.0.max(shown)..m.to.0).map(move |e| head_at(seg, front(seg, geo.x[e])))
 }
 
 /// The numbered badges next to one event, one per note it ends.
@@ -878,6 +922,11 @@ impl Layout {
     }
 }
 
+/// Where everything goes. A step-through
+/// ([`SpaceTime::is_step_through`]) also keeps its text clear of the
+/// arrowhead each message shows at every step it is in flight, which is wider
+/// than the line; a figure that is only ever drawn finished never shows those
+/// heads, so its layout ignores them.
 fn layout(d: &SpaceTime, captions: bool) -> Layout {
     let n = d.events().len();
     let quad = quadrants(d);
@@ -1066,9 +1115,15 @@ fn finish(d: &SpaceTime, mut geo: Geo, captions: bool) -> Layout {
         let mut line_no = 0;
         for note in &notes {
             let text = format!("{}. {}", note.n, note.callout.text.plain());
-            for (k, line) in wrap(&text, width - geo.label_w - GAP, CAPTION_PX, Font::Sans)
-                .iter()
-                .enumerate()
+            for (k, line) in wrap(
+                &text,
+                width - geo.label_w - GAP,
+                CAPTION_HANG,
+                CAPTION_PX,
+                Font::Sans,
+            )
+            .iter()
+            .enumerate()
             {
                 caption_lines.push((
                     note.n,
@@ -1077,7 +1132,7 @@ fn finish(d: &SpaceTime, mut geo: Geo, captions: bool) -> Layout {
                         x: if k == 0 {
                             geo.label_w
                         } else {
-                            geo.label_w + 16.0
+                            geo.label_w + CAPTION_HANG
                         }, // continuation lines hang under the text
                         y: lanes_bottom + 10.0 + CAPTION_LH * line_no as f64 + CAPTION_PX,
                         anchor: Anchor::Start,
@@ -1602,6 +1657,18 @@ fn front((start, tip): (Pt, Pt), x: f64) -> Pt {
     (start.0 + ux * along, start.1 + uy * along)
 }
 
+/// The corners of an arrowhead at `tip` on a message's segment: the tip, then
+/// either side of its base.
+fn head_at((start, _): (Pt, Pt), tip: Pt) -> [Pt; 3] {
+    let (ux, uy) = unit(start, tip);
+    let base = (tip.0 - ux * HEAD, tip.1 - uy * HEAD);
+    [
+        tip,
+        (base.0 - uy * 3.5, base.1 + ux * 3.5),
+        (base.0 + uy * 3.5, base.1 - ux * 3.5),
+    ]
+}
+
 fn dist(a: Pt, b: Pt) -> f64 {
     ((b.0 - a.0).powi(2) + (b.1 - a.1).powi(2)).sqrt()
 }
@@ -1878,9 +1945,17 @@ mod tests {
 
     #[test]
     fn wraps_on_words_and_hard_breaks() {
-        assert_eq!(wrap("aa bb cc", 40.0, 10.0, Font::Sans), ["aa bb", "cc"]); // "aa bb" is 28px; "aa bb cc" would be 45
-        assert_eq!(wrap("a\nb", 400.0, 10.0, Font::Sans), ["a", "b"]);
-        assert_eq!(wrap("", 40.0, 10.0, Font::Sans), [""]);
+        assert_eq!(
+            wrap("aa bb cc", 40.0, 0.0, 10.0, Font::Sans),
+            ["aa bb", "cc"]
+        ); // "aa bb" is 28px; "aa bb cc" would be 45
+        assert_eq!(wrap("a\nb", 400.0, 0.0, 10.0, Font::Sans), ["a", "b"]);
+        assert_eq!(wrap("", 40.0, 0.0, 10.0, Font::Sans), [""]);
+        // Lines after the first are narrower by the hang.
+        assert_eq!(
+            wrap("aa bb aa bb", 30.0, 10.0, 10.0, Font::Sans),
+            ["aa bb", "aa", "bb"]
+        );
     }
 
     #[test]
@@ -2106,13 +2181,7 @@ mod tests {
                     let seg = l.segments[mi];
                     let now = t.now(s).unwrap();
                     let tip = front(seg, l.x[now.0]);
-                    let (ux, uy) = unit(seg.0, tip);
-                    let base = (tip.0 - ux * HEAD, tip.1 - uy * HEAD);
-                    let head = [
-                        tip,
-                        (base.0 - uy * 3.5, base.1 + ux * 3.5),
-                        (base.0 + uy * 3.5, base.1 - ux * 3.5),
-                    ];
+                    let head = head_at(seg, tip);
                     let markers = (0..d.events().len())
                         .filter(|&i| shown(EventId(i)) && i != m.from.0)
                         .map(|i| {
@@ -2121,7 +2190,7 @@ mod tests {
                         });
                     for r in boxes.iter().copied().chain(markers) {
                         assert!(
-                            !triangle_hits(&r.grow(1.0), head), // as in assert_clear
+                            !r.grow(HEAD_CLEAR).touched_by(head), // as in assert_clear
                             "{}: {} in flight at step {s} runs into {r:?} (head {head:?})",
                             figure.stem,
                             d.message_key(mi)
@@ -2177,22 +2246,6 @@ mod tests {
                 }
             }
         }
-    }
-
-    /// Does the triangle overlap the rectangle?
-    fn triangle_hits(r: &Rect, tri: [Pt; 3]) -> bool {
-        let side = |a: Pt, b: Pt, p: Pt| (b.0 - a.0) * (p.1 - a.1) - (b.1 - a.1) * (p.0 - a.0);
-        let corner = (r.x0, r.y0);
-        let signs = [
-            side(tri[0], tri[1], corner),
-            side(tri[1], tri[2], corner),
-            side(tri[2], tri[0], corner),
-        ];
-        let corner_inside = signs.iter().all(|&v| v >= 0.0) || signs.iter().all(|&v| v <= 0.0);
-        corner_inside
-            || [(tri[0], tri[1]), (tri[1], tri[2]), (tri[2], tri[0])]
-                .iter()
-                .any(|&(a, b)| r.crossed_by(a, b))
     }
 
     #[test]

@@ -14,9 +14,9 @@ use dist_sys::clock::{
     CausalContext, Causality, Dot, Hlc, LamportClock, LamportStamp, Timestamp, VectorClock,
 };
 use dist_sys::coordination::{Kind, LamportMutex, Message};
-use dist_sys::crdt::MvRegister;
+use dist_sys::crdt::{LamportRegister, MvRegister};
 
-use crate::label::{Label, fields, phrase, sorted_entries, v};
+use crate::label::{Label, fields, phrase, sorted_entries, split_fields, v};
 use crate::model::{Claim, Diagram, DotLine, EventId, LaneId, Rich, SpaceTime, Span, rich};
 
 /// A figure and the file stem its renderings are written under.
@@ -50,10 +50,14 @@ impl Form {
 
 /// Every figure, in the order their files are written.
 pub fn all() -> Vec<Figure> {
-    vec![
+    let mut figures = vec![
         vector_clock_trace(),
         vector_clock_steps(),
         clock_comparison(),
+        lamport_register_overwrite(),
+        lamport_register_overwrite_steps(),
+        lamport_register_lost_write(),
+        lamport_register_lost_write_steps(),
         mv_register_siblings(),
         actor_id_reuse(),
         causal_context_gap(),
@@ -62,7 +66,13 @@ pub fn all() -> Vec<Figure> {
         mutex_fifo_steps(),
         mutex_overtaking(),
         mutex_overtaking_steps(),
-    ]
+    ];
+    for f in &mut figures {
+        if let (Form::Steps, Diagram::SpaceTime(d)) = (f.form, &mut f.diagram) {
+            d.step_through();
+        }
+    }
+    figures
 }
 
 /// Three processes, two messages: the scenario in the library test
@@ -476,6 +486,264 @@ impl Label for Stamps {
             ("VC", self.vector.spans()),
         ])
     }
+}
+
+/// A last-writer-wins register on Lamport stamps doing its job: B syncs
+/// "milk" from A, then writes "eggs", which rightly replaces it. The first
+/// history in the library's `lamport_register` docs.
+fn lamport_register_overwrite() -> Figure {
+    let [saw, _] = lamport_register_histories();
+    Figure {
+        stem: "lamport-register-overwrite",
+        diagram: Diagram::SpaceTime(saw.d),
+        form: Form::Static,
+    }
+}
+
+/// The overwrite one event at a time, each replica's register in the panel
+/// from empty.
+fn lamport_register_overwrite_steps() -> Figure {
+    let [mut r, _] = lamport_register_histories();
+    register_start_values(&mut r);
+    assert_eq!(r.b_before_write.get(), Some(&"milk"));
+    assert_eq!(r.b_before_write.clock().time(), 2);
+    r.d.narrate(
+        r.b[0],
+        rich![
+            "syncs from A and takes \"milk\", stamped ",
+            v(&r.milk_stamp),
+            "; receiving moves its clock past A's, to ",
+            Span::value("2")
+        ],
+    );
+    r.d.narrate(
+        r.eggs,
+        rich![
+            "writes \"eggs\", stamped ",
+            v(&r.eggs_stamp),
+            ", replacing \"milk\", which it was shown"
+        ],
+    );
+    r.d.narrate(
+        r.sync,
+        rich![
+            "syncs from B: ",
+            v(&r.eggs_stamp),
+            " beats ",
+            v(&r.milk_stamp),
+            ", so \"eggs\" replaces \"milk\", as B meant it to"
+        ],
+    );
+    Figure {
+        stem: "lamport-register-overwrite-steps",
+        diagram: Diagram::SpaceTime(r.d),
+        form: Form::Steps,
+    }
+}
+
+/// The same register losing a write: B never hears of "milk", yet "eggs"
+/// gets the same stamp as when it did, and replaces "milk" at A. The second
+/// history in the library's `lamport_register` docs.
+fn lamport_register_lost_write() -> Figure {
+    let [_, never] = lamport_register_histories();
+    Figure {
+        stem: "lamport-register-lost-write",
+        diagram: Diagram::SpaceTime(never.d),
+        form: Form::Static,
+    }
+}
+
+/// The lost write one event at a time, each replica's register in the panel
+/// from empty.
+fn lamport_register_lost_write_steps() -> Figure {
+    let [saw, mut r] = lamport_register_histories();
+    register_start_values(&mut r);
+    assert!(
+        r.b_before_write.get().is_none(),
+        "B has written nothing yet"
+    );
+    assert_eq!(
+        [&r, &saw].map(|h| h.b_before_write.clock().time()),
+        [2, 2],
+        "B's clock reaches 2 before it writes, in both histories"
+    );
+    r.d.narrate(
+        r.b[0],
+        "does something that isn't a write to x: its clock ticks, and nothing else changes",
+    );
+    r.d.narrate(
+        r.b[1],
+        rich![
+            "does something else: its clock reaches ",
+            Span::value("2"),
+            ", where syncing from A took it in the history where B saw milk"
+        ],
+    );
+    r.d.narrate(
+        r.eggs,
+        rich![
+            "writes \"eggs\", stamped ",
+            v(&r.eggs_stamp),
+            ": the same stamp as when it had seen milk, though it never heard from A"
+        ],
+    );
+    r.d.narrate(
+        r.sync,
+        rich![
+            "syncs from B: ",
+            v(&r.eggs_stamp),
+            " beats ",
+            v(&r.milk_stamp),
+            ", so \"eggs\" replaces \"milk\", which B never saw, and nothing records that \"milk\" was written"
+        ],
+    );
+    Figure {
+        stem: "lamport-register-lost-write-steps",
+        diagram: Diagram::SpaceTime(r.d),
+        form: Form::Steps,
+    }
+}
+
+/// Each lane of a register step-through starts from an empty register.
+fn register_start_values(r: &mut RegisterRun) {
+    for (lane, replica) in r.lanes.into_iter().zip(['A', 'B']) {
+        r.d.start_value(lane, LamportRegister::<char, &str>::new(replica).spans());
+    }
+}
+
+/// One history of the Lamport register: the figure, its lanes, its events,
+/// and what the figures say about it.
+struct RegisterRun {
+    d: SpaceTime,
+    lanes: [LaneId; 2],
+    /// A writes "milk".
+    milk: EventId,
+    /// B's events before it writes.
+    b: Vec<EventId>,
+    /// B writes "eggs".
+    eggs: EventId,
+    /// A syncs from B.
+    sync: EventId,
+    milk_stamp: LamportStamp<char>,
+    eggs_stamp: LamportStamp<char>,
+    b_before_write: LamportRegister<char, &'static str>,
+    /// Both registers at the end.
+    ends: [LamportRegister<char, &'static str>; 2],
+}
+
+/// Both histories, `[B saw milk, B never did]`, with the claims that compare
+/// them asserted: the same stamps and the same registers at the end, though
+/// in one history milk happened before eggs and in the other the two are
+/// concurrent (`callout_before` and `callout_concurrent` check that against
+/// the drawn arrows).
+fn lamport_register_histories() -> [RegisterRun; 2] {
+    let mut saw = lamport_register_run(true);
+    let mut never = lamport_register_run(false);
+    let stamp = |time, process| LamportStamp { time, process };
+    for r in [&saw, &never] {
+        assert_eq!((r.milk_stamp, r.eggs_stamp), (stamp(1, 'A'), stamp(3, 'B')));
+        assert_eq!(r.ends[0].get(), Some(&"eggs"));
+    }
+    assert_eq!(saw.ends, never.ends, "every register ends the same");
+
+    saw.d.callout_before(
+        saw.milk,
+        saw.eggs,
+        rich![
+            "milk happened before eggs: B was shown milk and chose to replace it, so ",
+            v(&saw.eggs_stamp),
+            " winning over ",
+            v(&saw.milk_stamp),
+            " is right"
+        ],
+    );
+    never.d.callout_concurrent(
+        never.milk,
+        never.eggs,
+        rich![
+            "milk is concurrent with eggs: B never heard from A. Yet the stamps are the same as when B saw milk, ",
+            v(&never.milk_stamp),
+            " and ",
+            v(&never.eggs_stamp),
+            ", so nothing in them can tell"
+        ],
+    );
+    never.d.callout(
+        never.eggs,
+        never.sync,
+        "A drops \"milk\" for \"eggs\" and ends exactly as when B saw milk: no one chose to discard \"milk\", and nothing on either replica records it was written",
+    );
+    [saw, never]
+}
+
+/// One history: A writes "milk"; B either syncs it from A or does two
+/// unrelated things; B writes "eggs"; A syncs from B.
+fn lamport_register_run(b_saw_milk: bool) -> RegisterRun {
+    let mut d = SpaceTime::new(if b_saw_milk {
+        "Last writer wins on Lamport stamps: B saw milk and replaced it"
+    } else {
+        "Last writer wins on Lamport stamps: B never saw milk, which is lost"
+    });
+    let (la, lb) = (d.actor_lane("A", 'A'), d.actor_lane("B", 'B'));
+    let (mut a, mut b) = (LamportRegister::new('A'), LamportRegister::new('B'));
+    let mut times: Vec<(EventId, u64)> = Vec::new();
+    let mut record = |d: &mut SpaceTime, lane, name, r: &LamportRegister<char, &'static str>| {
+        let e = d.event(lane, name, r.spans());
+        times.push((e, r.clock().time()));
+        e
+    };
+
+    let milk_stamp = a.write("milk");
+    let milk = record(&mut d, la, "write milk", &a);
+    let mut b_events = Vec::new();
+    if b_saw_milk {
+        b.sync_from(&a);
+        let e = record(&mut d, lb, "sync", &b);
+        let m = d.message(milk, e, held(&a));
+        d.pin_message(m, "milk-to-b");
+        b_events.push(e);
+    } else {
+        for _ in 0..2 {
+            b.tick();
+            b_events.push(record(&mut d, lb, "local", &b));
+        }
+    }
+    let b_before_write = b.clone();
+    let eggs_stamp = b.write("eggs");
+    let eggs = record(&mut d, lb, "write eggs", &b);
+    a.sync_from(&b);
+    let sync = record(&mut d, la, "sync", &a);
+    let m = d.message(eggs, sync, held(&b));
+    d.pin_message(m, "eggs-to-a");
+    assert_eq!(a.entry(), Some((&eggs_stamp, &"eggs")));
+    assert!(milk_stamp < eggs_stamp);
+    assert_clock_condition(&d, &times);
+
+    d.pin_event(milk, "milk");
+    d.pin_event(eggs, "eggs");
+    d.pin_event(sync, "a-syncs");
+    RegisterRun {
+        d,
+        lanes: [la, lb],
+        milk,
+        b: b_events,
+        eggs,
+        sync,
+        milk_stamp,
+        eggs_stamp,
+        b_before_write,
+        ends: [a, b],
+    }
+}
+
+/// What a register holds, `(1,A)→"milk"`: its `x` field, which a sync carries.
+fn held(r: &LamportRegister<char, &'static str>) -> Rich {
+    let rows = split_fields(&r.spans()).expect("a register is drawn as fields");
+    let (_, x) = rows
+        .into_iter()
+        .find(|(name, _)| name == "x")
+        .expect("an x field");
+    x
 }
 
 /// Two replicas write concurrently, the writes become siblings, a write that

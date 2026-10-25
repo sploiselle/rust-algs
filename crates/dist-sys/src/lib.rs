@@ -10,7 +10,8 @@
 //! - [`counter`]: the simplest source of order, a
 //!   [`MonotonicCounter`](counter::MonotonicCounter).
 //! - [`crdt`]: replicated data types that converge without coordination.
-//!   [`MvRegister`](crdt::MvRegister).
+//!   [`LamportRegister`](crdt::LamportRegister), which shows what a total
+//!   order loses, and [`MvRegister`](crdt::MvRegister), which keeps it.
 //! - [`coordination`]: getting processes to agree on an order.
 //!   [`LamportMutex`](coordination::LamportMutex).
 

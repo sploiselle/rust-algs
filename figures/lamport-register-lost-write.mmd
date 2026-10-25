@@ -1,0 +1,14 @@
+---
+title: "Last writer wins on Lamport stamps: B never saw milk, which is lost"
+---
+sequenceDiagram
+    participant L0 as A
+    participant L1 as B
+    Note over L0: write milk<br/>L 1<br/>x (1,A)→"milk"
+    Note over L1: local<br/>L 1<br/>x (empty)
+    Note over L1: local<br/>L 2<br/>x (empty)
+    Note over L1: write eggs<br/>L 3<br/>x (3,B)→"eggs"
+    Note over L0,L1: milk is concurrent with eggs: B never heard from A. Yet the stamps are the same as when B saw milk, (1,A) and (3,B), so nothing in them can tell
+    L1->>L0: (3,B)→"eggs"
+    Note over L0: sync<br/>L 4<br/>x (3,B)→"eggs"
+    Note over L1,L0: A drops "milk" for "eggs" and ends exactly as when B saw milk: no one chose to discard "milk", and nothing on either replica records it was written

@@ -37,7 +37,8 @@
 //!
 //! - **Detect concurrency.** The implication only runs one way. `L(e) < L(f)`
 //!   is just as consistent with `e ∥ f`, so a Lamport clock can't tell two
-//!   conflicting writes from one that overwrote the other. Deciding
+//!   conflicting writes from one that overwrote the other (a
+//!   [`LamportRegister`](crate::crdt::LamportRegister) builds both). Deciding
 //!   happened-before exactly takes a [`VectorClock`](super::VectorClock).
 //! - **Say anything about real time.** The counter means nothing outside the
 //!   system, and if causality flows outside it (one user tells another to make
