@@ -80,6 +80,35 @@ fn vector_clock_steps() -> Figure {
     for lane in t.lanes {
         t.d.start_value(lane, VectorClock::<char>::new().spans());
     }
+    // What a receive does, which B2 is the first to show.
+    let (b2, b1_clock, m1, b2_clock) = &t.b2;
+    let mut merged = b1_clock.join(m1);
+    merged.tick(&'B');
+    assert_eq!(&merged, b2_clock, "B2 joins m1 into its clock, then ticks");
+    t.d.narrate(
+        *b2,
+        rich![
+            "receives m1, keeps the larger of each entry, and ticks its own: ",
+            v(b2_clock)
+        ],
+    );
+    // C hears of A's events only through B.
+    let (c2, c2_clock) = &t.c2;
+    let [la, _, lc] = t.lanes;
+    assert_eq!(c2_clock.get(&'A'), 2);
+    assert!(
+        t.d.messages()
+            .iter()
+            .all(|m| (t.d.lane_of(m.from), t.d.lane_of(m.to)) != (la, lc)),
+        "A never sends to C"
+    );
+    t.d.narrate(
+        *c2,
+        rich![
+            "receives m2, and so learns of A's first two events though A never sent to C: ",
+            v(c2_clock)
+        ],
+    );
     Figure {
         stem: "vector-clock-steps",
         diagram: Diagram::SpaceTime(t.d),
@@ -92,6 +121,15 @@ fn vector_clock_steps() -> Figure {
 struct VectorTrace {
     d: SpaceTime,
     lanes: [LaneId; 3],
+    /// B2, B's clock just before it and the message it receives, and its clock after.
+    b2: (
+        EventId,
+        VectorClock<char>,
+        VectorClock<char>,
+        VectorClock<char>,
+    ),
+    /// C2 and its clock.
+    c2: (EventId, VectorClock<char>),
 }
 
 fn vector_trace() -> VectorTrace {
@@ -117,6 +155,7 @@ fn vector_trace() -> VectorTrace {
     vb.tick(&b);
     let b1 = d.event(lb, "B1", vb.spans());
     clocks.push((b1, vb.clone()));
+    let b1_clock = vb.clone();
     vb.receive(&b, &m1);
     let b2 = d.event(lb, "B2", vb.spans());
     clocks.push((b2, vb.clone()));
@@ -205,9 +244,12 @@ fn vector_trace() -> VectorTrace {
             ", carried by m1 then m2"
         ],
     );
+    let b2_clock = clocks.iter().find(|(e, _)| *e == b2).unwrap().1.clone();
     VectorTrace {
         d,
         lanes: [la, lb, lc],
+        b2: (b2, b1_clock, m1, b2_clock),
+        c2: (c2, c2_clock),
     }
 }
 

@@ -221,6 +221,9 @@ pub struct Event {
     pub annotation: Rich,
     /// Set by [`SpaceTime::pin_event`]; otherwise the key is positional.
     pub key: Option<String>,
+    /// What a step-through says at this event, if the catalog wrote it. Set
+    /// by [`SpaceTime::narrate`].
+    pub narration: Rich,
 }
 
 /// Information flowing from one event to a later one on another lane: a
@@ -420,7 +423,8 @@ impl SpaceTime {
             .map(|e| &e.annotation)
             .chain(self.messages.iter().map(|m| &m.label))
             .chain(self.callouts.iter().map(|c| &c.text))
-            .chain(self.lanes.iter().map(|l| &l.start));
+            .chain(self.lanes.iter().map(|l| &l.start))
+            .chain(self.events.iter().map(|e| &e.narration));
         for span in texts.flat_map(|r| r.lines.iter().flatten()) {
             for (k, v) in &span.data {
                 if *k == "actor" && !out.contains(v) {
@@ -443,6 +447,10 @@ impl SpaceTime {
         for r in texts {
             r.lines.iter_mut().flatten().for_each(&mut f);
         }
+        // Last, as in `actors`: an event's own text is borrowed above.
+        for e in &mut self.events {
+            e.narration.lines.iter_mut().flatten().for_each(&mut f);
+        }
     }
 
     pub fn event(
@@ -457,8 +465,24 @@ impl SpaceTime {
             name: name.into(),
             annotation: annotation.into(),
             key: None,
+            narration: Rich::default(),
         });
         EventId(self.events.len() - 1)
+    }
+
+    /// What a step-through says at `event`'s step, in place of the account
+    /// it would generate. It continues "B2 on B …": say what the library did
+    /// and show values with [`v`](crate::label::v), which a test checks are
+    /// on screen at that step; any further claim needs an assert beside it in
+    /// the catalog, as a callout's does. Panics if the event is unknown, the
+    /// text empty, or the event already narrated.
+    pub fn narrate(&mut self, event: EventId, text: impl Into<Rich>) {
+        assert!(event.0 < self.events.len(), "unknown event");
+        let text = text.into();
+        assert!(!text.is_empty(), "a narration says something");
+        let e = &mut self.events[event.0];
+        assert!(e.narration.is_empty(), "the event is already narrated");
+        e.narration = text;
     }
 
     /// Give an event a key that survives changes to the scenario around it.
@@ -1061,6 +1085,16 @@ mod tests {
             "an empty annotation holds nothing new"
         );
         assert_eq!(at(b, t.last()), None);
+    }
+
+    #[test]
+    #[should_panic(expected = "already narrated")]
+    fn an_event_is_narrated_once() {
+        let mut d = SpaceTime::new("t");
+        let a = d.lane("A");
+        let a1 = d.event(a, "A1", "");
+        d.narrate(a1, "ticks");
+        d.narrate(a1, "ticks again");
     }
 
     #[test]

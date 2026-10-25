@@ -22,7 +22,7 @@ use super::Render;
 use super::steps::{At, timed};
 use super::svg::{
     actor_attrs, dot_line_svg, escape_attr, event_sentence, lanes_sentence, one_line,
-    relation_attr, role_classes, space_time_svg, with_actor_slots,
+    relation_attr, role_classes, space_time_svg, subject, with_actor_slots,
 };
 use crate::label::split_fields;
 use crate::model::{Beat, Diagram, DotLine, LaneId, Note, Rich, SpaceTime, Span, Timeline};
@@ -193,11 +193,19 @@ fn beat(d: &SpaceTime, t: &Timeline, s: usize) -> String {
             String::new(),
             text(&format!("{}; time runs left to right", lanes_sentence(d))),
         ),
-        Beat::Event(e) => (
-            format!(r#" data-event="{}""#, escape_attr(&d.event_key(e))),
-            String::new(),
-            rich_html(&squeezed(&event_sentence(d, e, true))),
-        ),
+        Beat::Event(e) => {
+            let narration = &d.events()[e.0].narration;
+            let said = if narration.is_empty() {
+                event_sentence(d, e, true)
+            } else {
+                subject(d, e).then(" ").then(narration.clone())
+            };
+            (
+                format!(r#" data-event="{}""#, escape_attr(&d.event_key(e))),
+                String::new(),
+                rich_html(&squeezed(&said)),
+            )
+        }
         Beat::Note(n) => {
             let note = d
                 .notes()
@@ -469,6 +477,45 @@ mod tests {
             .replace("&gt;", ">")
             .replace("&quot;", "\"")
             .replace("&amp;", "&")
+    }
+
+    /// Every value a narration quotes is on screen at its step: in a value
+    /// drawn under an event, on an arrow, or in a lane's start value.
+    #[test]
+    fn narration_cites_only_values_on_screen() {
+        for (stem, d) in step_throughs() {
+            let t = d.timeline();
+            for (i, e) in d.events().iter().enumerate() {
+                let s = t.event(EventId(i));
+                let on_screen: Vec<String> = d
+                    .events()
+                    .iter()
+                    .enumerate()
+                    .filter(|(j, _)| t.event(EventId(*j)) <= s)
+                    .map(|(_, x)| x.annotation.plain())
+                    .chain(
+                        d.messages()
+                            .iter()
+                            .filter(|m| t.event(m.to) <= s)
+                            .map(|m| m.label.plain()),
+                    )
+                    .chain(d.lanes().iter().map(|l| l.start.plain()))
+                    .collect();
+                for line in &e.narration.lines {
+                    for run in line
+                        .chunk_by(|x, y| x.value == y.value)
+                        .filter(|r| r[0].value)
+                    {
+                        let quoted: String = run.iter().map(|x| x.text.as_str()).collect();
+                        assert!(
+                            on_screen.iter().any(|v| v.contains(&quoted)),
+                            "{stem}: {} quotes {quoted:?}, which isn't on screen at its step",
+                            d.event_key(EventId(i))
+                        );
+                    }
+                }
+            }
+        }
     }
 
     #[test]
