@@ -33,6 +33,7 @@ pub fn all() -> Vec<Figure> {
         mv_register_siblings(),
         actor_id_reuse(),
         causal_context_gap(),
+        mutex_fifo(),
         mutex_overtaking(),
     ]
 }
@@ -608,6 +609,124 @@ fn causal_context_gap() -> Figure {
     }
 }
 
+/// Lamport's mutual exclusion working: the requests and the ack from
+/// `mutex_overtaking`, but delivered in the order they were sent, so A's
+/// request reaches B before the ack does. B waits, and enters when A releases.
+/// The scenario in the library test
+/// `concurrent_requests_are_granted_in_stamp_order`.
+fn mutex_fifo() -> Figure {
+    let mut d = SpaceTime::new("Lamport's mutex over FIFO channels: B waits its turn");
+    let (la, lb) = (d.actor_lane("A", 'A'), d.actor_lane("B", 'B'));
+    let mut a = LamportMutex::new('A', ['A', 'B']);
+    let mut b = LamportMutex::new('B', ['A', 'B']);
+    let stamp = |time, process| LamportStamp { time, process };
+    let mut times: Vec<(EventId, u64)> = Vec::new();
+
+    let req_a = only(a.request());
+    let a1 = d.event(la, "request", a.spans());
+    times.push((a1, a.clock().time()));
+    let req_b = only(b.request());
+    let b1 = d.event(lb, "request", b.spans());
+    times.push((b1, b.clock().time()));
+    assert_eq!(a.pending(), Some(&stamp(1, 'A')));
+    assert_eq!(b.pending(), Some(&stamp(1, 'B')));
+
+    let req_b_label = message_label(&req_b);
+    let ack_a = a.receive(req_b).expect("a request is acknowledged");
+    let a2 = d.event(la, "req from B", a.spans());
+    times.push((a2, a.clock().time()));
+    let req_b_msg = d.message(b1, a2, req_b_label);
+    assert!(a.holds(), "A's request is the earliest");
+
+    let req_a_label = message_label(&req_a);
+    let ack_b = b.receive(req_a).expect("a request is acknowledged");
+    let b2 = d.event(lb, "req from A", b.spans());
+    times.push((b2, b.clock().time()));
+    let req_a_msg = d.message(a1, b2, req_a_label);
+    assert_eq!(
+        b.queue().collect::<Vec<_>>(),
+        [&stamp(1, 'A'), &stamp(1, 'B')]
+    );
+    assert!(!b.holds());
+
+    let ack_a_label = message_label(&ack_a);
+    assert_eq!((ack_a.kind, ack_a.time), (Kind::Ack, 3));
+    b.receive(ack_a);
+    let b3 = d.event(lb, "ack from A", b.spans());
+    times.push((b3, b.clock().time()));
+    let ack_a_msg = d.message(a2, b3, ack_a_label);
+    // What B knew when it entered in the overtaking run, except for the queue.
+    assert_eq!(b.clock().time(), 4);
+    assert_eq!(b.heard().collect::<Vec<_>>(), [(&'A', 3)]);
+    assert!(
+        !b.holds(),
+        "B has heard from A past its request, but A's is first"
+    );
+
+    let ack_b_label = message_label(&ack_b);
+    a.receive(ack_b);
+    let a3 = d.event(la, "ack from B", a.spans());
+    times.push((a3, a.clock().time()));
+    d.message(b2, a3, ack_b_label);
+    assert!(a.holds() && !b.holds());
+
+    let release = only(a.release());
+    let a4 = d.event(la, "release", a.spans());
+    times.push((a4, a.clock().time()));
+    let release_label = message_label(&release);
+    assert_eq!((release.kind, release.time), (Kind::Release, 5));
+    b.receive(release);
+    let b4 = d.event(lb, "release from A", b.spans());
+    times.push((b4, b.clock().time()));
+    let release_msg = d.message(a4, b4, release_label);
+    assert_eq!(b.queue().collect::<Vec<_>>(), [&stamp(1, 'B')]);
+    assert_eq!(b.heard().collect::<Vec<_>>(), [(&'A', 5)]);
+    assert!(!a.holds() && b.holds(), "the resource passes to B");
+
+    assert_clock_condition(&d, &times);
+
+    d.pin_event(a2, "a-enters");
+    d.pin_event(b3, "b-waits");
+    d.pin_event(b4, "b-enters");
+    d.pin_message(req_a_msg, "req-a");
+    d.pin_message(req_b_msg, "req-b");
+    d.pin_message(ack_a_msg, "ack-a");
+    d.pin_message(release_msg, "release-a");
+    d.callout(
+        a1,
+        b2,
+        rich![
+            "A's request ",
+            v(&stamp(1, 'A')),
+            " reaches B before anything A sent after it, and goes ahead of B's own ",
+            v(&stamp(1, 'B')),
+            " in B's queue"
+        ],
+    );
+    d.callout(
+        a2,
+        b3,
+        rich![
+            "B has heard from A at ",
+            Span::value("3"),
+            ", later than its request, but A's request is first in its queue, so B waits"
+        ],
+    );
+    d.callout(
+        a4,
+        b4,
+        rich![
+            "A releases: B drops ",
+            v(&stamp(1, 'A')),
+            " from its queue, its own request is first, and B enters"
+        ],
+    );
+    Figure {
+        stem: "mutex-fifo",
+        diagram: Diagram::SpaceTime(d),
+    }
+}
+
 /// Lamport's mutual exclusion over a channel that doesn't keep order: A's
 /// acknowledgement of B's request overtakes A's own, earlier request, and both
 /// processes enter. The scenario in the library test
@@ -619,7 +738,6 @@ fn mutex_overtaking() -> Figure {
     let mut b = LamportMutex::new('B', ['A', 'B']);
     let stamp = |time, process| LamportStamp { time, process };
 
-    // The Lamport time after every event, to check the drawn graph against.
     let mut times: Vec<(EventId, u64)> = Vec::new();
 
     let req_a = only(a.request());
@@ -667,21 +785,7 @@ fn mutex_overtaking() -> Figure {
     d.message(b3, a3, late_ack_label);
     assert!(a.holds(), "nothing A receives takes the resource away");
 
-    // The clock condition on the drawn graph: whatever an arrow or a lane
-    // carries into an event's past has a smaller Lamport time.
-    assert_eq!(
-        times.len(),
-        d.events().len(),
-        "every event's time is checked"
-    );
-    let pasts = d.pasts();
-    for (x, tx) in &times {
-        for (y, ty) in &times {
-            if pasts[y.0].contains(x) {
-                assert!(tx < ty, "an arrow runs backwards in Lamport time");
-            }
-        }
-    }
+    assert_clock_condition(&d, &times);
     assert!(d.recorded_before(a2, b2) && d.recorded_before(b2, b3));
 
     d.pin_event(a2, "a-enters");
@@ -712,6 +816,24 @@ fn mutex_overtaking() -> Figure {
     Figure {
         stem: "mutex-overtaking",
         diagram: Diagram::SpaceTime(d),
+    }
+}
+
+/// The clock condition on the drawn graph: whatever an arrow or a lane carries
+/// into an event's past has a smaller Lamport time. `times` holds every event's.
+fn assert_clock_condition(d: &SpaceTime, times: &[(EventId, u64)]) {
+    assert_eq!(
+        times.len(),
+        d.events().len(),
+        "every event's time is checked"
+    );
+    let pasts = d.pasts();
+    for (x, tx) in times {
+        for (y, ty) in times {
+            if pasts[y.0].contains(x) {
+                assert!(tx < ty, "an arrow runs backwards in Lamport time");
+            }
+        }
     }
 }
 
