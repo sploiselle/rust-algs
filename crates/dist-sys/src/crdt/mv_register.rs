@@ -20,10 +20,6 @@ impl<A: Ord + Clone> ReadContext<A> {
 
 /// A multi-value register replicated across actors `A`, holding values `V`.
 ///
-/// State:
-/// - `entries`: the live values, each named by the [`Dot`] of the write that produced it.
-/// - `seen`: every write this replica has heard of, live or overwritten.
-///
 /// The contract, checked by the test `mv_register_matches_its_spec`: once
 /// replicas have exchanged state, the live values are exactly the writes whose
 /// dot is in no write's [`ReadContext`]. A value disappears only because some
@@ -31,7 +27,10 @@ impl<A: Ord + Clone> ReadContext<A> {
 /// because of sync order, timing or a clock comparison.
 #[derive(Clone, Debug)]
 pub struct MvRegister<A: Ord, V> {
+    /// The live values, each named by the [`Dot`] of the write that produced
+    /// it.
     entries: Vec<(Dot<A>, V)>,
+    /// Every write this replica has heard of, live or overwritten.
     seen: CausalContext<A>,
 }
 

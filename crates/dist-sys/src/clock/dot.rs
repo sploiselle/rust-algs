@@ -31,16 +31,16 @@ impl<A: fmt::Debug> fmt::Debug for Dot<A> {
 
 /// A set of dots: "which writes do I know about?"
 ///
-/// Stored as a vector clock (meaning every dot `(a, 1..=vv[a])`) plus a cloud of
-/// dots known beyond that contiguous prefix.
-///
 /// Why not just a vector clock? A vector can only say "the first n events of A".
 /// Knowing (A,1) and (A,3) but not (A,2), the smallest vector containing (A,3) is
 /// {A:3}, which also claims (A,2). Treating a write you never saw as seen is
 /// exactly how concurrent writes get silently discarded.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CausalContext<A: Ord> {
+    /// Every dot `(a, 1..=vv[a])`: each actor's contiguous run from its first
+    /// event.
     vv: VectorClock<A>,
+    /// Dots known beyond that run, past a gap.
     cloud: BTreeMap<A, BTreeSet<u64>>,
 }
 

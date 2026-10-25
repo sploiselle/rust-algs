@@ -50,15 +50,14 @@
 use crate::clock::{LamportClock, LamportStamp};
 
 /// A last-writer-wins register at one replica `A`, holding values `V`.
-///
-/// State:
-/// - `clock`: this replica's Lamport clock, which every write, sync and
-///   [`tick`](Self::tick) advances.
-/// - `entry`: the value with the largest stamp this replica has heard of.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LamportRegister<A, V> {
+    /// Breaks ties between this replica's writes and others' at the same time.
     replica: A,
+    /// Advanced by every write, sync and [`tick`](Self::tick).
     clock: LamportClock,
+    /// The value with the largest stamp this replica has heard of, and that
+    /// stamp.
     entry: Option<(LamportStamp<A>, V)>,
 }
 

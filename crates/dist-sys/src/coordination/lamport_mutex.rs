@@ -76,33 +76,31 @@ pub enum Kind {
     Release,
 }
 
-/// A message from one process to another, stamped with the sender's Lamport
-/// clock.
+/// A message from one process to another.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Message<P> {
     pub from: P,
     pub to: P,
+    /// The sender's Lamport time when it sent this.
     pub time: u64,
     pub kind: Kind,
 }
 
 /// One process's side of Lamport's mutual exclusion, among processes named by
 /// `P`.
-///
-/// It does no I/O: [`request`](Self::request), [`receive`](Self::receive) and
-/// [`release`](Self::release) return the messages to send, and the caller
-/// delivers them, on channels that preserve order.
-///
-/// State:
-/// - `queue`: every request this process knows is outstanding, its own
-///   included, sorted by stamp.
-/// - `heard`: for each other process, the latest stamp received from it.
 #[derive(Debug, Clone)]
 pub struct LamportMutex<P> {
     me: P,
+    /// Stamps this process's requests, acks and releases.
     clock: LamportClock,
+    /// Every outstanding request this process knows of, its own included,
+    /// earliest first.
     queue: BTreeSet<LamportStamp<P>>,
+    /// For each other process, the latest stamp received from it, 0 before
+    /// anything arrives: what the second half of rule 5 compares against.
     heard: BTreeMap<P, u64>,
+    /// This process's own request, from [`request`](Self::request) until
+    /// [`release`](Self::release).
     pending: Option<LamportStamp<P>>,
 }
 
@@ -129,7 +127,6 @@ impl<P: Ord + Clone> LamportMutex<P> {
         &self.me
     }
 
-    /// This process's clock, for tracing an execution.
     pub fn clock(&self) -> &LamportClock {
         &self.clock
     }
