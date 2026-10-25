@@ -373,7 +373,7 @@ impl SpaceTime {
 
     /// Mark this figure as one a page steps through, which draws each message
     /// in flight, so its layout leaves room for that. The catalog marks every
-    /// `Form::Steps` figure.
+    /// figure with more than one step ([`Diagram::is_walkable`]).
     pub fn step_through(&mut self) {
         self.step_through = true;
     }
@@ -971,6 +971,16 @@ impl Diagram {
         }
     }
 
+    /// Is there more than one step to walk through? A space-time figure
+    /// needs two events or notes to show one after the other, and a number
+    /// line two frames; with fewer, the finished figure is all there is to see.
+    pub fn is_walkable(&self) -> bool {
+        match self {
+            Diagram::SpaceTime(d) => d.timeline().last() > 2,
+            Diagram::DotLine(d) => d.last_step() > 1,
+        }
+    }
+
     /// The kind as it appears in rendered output: `space-time` or `dot-line`.
     pub fn kind(&self) -> &'static str {
         match self {
@@ -983,6 +993,30 @@ impl Diagram {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_figure_is_walkable_when_it_has_more_than_one_step() {
+        let mut d = SpaceTime::new("t");
+        let a = d.lane("A");
+        assert!(
+            !Diagram::SpaceTime(d.clone()).is_walkable(),
+            "nothing happens"
+        );
+        d.event(a, "x", "");
+        assert!(!Diagram::SpaceTime(d.clone()).is_walkable(), "one event");
+        d.event(a, "y", "");
+        assert!(Diagram::SpaceTime(d).is_walkable(), "two events");
+
+        let line = |frames| {
+            let mut d = DotLine::frames("t", "A", 1);
+            for _ in 0..frames {
+                d.frame(vec![1], vec![], "");
+            }
+            Diagram::DotLine(d)
+        };
+        assert!(!line(1).is_walkable());
+        assert!(line(2).is_walkable());
+    }
 
     #[test]
     fn ids_index_in_recorded_order() {

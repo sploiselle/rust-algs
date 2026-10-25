@@ -1,23 +1,15 @@
 {
   "figures": [
-    { "stem": "lamport-clock-trace", "kind": "space-time", "form": "static", "title": "Lamport clocks: three processes, two messages" },
-    { "stem": "lamport-clock-steps", "kind": "space-time", "form": "steps", "title": "Lamport clocks: three processes, two messages" },
-    { "stem": "vector-clock-trace", "kind": "space-time", "form": "static", "title": "Vector clocks: three processes, two messages" },
-    { "stem": "vector-clock-steps", "kind": "space-time", "form": "steps", "title": "Vector clocks: three processes, two messages" },
-    { "stem": "clock-comparison", "kind": "space-time", "form": "static", "title": "Three clocks, one trace: Lamport, hybrid logical, and vector" },
-    { "stem": "lamport-register-overwrite", "kind": "space-time", "form": "static", "title": "Last writer wins on Lamport stamps: B saw milk and replaced it" },
-    { "stem": "lamport-register-overwrite-steps", "kind": "space-time", "form": "steps", "title": "Last writer wins on Lamport stamps: B saw milk and replaced it" },
-    { "stem": "lamport-register-lost-write", "kind": "space-time", "form": "static", "title": "Last writer wins on Lamport stamps: B never saw milk, which is lost" },
-    { "stem": "lamport-register-lost-write-steps", "kind": "space-time", "form": "steps", "title": "Last writer wins on Lamport stamps: B never saw milk, which is lost" },
-    { "stem": "mv-register-siblings", "kind": "space-time", "form": "static", "title": "Multi-value register: concurrent writes become siblings" },
-    { "stem": "actor-id-reuse", "kind": "space-time", "form": "static", "title": "Reusing an actor id after state loss: two writes share one name" },
-    { "stem": "causal-context-gap", "kind": "dot-line", "form": "static", "title": "A causal context tracks a gap a vector clock cannot" },
-    { "stem": "causal-context-steps", "kind": "dot-line", "form": "steps", "title": "A causal context tracks a gap a vector clock cannot" },
-    { "stem": "mutex-fifo", "kind": "space-time", "form": "static", "title": "Lamport's mutex over FIFO channels: B waits its turn" },
-    { "stem": "mutex-fifo-steps", "kind": "space-time", "form": "steps", "title": "Lamport's mutex over FIFO channels: B waits its turn" },
-    { "stem": "mutex-overtaking", "kind": "space-time", "form": "static", "title": "Lamport's mutex: an overtaking message lets two processes in" },
-    { "stem": "mutex-overtaking-steps", "kind": "space-time", "form": "steps", "title": "Lamport's mutex: an overtaking message lets two processes in" },
-    { "stem": "mutex-crash", "kind": "space-time", "form": "static", "title": "Lamport's mutex: A crashes, and no one enters again" },
-    { "stem": "mutex-crash-steps", "kind": "space-time", "form": "steps", "title": "Lamport's mutex: A crashes, and no one enters again" }
+    { "stem": "lamport-clock-trace", "kind": "space-time", "form": "steps", "title": "Lamport clocks: three processes, two messages" },
+    { "stem": "vector-clock-trace", "kind": "space-time", "form": "steps", "title": "Vector clocks: three processes, two messages" },
+    { "stem": "clock-comparison", "kind": "space-time", "form": "steps", "title": "Three clocks, one trace: Lamport, hybrid logical, and vector" },
+    { "stem": "lamport-register-overwrite", "kind": "space-time", "form": "steps", "title": "Last writer wins on Lamport stamps: B saw milk and replaced it" },
+    { "stem": "lamport-register-lost-write", "kind": "space-time", "form": "steps", "title": "Last writer wins on Lamport stamps: B never saw milk, which is lost" },
+    { "stem": "mv-register-siblings", "kind": "space-time", "form": "steps", "title": "Multi-value register: concurrent writes become siblings" },
+    { "stem": "actor-id-reuse", "kind": "space-time", "form": "steps", "title": "Reusing an actor id after state loss: two writes share one name" },
+    { "stem": "causal-context-gap", "kind": "dot-line", "form": "steps", "title": "A causal context tracks a gap a vector clock cannot" },
+    { "stem": "mutex-fifo", "kind": "space-time", "form": "steps", "title": "Lamport's mutex over FIFO channels: B waits its turn" },
+    { "stem": "mutex-overtaking", "kind": "space-time", "form": "steps", "title": "Lamport's mutex: an overtaking message lets two processes in" },
+    { "stem": "mutex-crash", "kind": "space-time", "form": "steps", "title": "Lamport's mutex: A crashes, and no one enters again" }
   ]
 }

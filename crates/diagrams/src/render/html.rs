@@ -366,7 +366,7 @@ mod tests {
     fn step_throughs() -> Vec<(&'static str, SpaceTime)> {
         crate::catalog::all()
             .into_iter()
-            .filter(|f| f.form == Form::Steps)
+            .filter(|f| f.form() == Form::Steps)
             .filter_map(|f| match f.diagram {
                 Diagram::SpaceTime(d) => Some((f.stem, d)),
                 Diagram::DotLine(_) => None,
@@ -403,7 +403,7 @@ mod tests {
     fn every_step_through() -> Vec<(&'static str, Diagram)> {
         crate::catalog::all()
             .into_iter()
-            .filter(|f| f.form == Form::Steps)
+            .filter(|f| f.form() == Form::Steps)
             .map(|f| (f.stem, f.diagram))
             .collect()
     }

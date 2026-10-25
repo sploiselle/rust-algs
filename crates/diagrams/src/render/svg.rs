@@ -2187,7 +2187,7 @@ mod tests {
             let Diagram::SpaceTime(d) = &figure.diagram else {
                 continue;
             };
-            if figure.form != crate::catalog::Form::Steps {
+            if figure.form() != crate::catalog::Form::Steps {
                 continue;
             }
             let (l, t) = (layout(d, false), d.timeline());
@@ -2271,7 +2271,7 @@ mod tests {
             let Diagram::SpaceTime(d) = &figure.diagram else {
                 continue;
             };
-            if figure.form != crate::catalog::Form::Steps {
+            if figure.form() != crate::catalog::Form::Steps {
                 continue;
             }
             let (l, t) = (layout(d, false), d.timeline());

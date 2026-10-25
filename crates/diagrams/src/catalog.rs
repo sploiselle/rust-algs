@@ -23,18 +23,28 @@ use crate::model::{Claim, Diagram, DotLine, EventId, LaneId, Rich, SpaceTime, Sp
 pub struct Figure {
     pub stem: &'static str,
     pub diagram: Diagram,
-    pub form: Form,
+}
+
+impl Figure {
+    /// How the figure is shown, which its steps decide.
+    pub fn form(&self) -> Form {
+        if self.diagram.is_walkable() {
+            Form::Steps
+        } else {
+            Form::Static
+        }
+    }
 }
 
 /// How a figure is shown.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Form {
-    /// Finished, as SVG, HTML and Mermaid.
+    /// Finished, as SVG, HTML and Mermaid: a figure with a single step has
+    /// nothing to walk through.
     Static,
     /// As a step-through: an HTML figure a page's player steps through, one
-    /// event or note at a time. Opt-in, since a step-through is written for
-    /// stepping (what it says at each step, what it starts from), and most
-    /// figures read best finished.
+    /// event or note at a time. It is written for stepping (what it says at
+    /// each step, what it starts from) and is finished at rest.
     Steps,
 }
 
@@ -52,27 +62,19 @@ impl Form {
 pub fn all() -> Vec<Figure> {
     let mut figures = vec![
         lamport_clock_trace(),
-        lamport_clock_steps(),
         vector_clock_trace(),
-        vector_clock_steps(),
         clock_comparison(),
         lamport_register_overwrite(),
-        lamport_register_overwrite_steps(),
         lamport_register_lost_write(),
-        lamport_register_lost_write_steps(),
         mv_register_siblings(),
         actor_id_reuse(),
         causal_context_gap(),
-        causal_context_steps(),
         mutex_fifo(),
-        mutex_fifo_steps(),
         mutex_overtaking(),
-        mutex_overtaking_steps(),
         mutex_crash(),
-        mutex_crash_steps(),
     ];
     for f in &mut figures {
-        if let (Form::Steps, Diagram::SpaceTime(d)) = (f.form, &mut f.diagram) {
+        if let (Form::Steps, Diagram::SpaceTime(d)) = (f.form(), &mut f.diagram) {
             d.step_through();
         }
     }
@@ -82,17 +84,10 @@ pub fn all() -> Vec<Figure> {
 /// Three processes, two messages: the scenario in the library test
 /// `three_process_trace`. A3 is the last event on the wall clock yet
 /// concurrent with B3; A1 reaches C2 only through B.
+///
+/// Stepped through, each process's clock is in a panel from the empty clock
+/// it starts with.
 fn vector_clock_trace() -> Figure {
-    Figure {
-        stem: "vector-clock-trace",
-        diagram: Diagram::SpaceTime(vector_trace().d),
-        form: Form::Static,
-    }
-}
-
-/// The vector clock trace one event at a time, each process's clock in a
-/// panel from the empty clock it starts with.
-fn vector_clock_steps() -> Figure {
     let mut t = vector_trace();
     for lane in t.lanes {
         t.d.start_value(lane, VectorClock::<char>::new().spans());
@@ -127,14 +122,13 @@ fn vector_clock_steps() -> Figure {
         ],
     );
     Figure {
-        stem: "vector-clock-steps",
+        stem: "vector-clock-trace",
         diagram: Diagram::SpaceTime(t.d),
-        form: Form::Steps,
     }
 }
 
-/// The vector clock trace and what both of its figures say about it, with
-/// everything either one claims asserted.
+/// The vector clock trace and what its figure says about it, with everything
+/// the figure claims asserted.
 struct VectorTrace {
     d: SpaceTime,
     lanes: [LaneId; 3],
@@ -274,17 +268,9 @@ fn vector_trace() -> VectorTrace {
 /// the library test `three_process_trace`. A1 reaches C2 through B, and its
 /// time is smaller; A3 and B3 are concurrent, and their times are ordered
 /// anyway.
+///
+/// Stepped through, each process's clock is in a panel from 0.
 fn lamport_clock_trace() -> Figure {
-    Figure {
-        stem: "lamport-clock-trace",
-        diagram: Diagram::SpaceTime(lamport_trace().d),
-        form: Form::Static,
-    }
-}
-
-/// The Lamport trace one event at a time, each process's clock in a panel
-/// from 0.
-fn lamport_clock_steps() -> Figure {
     let mut t = lamport_trace();
     for (lane, process) in t.lanes.into_iter().zip(['A', 'B', 'C']) {
         t.d.start_value(lane, LamportClock::new(process).spans());
@@ -316,14 +302,13 @@ fn lamport_clock_steps() -> Figure {
         ],
     );
     Figure {
-        stem: "lamport-clock-steps",
+        stem: "lamport-clock-trace",
         diagram: Diagram::SpaceTime(t.d),
-        form: Form::Steps,
     }
 }
 
-/// The Lamport trace and what both of its figures say about it, with
-/// everything either one claims asserted.
+/// The Lamport trace and what its figure says about it, with everything the
+/// figure claims asserted.
 struct LamportTrace {
     d: SpaceTime,
     lanes: [LaneId; 3],
@@ -425,7 +410,54 @@ fn lamport_trace() -> LamportTrace {
 /// clock and a vector clock at once, with B's physical clock running 25 behind
 /// A's and C's. A3 and B3 are concurrent: the Lamport clock puts A3 first, the
 /// HLC puts B3 first, and only the vector clocks say neither happened first.
+///
+/// Stepped through, each process's three clocks are in a panel from where
+/// they start.
 fn clock_comparison() -> Figure {
+    let mut r = clock_comparison_run();
+    for (lane, id) in r.lanes.into_iter().zip(['A', 'B', 'C']) {
+        let start = Process::new(id).stamps(0, 0, Timestamp::default());
+        r.d.start_value(lane, start.spans());
+    }
+    r.d.narrate(
+        r.b2,
+        rich![
+            "receives m1: B's own clock reads ",
+            Span::value(r.b2_physical.to_string()),
+            ", behind m1's wall time, so its HLC keeps ",
+            Span::value(r.m1_hlc.wall.to_string()),
+            " and counts on to ",
+            v(&r.b2_hlc)
+        ],
+    );
+    r.d.narrate(
+        r.c2,
+        rich![
+            "receives m2: its vector clock takes the larger of each entry, so it now knows of A's first two events: ",
+            v(&r.c2_vector)
+        ],
+    );
+    r.d.narrate(
+        r.a3,
+        rich![
+            "the last event on the wall clock, and concurrent with B3: its Lamport time ",
+            Span::value(r.a3_lamport.to_string()),
+            " is below B3's ",
+            Span::value(r.b3_lamport.to_string()),
+            ", but its HLC ",
+            v(&r.a3_hlc),
+            " is above B3's ",
+            v(&r.b3_hlc)
+        ],
+    );
+    Figure {
+        stem: "clock-comparison",
+        diagram: Diagram::SpaceTime(r.d),
+    }
+}
+
+/// The clock-comparison trace, with every claim its figure makes asserted.
+fn clock_comparison_run() -> ComparisonRun {
     let mut d = SpaceTime::new("Three clocks, one trace: Lamport, hybrid logical, and vector");
     let (la, lb, lc) = (
         d.actor_lane("A", 'A'),
@@ -552,11 +584,42 @@ fn clock_comparison() -> Figure {
     }
     d.pin_message(m1_msg, "m1");
     d.pin_message(m2_msg, "m2");
-    Figure {
-        stem: "clock-comparison",
-        diagram: Diagram::SpaceTime(d),
-        form: Form::Static,
+    ComparisonRun {
+        d,
+        lanes: [la, lb, lc],
+        m1_hlc: m1.hlc,
+        b2,
+        b2_physical: b2_stamps.physical,
+        b2_hlc: b2_stamps.hlc,
+        c2,
+        c2_vector: c2_stamps.vector.clone(),
+        a3,
+        a3_lamport: a3_stamps.lamport,
+        a3_hlc: a3_stamps.hlc,
+        b3_lamport: m2.lamport,
+        b3_hlc: m2.hlc,
     }
+}
+
+/// The three-clock trace and what its figure says about it.
+struct ComparisonRun {
+    d: SpaceTime,
+    lanes: [LaneId; 3],
+    /// What m1 carried.
+    m1_hlc: Timestamp,
+    /// B2: the receive, B's physical reading, and its HLC after.
+    b2: EventId,
+    b2_physical: u64,
+    b2_hlc: Timestamp,
+    /// C2: the receive, and its vector clock after.
+    c2: EventId,
+    c2_vector: VectorClock<char>,
+    /// A3 and B3 (which sent m2): their Lamport times and HLCs.
+    a3: EventId,
+    a3_lamport: u64,
+    a3_hlc: Timestamp,
+    b3_lamport: u64,
+    b3_hlc: Timestamp,
 }
 
 /// One process carrying all three clocks, so every event is stamped by each.
@@ -646,18 +709,9 @@ impl Label for Stamps {
 /// A last-writer-wins register on Lamport stamps doing its job: B syncs
 /// "milk" from A, then writes "eggs", which rightly replaces it. The first
 /// history in the library's `lamport_register` docs.
+///
+/// Stepped through, each replica's register is in a panel from empty.
 fn lamport_register_overwrite() -> Figure {
-    let [saw, _] = lamport_register_histories();
-    Figure {
-        stem: "lamport-register-overwrite",
-        diagram: Diagram::SpaceTime(saw.d),
-        form: Form::Static,
-    }
-}
-
-/// The overwrite one event at a time, each replica's register in the panel
-/// from empty.
-fn lamport_register_overwrite_steps() -> Figure {
     let [mut r, _] = lamport_register_histories();
     register_start_values(&mut r);
     assert_eq!(r.b_before_write.get(), Some(&"milk"));
@@ -690,27 +744,17 @@ fn lamport_register_overwrite_steps() -> Figure {
         ],
     );
     Figure {
-        stem: "lamport-register-overwrite-steps",
+        stem: "lamport-register-overwrite",
         diagram: Diagram::SpaceTime(r.d),
-        form: Form::Steps,
     }
 }
 
 /// The same register losing a write: B never hears of "milk", yet "eggs"
 /// gets the same stamp as when it did, and replaces "milk" at A. The second
 /// history in the library's `lamport_register` docs.
+///
+/// Stepped through, each replica's register is in a panel from empty.
 fn lamport_register_lost_write() -> Figure {
-    let [_, never] = lamport_register_histories();
-    Figure {
-        stem: "lamport-register-lost-write",
-        diagram: Diagram::SpaceTime(never.d),
-        form: Form::Static,
-    }
-}
-
-/// The lost write one event at a time, each replica's register in the panel
-/// from empty.
-fn lamport_register_lost_write_steps() -> Figure {
     let [saw, mut r] = lamport_register_histories();
     register_start_values(&mut r);
     assert!(
@@ -753,9 +797,8 @@ fn lamport_register_lost_write_steps() -> Figure {
         ],
     );
     Figure {
-        stem: "lamport-register-lost-write-steps",
+        stem: "lamport-register-lost-write",
         diagram: Diagram::SpaceTime(r.d),
-        form: Form::Steps,
     }
 }
 
@@ -906,7 +949,72 @@ fn held(r: &LamportRegister<char, &'static str>) -> Rich {
 /// original back. The scenario in the library test
 /// `concurrent_writes_become_siblings_until_a_write_that_was_shown_both`,
 /// with shorter values.
+///
+/// Stepped through, each replica's register is in a panel from empty.
 fn mv_register_siblings() -> Figure {
+    let mut r = mv_register_siblings_run();
+    for lane in r.lanes {
+        r.d.start_value(lane, MvRegister::<char, &str>::new().spans());
+    }
+    let [
+        write,
+        sync,
+        edit_a,
+        edit_b,
+        sync_a,
+        sync_b,
+        merge,
+        merged,
+        stale,
+    ] = r.events;
+    r.d.narrate(
+        write,
+        rich!["writes \"draft\", tagged with the dot ", v(&r.draft)],
+    );
+    r.d.narrate(sync, "syncs from r1 and takes \"draft\"");
+    r.d.narrate(
+        edit_a,
+        rich![
+            "is shown only \"draft\", so \"edit A\" replaces it: dot ",
+            v(&r.edit_a)
+        ],
+    );
+    r.d.narrate(
+        edit_b,
+        rich![
+            "is shown only \"draft\" too, so \"edit B\" replaces it: dot ",
+            v(&r.edit_b),
+            ". Neither write saw the other"
+        ],
+    );
+    r.d.narrate(
+        sync_a,
+        "syncs from r1 and holds both writes: neither was shown the other's, so they are siblings",
+    );
+    r.d.narrate(sync_b, "syncs from r2 and holds the same two siblings");
+    r.d.narrate(
+        merge,
+        rich![
+            "is shown both siblings, so \"merged\" replaces them: dot ",
+            v(&r.merge)
+        ],
+    );
+    r.d.narrate(
+        merged,
+        "syncs from r2: \"merged\" has seen both siblings, so they give way to it",
+    );
+    r.d.narrate(
+        stale,
+        "syncs from the copy of r2 taken after its first sync, which still holds \"draft\"; r1 has already seen that write, so it stays gone",
+    );
+    Figure {
+        stem: "mv-register-siblings",
+        diagram: Diagram::SpaceTime(r.d),
+    }
+}
+
+/// The siblings scenario, with every claim its figure makes asserted.
+fn mv_register_siblings_run() -> SiblingsRun {
     let mut d = SpaceTime::new("Multi-value register: concurrent writes become siblings");
     let (l1, l2) = (d.actor_lane("r1", 'A'), d.actor_lane("r2", 'B'));
     let (mut r1, mut r2): (MvRegister<char, &str>, MvRegister<char, &str>) =
@@ -942,7 +1050,7 @@ fn mv_register_siblings() -> Figure {
         shown_only_draft(shown);
         "edit B"
     });
-    d.event(l2, "write", r2.spans());
+    let e4 = d.event(l2, "write", r2.spans());
     assert_eq!(
         (&a2, &b1),
         (
@@ -979,7 +1087,7 @@ fn mv_register_siblings() -> Figure {
     let e9 = d.event(l1, "sync (stale)", r1.spans());
     d.pin_event(e9, "stale-sync");
     let live: Vec<_> = r1.entries().map(|(dot, v)| (dot.clone(), *v)).collect();
-    assert_eq!(live, [(merged, "merged")]);
+    assert_eq!(live, [(merged.clone(), "merged")]);
     assert!(
         stale.entries().all(|(dot, _)| r1.seen().contains(dot)),
         "r1 has seen every write the stale copy holds"
@@ -1008,17 +1116,83 @@ fn mv_register_siblings() -> Figure {
             ", but r1 has already seen that write, so \"draft\" is not resurrected"
         ],
     );
-    Figure {
-        stem: "mv-register-siblings",
-        diagram: Diagram::SpaceTime(d),
-        form: Form::Static,
+    SiblingsRun {
+        d,
+        lanes: [l1, l2],
+        events: [e1, e2, e3, e4, e5, e6, e7, e8, e9],
+        draft,
+        edit_a: a2,
+        edit_b: b1,
+        merge: merged,
     }
+}
+
+/// The siblings scenario and what its figure says about it.
+struct SiblingsRun {
+    d: SpaceTime,
+    lanes: [LaneId; 2],
+    /// In order: r1 writes "draft", r2 syncs, each writes, each syncs from the
+    /// other, r2 writes over both, r1 syncs from it, and r1 syncs from the stale copy.
+    events: [EventId; 9],
+    /// The dots of "draft", of each concurrent write, and of the write over both.
+    draft: Dot<char>,
+    edit_a: Dot<char>,
+    edit_b: Dot<char>,
+    merge: Dot<char>,
 }
 
 /// A replica loses its state and comes back under the same actor id, so it
 /// reissues a dot it already used. The scenario in the library test
 /// `reusing_an_actor_id_after_state_loss_corrupts_replicas`.
+///
+/// Stepped through, each replica's register is in a panel from empty.
 fn actor_id_reuse() -> Figure {
+    let mut r = actor_id_reuse_run();
+    for lane in r.lanes {
+        r.d.start_value(lane, MvRegister::<char, &str>::new().spans());
+    }
+    let [write, sync, lost, rewrite, sync_b, sync_a] = r.events;
+    r.d.narrate(
+        write,
+        rich!["writes \"x\", tagged with the dot ", v(&r.dot)],
+    );
+    r.d.narrate(sync, "syncs from A and takes \"x\"");
+    r.d.narrate(
+        lost,
+        "loses its state: the disk is wiped, and the replica comes back as actor A with an empty register",
+    );
+    r.d.narrate(
+        rewrite,
+        rich![
+            "writes \"y\", and from an empty register issues the dot ",
+            v(&r.dot),
+            " again: a name it already used"
+        ],
+    );
+    r.d.narrate(
+        sync_b,
+        rich![
+            "syncs from A: it already holds ",
+            v(&r.dot),
+            ", so it takes that to be the write it has and keeps \"x\""
+        ],
+    );
+    r.d.narrate(
+        sync_a,
+        rich![
+            "syncs from B, which holds ",
+            v(&r.dot),
+            " too: A believes it already has that write, and keeps \"y\""
+        ],
+    );
+    Figure {
+        stem: "actor-id-reuse",
+        diagram: Diagram::SpaceTime(r.d),
+    }
+}
+
+/// The reuse scenario, with every claim its figure makes asserted.
+fn actor_id_reuse_run() -> ReuseRun {
     let mut d = SpaceTime::new("Reusing an actor id after state loss: two writes share one name");
     let (la, lb) = (d.actor_lane("A", 'A'), d.actor_lane("B", 'B'));
     let (mut a, mut b): (MvRegister<char, &str>, MvRegister<char, &str>) =
@@ -1075,70 +1249,34 @@ fn actor_id_reuse() -> Figure {
         e6,
         "B keeps \"x\" and A keeps \"y\": each believes it already holds the other's write, so they never converge",
     );
-    Figure {
-        stem: "actor-id-reuse",
-        diagram: Diagram::SpaceTime(d),
-        form: Form::Static,
+    ReuseRun {
+        d,
+        lanes: [la, lb],
+        events: [e1, e2, lost, e4, e5, e6],
+        dot: first,
     }
+}
+
+/// The reuse scenario and what its figure says about it.
+struct ReuseRun {
+    d: SpaceTime,
+    lanes: [LaneId; 2],
+    /// In order: A writes, B syncs, A loses its state, writes again, B syncs
+    /// from it, and A syncs from B.
+    events: [EventId; 6],
+    /// The dot both of A's writes got.
+    dot: Dot<char>,
 }
 
 /// A causal context knows (A,1) and (A,3) but not (A,2). The smallest vector
 /// clock containing (A,3) is {A:3}, which also claims (A,2). The scenario in
 /// the library test `causal_context_tracks_gaps_a_vector_cannot`.
+///
+/// Stepped through, A:1 goes in, then A:3 past a gap at A:2. Each frame is
+/// read back from the library: what the causal context contains, and the
+/// smallest vector clock holding everything it has seen, whose wrong claim
+/// appears as the gap opens.
 fn causal_context_gap() -> Figure {
-    let dot = |counter| Dot {
-        actor: 'A',
-        counter,
-    };
-    let inserted = [1, 3];
-    let mut cc = CausalContext::new();
-    for c in inserted {
-        cc.insert(dot(c));
-    }
-    let top = cc.next_counter(&'A') - 1; // the highest counter known
-    assert_eq!(top, 3);
-    let naive: VectorClock<char> = [('A', top)].into_iter().collect(); // the smallest vector containing (A,3)
-    assert_eq!(naive, VectorClock::from_iter([('A', 3)]));
-    assert!(cc.contains(&dot(1)) && !cc.contains(&dot(2)) && cc.contains(&dot(3)));
-    assert_eq!(cc.vector(), &VectorClock::from_iter([('A', 1)]));
-    assert_eq!(cc.cloud().collect::<Vec<_>>(), [dot(3)]);
-    let claimed_by_vector: Vec<u64> = (1..=top).filter(|&c| c <= naive.get(&'A')).collect();
-    assert_eq!(
-        claimed_by_vector,
-        [1, 2, 3],
-        "the plain vector claims (A,2)"
-    );
-
-    let d = DotLine::new(
-        "A causal context tracks a gap a vector clock cannot",
-        "A",
-        top,
-        inserted.to_vec(),
-        vec![
-            Claim {
-                title: "CausalContext".into(),
-                text: cc.spans(),
-                counters: inserted.to_vec(),
-            },
-            Claim {
-                title: "VectorClock".into(),
-                text: naive.spans(),
-                counters: claimed_by_vector,
-            },
-        ],
-    );
-    Figure {
-        stem: "causal-context-gap",
-        diagram: Diagram::DotLine(d),
-        form: Form::Static,
-    }
-}
-
-/// The causal context gap one insert at a time: A:1, then A:3 past a gap at
-/// A:2. Each frame is read back from the library: what the causal context
-/// contains, and the smallest vector clock holding everything it has seen,
-/// whose wrong claim appears as the gap opens.
-fn causal_context_steps() -> Figure {
     let dot = |counter| Dot {
         actor: 'A',
         counter,
@@ -1209,6 +1347,8 @@ fn causal_context_steps() -> Figure {
     });
     cc.insert(dot(3));
     inserted.push(3);
+    assert_eq!(cc.vector(), &VectorClock::from_iter([('A', 1)]));
+    assert_eq!(cc.cloud().collect::<Vec<_>>(), [dot(3)]);
     let after = cc.clone();
     frame(&mut d, &cc, &inserted, &|naive| {
         rich![
@@ -1230,9 +1370,8 @@ fn causal_context_steps() -> Figure {
         "the vector clock overclaims exactly when the gap opens"
     );
     Figure {
-        stem: "causal-context-steps",
+        stem: "causal-context-gap",
         diagram: Diagram::DotLine(d),
-        form: Form::Steps,
     }
 }
 
@@ -1241,17 +1380,9 @@ fn causal_context_steps() -> Figure {
 /// request reaches B before the ack does. B waits, and enters when A releases.
 /// The scenario in the library test
 /// `concurrent_requests_are_granted_in_stamp_order`.
+///
+/// Stepped through, each process's state is in a panel from where it starts.
 fn mutex_fifo() -> Figure {
-    Figure {
-        stem: "mutex-fifo",
-        diagram: Diagram::SpaceTime(mutex_fifo_run().d),
-        form: Form::Static,
-    }
-}
-
-/// The FIFO run one event at a time, each process's state in the panel from
-/// where it starts.
-fn mutex_fifo_steps() -> Figure {
     let mut r = mutex_fifo_run();
     narrate_requests(&mut r);
     let a4 = r.a[3];
@@ -1264,15 +1395,13 @@ fn mutex_fifo_steps() -> Figure {
         ],
     );
     Figure {
-        stem: "mutex-fifo-steps",
+        stem: "mutex-fifo",
         diagram: Diagram::SpaceTime(r.d),
-        form: Form::Steps,
     }
 }
 
-/// A run of Lamport's mutex between processes A and B, for the figures that
-/// show it: the figure, with every claim either figure makes asserted, its
-/// lanes, and each process's events in order.
+/// A run of Lamport's mutex between processes A and B: the figure, with every
+/// claim it makes asserted, its lanes, and each process's events in order.
 struct MutexRun {
     d: SpaceTime,
     lanes: [LaneId; 2],
@@ -1280,7 +1409,7 @@ struct MutexRun {
     b: Vec<EventId>,
 }
 
-/// What both mutex step-throughs say about the opening, where the two runs
+/// What the FIFO and overtaking figures say about the opening, where the two runs
 /// agree: each process requests, then A gets B's request and enters. Each
 /// lane starts from a process that has done nothing yet.
 fn narrate_requests(r: &mut MutexRun) {
@@ -1317,7 +1446,7 @@ fn narrate_requests(r: &mut MutexRun) {
     );
 }
 
-/// The run behind both FIFO mutex figures.
+/// The FIFO run.
 fn mutex_fifo_run() -> MutexRun {
     let mut d = SpaceTime::new("Lamport's mutex over FIFO channels: B waits its turn");
     let (la, lb) = (d.actor_lane("A", 'A'), d.actor_lane("B", 'B'));
@@ -1437,17 +1566,10 @@ fn mutex_fifo_run() -> MutexRun {
 /// acknowledgement of B's request overtakes A's own, earlier request, and both
 /// processes enter. The scenario in the library test
 /// `overtaking_breaks_mutual_exclusion`.
+///
+/// Stepped through, A's request is visibly still on its way when the ack A
+/// sent after it reaches B.
 fn mutex_overtaking() -> Figure {
-    Figure {
-        stem: "mutex-overtaking",
-        diagram: Diagram::SpaceTime(mutex_overtaking_run().d),
-        form: Form::Static,
-    }
-}
-
-/// The overtaking run one event at a time: A's request is visibly still on
-/// its way when the ack A sent after it reaches B.
-fn mutex_overtaking_steps() -> Figure {
     let mut r = mutex_overtaking_run();
     narrate_requests(&mut r);
     // The run asserts that both hold after B's ack, and that B's queue puts
@@ -1465,13 +1587,12 @@ fn mutex_overtaking_steps() -> Figure {
         ],
     );
     Figure {
-        stem: "mutex-overtaking-steps",
+        stem: "mutex-overtaking",
         diagram: Diagram::SpaceTime(r.d),
-        form: Form::Steps,
     }
 }
 
-/// The run behind both overtaking mutex figures.
+/// The overtaking run.
 fn mutex_overtaking_run() -> MutexRun {
     let mut d = SpaceTime::new("Lamport's mutex: an overtaking message lets two processes in");
     let (la, lb) = (d.actor_lane("A", 'A'), d.actor_lane("B", 'B'));
@@ -1566,17 +1687,9 @@ fn mutex_overtaking_run() -> MutexRun {
 /// request, the earliest, reaches B and C, and A crashes before it hears from
 /// anyone. B and C hear from each other past their own requests, but A's
 /// request heads both queues for good, and neither ever enters.
+///
+/// Stepped through, each process's state is in a panel from where it starts.
 fn mutex_crash() -> Figure {
-    Figure {
-        stem: "mutex-crash",
-        diagram: Diagram::SpaceTime(mutex_crash_run().d),
-        form: Form::Static,
-    }
-}
-
-/// The crash one event at a time, each process's state in the panel from
-/// where it starts.
-fn mutex_crash_steps() -> Figure {
     let mut r = mutex_crash_run();
     let stamp = LamportStamp::new;
     for (lane, me) in r.lanes.into_iter().zip(['A', 'B', 'C']) {
@@ -1630,13 +1743,12 @@ fn mutex_crash_steps() -> Figure {
         ],
     );
     Figure {
-        stem: "mutex-crash-steps",
+        stem: "mutex-crash",
         diagram: Diagram::SpaceTime(r.d),
-        form: Form::Steps,
     }
 }
 
-/// The run behind both crash figures: its figure, lanes, and each process's
+/// The crash run: its figure, lanes, and each process's
 /// events in order (A's second is its crash).
 struct CrashRun {
     d: SpaceTime,

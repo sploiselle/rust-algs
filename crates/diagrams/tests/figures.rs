@@ -113,7 +113,7 @@ fn output_file_names_are_unique() {
 fn finished_figures_carry_no_steps() {
     let steps: BTreeSet<String> = diagrams::catalog::all()
         .into_iter()
-        .filter(|f| f.form == diagrams::catalog::Form::Steps)
+        .filter(|f| f.form() == diagrams::catalog::Form::Steps)
         .map(|f| format!("{}.html", f.stem))
         .collect();
     for (name, text) in outputs() {

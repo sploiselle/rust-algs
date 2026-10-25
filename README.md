@@ -55,30 +55,31 @@ cargo run -p diagrams
 
 That writes every figure into `figures/` (pass a directory to write somewhere
 else). `cargo test` fails if a committed figure is stale or no figure produces
-it any more. For each figure:
+it any more. A figure with more than one step is a step-through, which writes
+a single `<stem>.html` (see below). A figure with a single step has nothing to
+walk through, so it is finished, and is written three ways:
 
 - `<stem>.html` is what a page should inline: a `<figure>` holding the SVG and
   a `<figcaption>` with the figure's title and its numbered notes as HTML, so
   the page typesets them. It has no blank lines, so Markdown passes it through.
 - `<stem>.svg` stands alone: the same drawing with the notes set underneath.
 - `<stem>.mmd` is a Mermaid sequence diagram of the same scenario, for places
-  that render Mermaid. The causal-context figure is a number line, which has
-  no Mermaid form. Mermaid draws every message straight across, so the
-  overtaking message in the mutex figure doesn't cross there; its notes
-  still say so. Nor does a lane end at a crash there: the crash is a note
-  like any other event.
+  that render Mermaid. A number line has no Mermaid form. Mermaid draws every
+  message straight across, so a message that overtakes another doesn't cross
+  there; its notes still say so. Nor does a lane end at a crash there: the
+  crash is a note like any other event.
 
 `index.json` lists the figures in the order a reader should meet them, with
 their kinds, forms (`static` or `steps`) and titles.
 
 ### Step-throughs
 
-A figure can also be written as a step-through, which a page's player shows
-one event at a time. It is opt-in: a catalog entry with `Form::Steps` writes a
-single `<stem>.html` and nothing else, and it is written for stepping, so it
-can say things at each step, start from values, or tell a different story
-from any finished figure. Where it tells the same story, the two entries share
-a scenario function, and with it the asserts (`vector_trace` in the catalog).
+A figure with more than one step is a step-through, which a page's player
+shows one event at a time. There is one version of it, under one stem: it is
+written for stepping, so it can say things at each step and start from values,
+and at rest, or without a player, it is the finished figure. Whether a figure
+is one is decided by its steps (`Diagram::is_walkable`), so a catalog entry
+doesn't choose.
 
 A space-time step-through's steps are the lanes, then each event in recorded
 order with each note right after its later event, then the finished figure.

@@ -38,7 +38,7 @@ pub fn outputs() -> Vec<(String, String)> {
     let mut out: Vec<(String, String)> = figures
         .iter()
         .flat_map(|figure| -> Vec<(String, String)> {
-            match figure.form {
+            match figure.form() {
                 catalog::Form::Static => render::ALL
                     .iter()
                     .filter_map(|backend| {
@@ -69,7 +69,7 @@ fn index(figures: &[catalog::Figure]) -> String {
                 r#"    {{ "stem": "{}", "kind": "{}", "form": "{}", "title": "{}" }}"#,
                 json_escape(f.stem),
                 f.diagram.kind(),
-                f.form.name(),
+                f.form().name(),
                 json_escape(f.diagram.title())
             )
         })
