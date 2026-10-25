@@ -64,7 +64,11 @@ pub struct LamportRegister<A, V> {
 
 impl<A: Ord + Clone, V: Clone> LamportRegister<A, V> {
     pub fn new(replica: A) -> Self {
-        Self { replica, clock: LamportClock::new(), entry: None }
+        Self {
+            replica,
+            clock: LamportClock::new(),
+            entry: None,
+        }
     }
 
     pub fn replica(&self) -> &A {
@@ -95,7 +99,10 @@ impl<A: Ord + Clone, V: Clone> LamportRegister<A, V> {
     /// larger than every stamp this replica has heard of, so the write wins
     /// here. Returns the stamp.
     pub fn write(&mut self, value: V) -> LamportStamp<A> {
-        let stamp = LamportStamp { time: self.clock.tick(), process: self.replica.clone() };
+        let stamp = LamportStamp {
+            time: self.clock.tick(),
+            process: self.replica.clone(),
+        };
         self.entry = Some((stamp.clone(), value));
         stamp
     }
@@ -177,7 +184,8 @@ mod tests {
 
     #[test]
     fn replicas_converge_whatever_the_sync_order() {
-        let mut regs: Vec<LamportRegister<char, u32>> = ['A', 'B', 'C'].map(LamportRegister::new).to_vec();
+        let mut regs: Vec<LamportRegister<char, u32>> =
+            ['A', 'B', 'C'].map(LamportRegister::new).to_vec();
         regs[0].write(1);
         regs[1].tick();
         regs[1].write(2);
@@ -194,7 +202,16 @@ mod tests {
         // (2,B) is the largest stamp, though C wrote last.
         for order in [[0, 1, 2], [2, 1, 0], [1, 2, 0]] {
             for r in sync_all(regs.clone(), order) {
-                assert_eq!(r.entry(), Some((&LamportStamp { time: 2, process: 'B' }, &2)));
+                assert_eq!(
+                    r.entry(),
+                    Some((
+                        &LamportStamp {
+                            time: 2,
+                            process: 'B'
+                        },
+                        &2
+                    ))
+                );
             }
         }
     }
@@ -212,7 +229,8 @@ mod tests {
         let mut lost = 0;
         for seed in 1..=300u64 {
             let mut rng = Rng(seed.wrapping_mul(0x9E37_79B9_7F4A_7C15));
-            let mut lww: Vec<LamportRegister<usize, u32>> = (0..REPLICAS).map(LamportRegister::new).collect();
+            let mut lww: Vec<LamportRegister<usize, u32>> =
+                (0..REPLICAS).map(LamportRegister::new).collect();
             let mut mv: Vec<MvRegister<usize, u32>> = vec![MvRegister::new(); REPLICAS];
 
             for step in 0..40u32 {
@@ -249,7 +267,10 @@ mod tests {
                 assert_eq!(r.get().copied(), winner, "seed {seed}: replicas disagree");
             }
             match winner {
-                Some(w) => assert!(siblings.contains(&w), "seed {seed}: kept a value that was replaced"),
+                Some(w) => assert!(
+                    siblings.contains(&w),
+                    "seed {seed}: kept a value that was replaced"
+                ),
                 None => assert!(siblings.is_empty(), "seed {seed}"),
             }
             lost += siblings.len().saturating_sub(1);

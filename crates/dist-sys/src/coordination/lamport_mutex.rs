@@ -111,8 +111,18 @@ impl<P: Ord + Clone> LamportMutex<P> {
     pub fn new(me: P, peers: impl IntoIterator<Item = P>) -> Self {
         // Every request is stamped at least 1, so 0 is earlier than all of them:
         // it stands for having heard nothing yet.
-        let heard = peers.into_iter().filter(|p| *p != me).map(|p| (p, 0)).collect();
-        Self { me, clock: LamportClock::new(), queue: BTreeSet::new(), heard, pending: None }
+        let heard = peers
+            .into_iter()
+            .filter(|p| *p != me)
+            .map(|p| (p, 0))
+            .collect();
+        Self {
+            me,
+            clock: LamportClock::new(),
+            queue: BTreeSet::new(),
+            heard,
+            pending: None,
+        }
     }
 
     pub fn me(&self) -> &P {
@@ -145,9 +155,16 @@ impl<P: Ord + Clone> LamportMutex<P> {
     /// both conditions hold until [`release`](Self::release): over FIFO
     /// channels, nothing a process can receive undoes them.
     pub fn holds(&self) -> bool {
-        let Some(mine) = &self.pending else { return false };
+        let Some(mine) = &self.pending else {
+            return false;
+        };
         self.queue.first() == Some(mine)
-            && self.heard.iter().all(|(p, &time)| LamportStamp { time, process: p.clone() } > *mine)
+            && self.heard.iter().all(|(p, &time)| {
+                LamportStamp {
+                    time,
+                    process: p.clone(),
+                } > *mine
+            })
     }
 
     /// Rule 1: ask for the resource. Returns the request to send to every other
@@ -161,7 +178,10 @@ impl<P: Ord + Clone> LamportMutex<P> {
     pub fn request(&mut self) -> Vec<Message<P>> {
         assert!(self.pending.is_none(), "already requested");
         let time = self.clock.send();
-        let mine = LamportStamp { time, process: self.me.clone() };
+        let mine = LamportStamp {
+            time,
+            process: self.me.clone(),
+        };
         self.queue.insert(mine.clone());
         self.pending = Some(mine);
         self.broadcast(time, Kind::Request)
@@ -188,13 +208,24 @@ impl<P: Ord + Clone> LamportMutex<P> {
     pub fn receive(&mut self, msg: Message<P>) -> Option<Message<P>> {
         debug_assert!(msg.to == self.me, "delivered to the wrong process");
         self.clock.receive(msg.time);
-        let heard = self.heard.get_mut(&msg.from).expect("message from an unknown process");
+        let heard = self
+            .heard
+            .get_mut(&msg.from)
+            .expect("message from an unknown process");
         *heard = (*heard).max(msg.time);
         match msg.kind {
             Kind::Request => {
-                self.queue.insert(LamportStamp { time: msg.time, process: msg.from.clone() });
+                self.queue.insert(LamportStamp {
+                    time: msg.time,
+                    process: msg.from.clone(),
+                });
                 let time = self.clock.send();
-                Some(Message { from: self.me.clone(), to: msg.from, time, kind: Kind::Ack })
+                Some(Message {
+                    from: self.me.clone(),
+                    to: msg.from,
+                    time,
+                    kind: Kind::Ack,
+                })
             }
             Kind::Ack => None,
             Kind::Release => {
@@ -206,7 +237,15 @@ impl<P: Ord + Clone> LamportMutex<P> {
     }
 
     fn broadcast(&self, time: u64, kind: Kind) -> Vec<Message<P>> {
-        self.heard.keys().map(|p| Message { from: self.me.clone(), to: p.clone(), time, kind }).collect()
+        self.heard
+            .keys()
+            .map(|p| Message {
+                from: self.me.clone(),
+                to: p.clone(),
+                time,
+                kind,
+            })
+            .collect()
     }
 }
 
@@ -218,7 +257,10 @@ mod tests {
 
     /// The message in `msgs` addressed to `to`.
     fn to(msgs: &[Message<char>], to: char) -> Message<char> {
-        msgs.iter().find(|m| m.to == to).cloned().expect("no message for that process")
+        msgs.iter()
+            .find(|m| m.to == to)
+            .cloned()
+            .expect("no message for that process")
     }
 
     fn stamp(time: u64, process: char) -> LamportStamp<char> {
@@ -306,15 +348,18 @@ mod tests {
         const PROCS: usize = 4;
         for seed in 1..=300u64 {
             let mut rng = Rng(seed.wrapping_mul(0x9E37_79B9_7F4A_7C15));
-            let mut procs: Vec<LamportMutex<usize>> = (0..PROCS).map(|p| LamportMutex::new(p, 0..PROCS)).collect();
+            let mut procs: Vec<LamportMutex<usize>> =
+                (0..PROCS).map(|p| LamportMutex::new(p, 0..PROCS)).collect();
             // channels[from][to], each delivered in order
-            let mut channels: Vec<Vec<VecDeque<Message<usize>>>> = vec![vec![VecDeque::new(); PROCS]; PROCS];
+            let mut channels: Vec<Vec<VecDeque<Message<usize>>>> =
+                vec![vec![VecDeque::new(); PROCS]; PROCS];
             let mut sent = 0;
             let mut requests = 0;
             let mut grants: Vec<LamportStamp<usize>> = Vec::new();
             let mut holding: Option<usize> = None;
 
-            let mut send = |channels: &mut Vec<Vec<VecDeque<Message<usize>>>>, msgs: Vec<Message<usize>>| {
+            let mut send = |channels: &mut Vec<Vec<VecDeque<Message<usize>>>>,
+                            msgs: Vec<Message<usize>>| {
                 for m in msgs {
                     sent += 1;
                     channels[m.from][m.to].push_back(m);
@@ -327,9 +372,14 @@ mod tests {
                     .flat_map(|f| (0..PROCS).map(move |t| (f, t)))
                     .filter(|&(f, t)| !channels[f][t].is_empty())
                     .collect();
-                let idle: Vec<usize> = (0..PROCS).filter(|&p| procs[p].pending().is_none()).collect();
+                let idle: Vec<usize> = (0..PROCS)
+                    .filter(|&p| procs[p].pending().is_none())
+                    .collect();
                 if draining && nonempty.is_empty() && holding.is_none() {
-                    assert!(idle.len() == PROCS, "seed {seed}: deadlock with requests outstanding");
+                    assert!(
+                        idle.len() == PROCS,
+                        "seed {seed}: deadlock with requests outstanding"
+                    );
                     break;
                 }
                 match rng.below(4) {
@@ -367,7 +417,10 @@ mod tests {
 
             assert!(requests > 0);
             assert_eq!(grants.len(), requests, "seed {seed}");
-            assert!(grants.is_sorted(), "seed {seed}: granted out of order: {grants:?}");
+            assert!(
+                grants.is_sorted(),
+                "seed {seed}: granted out of order: {grants:?}"
+            );
             assert_eq!(sent, 3 * (PROCS - 1) * requests, "seed {seed}");
         }
     }

@@ -107,7 +107,10 @@ fn many_threads(threads: usize) {
                 })
             })
             .collect();
-        workers.into_iter().flat_map(|w| w.join().unwrap()).collect()
+        workers
+            .into_iter()
+            .flat_map(|w| w.join().unwrap())
+            .collect()
     });
     all.sort();
     let distinct = all.len();

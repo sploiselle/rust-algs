@@ -37,7 +37,10 @@ pub struct MvRegister<A: Ord, V> {
 
 impl<A: Ord, V> Default for MvRegister<A, V> {
     fn default() -> Self {
-        Self { entries: Vec::new(), seen: CausalContext::default() }
+        Self {
+            entries: Vec::new(),
+            seen: CausalContext::default(),
+        }
     }
 }
 
@@ -74,7 +77,10 @@ impl<A: Ord + Clone, V: Clone> MvRegister<A, V> {
     pub fn write(&mut self, replica: &A, ctx: &ReadContext<A>, value: V) -> Dot<A> {
         self.entries.retain(|(d, _)| !ctx.contains(d));
         self.seen.merge(&ctx.0);
-        let dot = Dot { actor: replica.clone(), counter: self.seen.next_counter(replica) };
+        let dot = Dot {
+            actor: replica.clone(),
+            counter: self.seen.next_counter(replica),
+        };
         self.seen.insert(dot.clone());
         self.entries.push((dot.clone(), value));
         dot

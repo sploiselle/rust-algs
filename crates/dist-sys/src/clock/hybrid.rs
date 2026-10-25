@@ -68,7 +68,10 @@ impl Timestamp {
     /// reachable only by accepting an absurd remote stamp with no max offset.
     fn tick(self) -> Self {
         match self.logical.checked_add(1) {
-            Some(logical) => Self { wall: self.wall, logical },
+            Some(logical) => Self {
+                wall: self.wall,
+                logical,
+            },
             None => match self.wall.checked_add(1) {
                 Some(wall) => Self { wall, logical: 0 },
                 None => self,
@@ -118,7 +121,9 @@ impl PhysicalClock for SystemClock {
     fn now_nanos(&self) -> u64 {
         // A clock set before 1970 reads as 0; the HLC stays monotonic regardless.
         // Nanoseconds since the epoch fit in a u64 until the year 2554.
-        SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_nanos() as u64)
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_or(0, |d| d.as_nanos() as u64)
     }
 }
 
@@ -196,7 +201,11 @@ impl Hlc<SystemClock> {
 impl<C: PhysicalClock> Hlc<C> {
     /// A clock reading physical time from `clock`, with no skew bound.
     pub fn new(clock: C) -> Self {
-        Self { clock, last: Mutex::new(Timestamp::default()), max_offset: Duration::MAX }
+        Self {
+            clock,
+            last: Mutex::new(Timestamp::default()),
+            max_offset: Duration::MAX,
+        }
     }
 
     /// Refuse, in [`update`](Self::update), any remote timestamp whose `wall` is
@@ -212,7 +221,10 @@ impl<C: PhysicalClock> Hlc<C> {
         let pt = self.clock.now_nanos();
         let next = if pt > last.wall {
             // Physical time has moved past everything we've heard of.
-            Timestamp { wall: pt, logical: 0 }
+            Timestamp {
+                wall: pt,
+                logical: 0,
+            }
         } else {
             // It hasn't caught up with the last stamp yet; count on from it.
             last.tick()
@@ -230,11 +242,18 @@ impl<C: PhysicalClock> Hlc<C> {
         let mut last = self.lock();
         let pt = self.clock.now_nanos();
         if Duration::from_nanos(remote.wall.saturating_sub(pt)) > self.max_offset {
-            return Err(ClockSkew { remote, local_wall: pt, max_offset: self.max_offset });
+            return Err(ClockSkew {
+                remote,
+                local_wall: pt,
+                max_offset: self.max_offset,
+            });
         }
         let next = if pt > last.wall && pt > remote.wall {
             // Physical time is ahead of both; neither counter matters.
-            Timestamp { wall: pt, logical: 0 }
+            Timestamp {
+                wall: pt,
+                logical: 0,
+            }
         } else if remote.wall > last.wall {
             // The sender has heard of a later time than we have; adopt it.
             remote.tick()
@@ -264,7 +283,10 @@ impl<C: PhysicalClock> Hlc<C> {
 impl<C> fmt::Debug for Hlc<C> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let last = *self.last.lock().unwrap_or_else(PoisonError::into_inner);
-        f.debug_struct("Hlc").field("last", &last).field("max_offset", &self.max_offset).finish_non_exhaustive()
+        f.debug_struct("Hlc")
+            .field("last", &last)
+            .field("max_offset", &self.max_offset)
+            .finish_non_exhaustive()
     }
 }
 
@@ -339,7 +361,14 @@ mod tests {
         let hlc = Hlc::new(&pt).with_max_offset(Duration::from_nanos(10));
         let before = hlc.now();
         let err = hlc.update(ts(111, 0)).unwrap_err();
-        assert_eq!(err, ClockSkew { remote: ts(111, 0), local_wall: 100, max_offset: Duration::from_nanos(10) });
+        assert_eq!(
+            err,
+            ClockSkew {
+                remote: ts(111, 0),
+                local_wall: 100,
+                max_offset: Duration::from_nanos(10)
+            }
+        );
         assert_eq!(hlc.last(), before);
         assert_eq!(hlc.update(ts(110, 5)), Ok(ts(110, 6)));
     }
@@ -357,7 +386,10 @@ mod tests {
         let hlc = Hlc::system();
         let wall = SystemClock.now_nanos();
         let t = hlc.now();
-        assert!(t.wall >= wall && t.wall - wall < 1_000_000_000, "{t} vs {wall}");
+        assert!(
+            t.wall >= wall && t.wall - wall < 1_000_000_000,
+            "{t} vs {wall}"
+        );
     }
 
     #[test]
@@ -386,7 +418,10 @@ mod tests {
         });
         let mut seen = HashSet::new();
         for run in &runs {
-            assert!(run.windows(2).all(|w| w[0] < w[1]), "each caller sees increasing stamps");
+            assert!(
+                run.windows(2).all(|w| w[0] < w[1]),
+                "each caller sees increasing stamps"
+            );
             seen.extend(run.iter().copied());
         }
         assert_eq!(seen.len(), THREADS * CALLS, "no stamp issued twice");
@@ -404,8 +439,13 @@ mod tests {
         const EPS: u64 = 5;
         for seed in 1..=100u64 {
             let mut rng = Rng(seed.wrapping_mul(0x9E37_79B9_7F4A_7C15));
-            let offsets: Vec<u64> = (0..NODES).map(|_| rng.below(EPS as usize + 1) as u64).collect();
-            let clocks: Vec<ManualClock> = offsets.iter().map(|&o| ManualClock::new(1_000 + o)).collect();
+            let offsets: Vec<u64> = (0..NODES)
+                .map(|_| rng.below(EPS as usize + 1) as u64)
+                .collect();
+            let clocks: Vec<ManualClock> = offsets
+                .iter()
+                .map(|&o| ManualClock::new(1_000 + o))
+                .collect();
             let hlcs: Vec<Hlc<&ManualClock>> = clocks.iter().map(Hlc::new).collect();
             let mut true_time = 1_000;
 
@@ -425,7 +465,9 @@ mod tests {
                 let pt = clocks[n].now_nanos();
                 let id = stamps.len();
                 let mut ps: Vec<usize> = last_event[n].into_iter().collect();
-                let deliverable: Vec<usize> = (0..in_flight.len()).filter(|&i| in_flight[i].0 == n).collect();
+                let deliverable: Vec<usize> = (0..in_flight.len())
+                    .filter(|&i| in_flight[i].0 == n)
+                    .collect();
                 let stamp = match rng.below(3) {
                     1 if !deliverable.is_empty() => {
                         let i = deliverable[rng.below(deliverable.len())];
@@ -444,7 +486,10 @@ mod tests {
                 };
 
                 assert!(stamp.wall >= pt, "seed {seed}: e{id} behind physical time");
-                assert!(stamp.wall - pt <= EPS, "seed {seed}: e{id} drifted past EPS");
+                assert!(
+                    stamp.wall - pt <= EPS,
+                    "seed {seed}: e{id} drifted past EPS"
+                );
 
                 last_event[n] = Some(id);
                 stamps.push(stamp);
@@ -464,7 +509,12 @@ mod tests {
             }
             for (f, past) in ancestors.iter().enumerate() {
                 for &e in past {
-                    assert!(stamps[e] < stamps[f], "seed {seed}: e{e} → e{f} but {:?} ≮ {:?}", stamps[e], stamps[f]);
+                    assert!(
+                        stamps[e] < stamps[f],
+                        "seed {seed}: e{e} → e{f} but {:?} ≮ {:?}",
+                        stamps[e],
+                        stamps[f]
+                    );
                 }
             }
         }

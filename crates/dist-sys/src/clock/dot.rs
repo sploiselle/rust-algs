@@ -46,7 +46,10 @@ pub struct CausalContext<A: Ord> {
 
 impl<A: Ord> Default for CausalContext<A> {
     fn default() -> Self {
-        Self { vv: VectorClock::default(), cloud: BTreeMap::new() }
+        Self {
+            vv: VectorClock::default(),
+            cloud: BTreeMap::new(),
+        }
     }
 }
 
@@ -57,7 +60,10 @@ impl<A: Ord + Clone> CausalContext<A> {
 
     pub fn contains(&self, dot: &Dot<A>) -> bool {
         dot.counter <= self.vv.get(&dot.actor)
-            || self.cloud.get(&dot.actor).is_some_and(|s| s.contains(&dot.counter))
+            || self
+                .cloud
+                .get(&dot.actor)
+                .is_some_and(|s| s.contains(&dot.counter))
     }
 
     pub fn insert(&mut self, dot: Dot<A>) {
@@ -73,7 +79,10 @@ impl<A: Ord + Clone> CausalContext<A> {
     pub fn merge(&mut self, other: &Self) {
         self.vv.merge(&other.vv);
         for (actor, extra) in &other.cloud {
-            self.cloud.entry(actor.clone()).or_default().extend(extra.iter().copied());
+            self.cloud
+                .entry(actor.clone())
+                .or_default()
+                .extend(extra.iter().copied());
         }
         let actors: Vec<A> = self.cloud.keys().cloned().collect();
         for actor in &actors {
@@ -91,20 +100,29 @@ impl<A: Ord + Clone> CausalContext<A> {
     /// clock.
     pub fn cloud(&self) -> impl Iterator<Item = Dot<A>> {
         self.cloud.iter().flat_map(|(actor, counters)| {
-            counters.iter().map(move |&counter| Dot { actor: actor.clone(), counter })
+            counters.iter().map(move |&counter| Dot {
+                actor: actor.clone(),
+                counter,
+            })
         })
     }
 
     /// One past the highest dot known for `actor`.
     pub fn next_counter(&self, actor: &A) -> u64 {
-        let highest_extra = self.cloud.get(actor).and_then(|s| s.last().copied()).unwrap_or(0);
+        let highest_extra = self
+            .cloud
+            .get(actor)
+            .and_then(|s| s.last().copied())
+            .unwrap_or(0);
         self.vv.get(actor).max(highest_extra) + 1
     }
 
     /// Fold cloud dots that extend the contiguous prefix into the vector, so the
     /// representation stays canonical (equal sets ⇒ equal structs).
     fn compact(&mut self, actor: &A) {
-        let Some(extra) = self.cloud.get_mut(actor) else { return };
+        let Some(extra) = self.cloud.get_mut(actor) else {
+            return;
+        };
         let top = self.vv.get(actor);
         extra.retain(|&c| c > top);
         while extra.remove(&(self.vv.get(actor) + 1)) {

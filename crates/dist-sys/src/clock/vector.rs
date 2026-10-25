@@ -57,7 +57,9 @@ pub struct VectorClock<A: Ord> {
 
 impl<A: Ord> Default for VectorClock<A> {
     fn default() -> Self {
-        Self { entries: BTreeMap::new() }
+        Self {
+            entries: BTreeMap::new(),
+        }
     }
 }
 
@@ -227,7 +229,8 @@ mod tests {
     #[test]
     fn three_process_trace() {
         let (a, b, c) = ('A', 'B', 'C');
-        let (mut va, mut vb, mut vc_) = (VectorClock::new(), VectorClock::new(), VectorClock::new());
+        let (mut va, mut vb, mut vc_) =
+            (VectorClock::new(), VectorClock::new(), VectorClock::new());
 
         va.tick(&a);
         let a1 = va.clone(); // A1: local
@@ -267,8 +270,14 @@ mod tests {
         let empty: VectorClock<char> = VectorClock::new();
         assert_eq!(vc([('a', 0)]), empty);
         assert!(empty < vc([('a', 1)]));
-        assert_eq!(vc([('a', 1)]).compare(&vc([('b', 1)])), Causality::Concurrent);
-        assert_eq!(vc([('a', 2), ('b', 1)]).compare(&vc([('a', 2)])), Causality::After);
+        assert_eq!(
+            vc([('a', 1)]).compare(&vc([('b', 1)])),
+            Causality::Concurrent
+        );
+        assert_eq!(
+            vc([('a', 2), ('b', 1)]).compare(&vc([('a', 2)])),
+            Causality::After
+        );
     }
 
     #[test]
@@ -282,7 +291,11 @@ mod tests {
     fn merge_is_a_join_semilattice() {
         let mut rng = Rng(0x2545_F491_4F6C_DD1D);
         for _ in 0..2_000 {
-            let (x, y, z) = (random_clock(&mut rng), random_clock(&mut rng), random_clock(&mut rng));
+            let (x, y, z) = (
+                random_clock(&mut rng),
+                random_clock(&mut rng),
+                random_clock(&mut rng),
+            );
             assert_eq!(x.join(&y), y.join(&x), "commutative");
             assert_eq!(x.join(&y).join(&z), x.join(&y.join(&z)), "associative");
             assert_eq!(x.join(&x), x, "idempotent");
@@ -314,7 +327,9 @@ mod tests {
                 let p = rng.below(PROCS);
                 let id = stamps.len();
                 let mut ps: Vec<usize> = last_event[p].into_iter().collect();
-                let deliverable: Vec<usize> = (0..in_flight.len()).filter(|&i| in_flight[i].0 == p).collect();
+                let deliverable: Vec<usize> = (0..in_flight.len())
+                    .filter(|&i| in_flight[i].0 == p)
+                    .collect();
                 match rng.below(3) {
                     0 => {
                         let to = (p + 1 + rng.below(PROCS - 1)) % PROCS;
@@ -360,7 +375,11 @@ mod tests {
                     } else {
                         Causality::Concurrent
                     };
-                    assert_eq!(stamps[e].compare(&stamps[f]), expected, "seed {seed}: e{e} vs e{f}");
+                    assert_eq!(
+                        stamps[e].compare(&stamps[f]),
+                        expected,
+                        "seed {seed}: e{e} vs e{f}"
+                    );
                 }
             }
         }

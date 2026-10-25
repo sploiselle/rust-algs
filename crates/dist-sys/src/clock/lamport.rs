@@ -119,7 +119,11 @@ mod tests {
     /// ```
     #[test]
     fn three_process_trace() {
-        let (mut la, mut lb, mut lc) = (LamportClock::new(), LamportClock::new(), LamportClock::new());
+        let (mut la, mut lb, mut lc) = (
+            LamportClock::new(),
+            LamportClock::new(),
+            LamportClock::new(),
+        );
 
         let a1 = la.tick();
         let m1 = la.send();
@@ -181,7 +185,9 @@ mod tests {
                 let p = rng.below(PROCS);
                 let id = stamps.len();
                 let mut ps: Vec<usize> = last_event[p].into_iter().collect();
-                let deliverable: Vec<usize> = (0..in_flight.len()).filter(|&i| in_flight[i].0 == p).collect();
+                let deliverable: Vec<usize> = (0..in_flight.len())
+                    .filter(|&i| in_flight[i].0 == p)
+                    .collect();
                 let time = match rng.below(3) {
                     0 => {
                         let to = (p + 1 + rng.below(PROCS - 1)) % PROCS;
@@ -219,14 +225,23 @@ mod tests {
             for e in 0..stamps.len() {
                 for f in 0..stamps.len() {
                     if ancestors[f].contains(&e) {
-                        assert!(stamps[e].time < stamps[f].time, "seed {seed}: e{e} → e{f} but not L(e{e}) < L(e{f})");
-                    } else if e != f && !ancestors[e].contains(&f) && stamps[e].time < stamps[f].time {
+                        assert!(
+                            stamps[e].time < stamps[f].time,
+                            "seed {seed}: e{e} → e{f} but not L(e{e}) < L(e{f})"
+                        );
+                    } else if e != f
+                        && !ancestors[e].contains(&f)
+                        && stamps[e].time < stamps[f].time
+                    {
                         concurrent_but_ordered += 1;
                     }
                 }
             }
         }
-        assert!(concurrent_but_ordered > 0, "expected concurrent events with ordered stamps");
+        assert!(
+            concurrent_but_ordered > 0,
+            "expected concurrent events with ordered stamps"
+        );
     }
 
     /// The module's closing claim: a hybrid logical clock whose physical clock
@@ -244,7 +259,9 @@ mod tests {
             let mut in_flight: Vec<(usize, u64, Timestamp)> = Vec::new();
             for _ in 0..200 {
                 let p = rng.below(PROCS);
-                let deliverable: Vec<usize> = (0..in_flight.len()).filter(|&i| in_flight[i].0 == p).collect();
+                let deliverable: Vec<usize> = (0..in_flight.len())
+                    .filter(|&i| in_flight[i].0 == p)
+                    .collect();
                 let (lamport, hlc) = match rng.below(3) {
                     0 => {
                         let to = (p + 1 + rng.below(PROCS - 1)) % PROCS;
@@ -259,7 +276,11 @@ mod tests {
                     }
                     _ => (lamports[p].tick(), hlcs[p].now()),
                 };
-                assert_eq!((hlc.wall, u64::from(hlc.logical)), (0, lamport), "seed {seed}");
+                assert_eq!(
+                    (hlc.wall, u64::from(hlc.logical)),
+                    (0, lamport),
+                    "seed {seed}"
+                );
             }
         }
     }

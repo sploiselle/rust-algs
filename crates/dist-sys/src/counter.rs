@@ -21,7 +21,9 @@ pub struct MonotonicCounter {
 impl MonotonicCounter {
     /// `const`, so a counter can live in a `static`.
     pub const fn new() -> Self {
-        Self { last: AtomicU64::new(0) }
+        Self {
+            last: AtomicU64::new(0),
+        }
     }
 
     /// The last value handed out, or 0 before the first.
@@ -80,7 +82,9 @@ mod tests {
     #[test]
     #[should_panic(expected = "counter overflowed")]
     fn refuses_to_wrap() {
-        let counter = MonotonicCounter { last: AtomicU64::new(u64::MAX) };
+        let counter = MonotonicCounter {
+            last: AtomicU64::new(u64::MAX),
+        };
         counter.next();
     }
 }
