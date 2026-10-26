@@ -292,19 +292,15 @@ pub struct LaneState<'a> {
 /// One step of a step-through figure.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Beat {
-    /// The lanes, before anything has happened.
-    Start,
     Event(EventId),
     /// A note, by its number in [`SpaceTime::notes`].
     Note(usize),
-    /// The finished figure.
-    End,
 }
 
-/// The order a step-through shows a figure in: the lanes, then each event in
-/// recorded order, each note right after its later event, then the finished
-/// figure. One change per step, and the notes come in the order they are
-/// numbered.
+/// The order a step-through shows a figure in: each event in recorded order,
+/// each note right after its later event. One change per step, and the notes
+/// come in the order they are numbered. The last step has every event and
+/// note, so it is the finished figure.
 #[derive(Debug, Clone)]
 pub struct Timeline {
     beats: Vec<Beat>,
@@ -318,7 +314,7 @@ impl Timeline {
         &self.beats
     }
 
-    /// The step that shows the finished figure.
+    /// The last step, which shows the finished figure.
     pub fn last(&self) -> usize {
         self.beats.len() - 1
     }
@@ -740,7 +736,7 @@ impl SpaceTime {
     /// The figure as a step-through: see [`Timeline`].
     pub fn timeline(&self) -> Timeline {
         let notes = self.notes();
-        let mut beats = vec![Beat::Start];
+        let mut beats = Vec::new();
         let mut event_step = Vec::with_capacity(self.events.len());
         let mut note_step = vec![0; notes.len()];
         let mut pending = notes.iter().peekable();
@@ -752,7 +748,6 @@ impl SpaceTime {
                 beats.push(Beat::Note(n.n));
             }
         }
-        beats.push(Beat::End);
         Timeline {
             beats,
             event_step,
@@ -930,15 +925,14 @@ impl DotLine {
         &self.finished().claims
     }
 
-    /// The step that shows the finished figure: one step per frame, then the
-    /// finished figure again, as a space-time step-through ends.
+    /// The last step, which shows the finished figure: one step per frame.
     pub fn last_step(&self) -> usize {
-        self.frames.len()
+        self.frames.len() - 1
     }
 
     /// The frame shown at `step`.
     pub fn frame_at(&self, step: usize) -> &Frame {
-        &self.frames[step.min(self.frames.len() - 1)]
+        &self.frames[step]
     }
 
     /// Apply `f` to every span of every frame's text.
@@ -976,8 +970,8 @@ impl Diagram {
     /// line two frames; with fewer, the finished figure is all there is to see.
     pub fn is_walkable(&self) -> bool {
         match self {
-            Diagram::SpaceTime(d) => d.timeline().last() > 2,
-            Diagram::DotLine(d) => d.last_step() > 1,
+            Diagram::SpaceTime(d) => d.timeline().beats().len() > 1,
+            Diagram::DotLine(d) => d.all_frames().len() > 1,
         }
     }
 
@@ -1093,18 +1087,14 @@ mod tests {
     }
 
     #[test]
-    fn a_dot_line_steps_through_its_frames_then_ends() {
+    fn a_dot_line_steps_through_its_frames() {
         let mut d = DotLine::frames("t", "A", 3);
         d.frame(vec![1], vec![], "one");
         d.frame(vec![1, 3], vec![], "two");
-        assert_eq!(d.last_step(), 2);
+        assert_eq!(d.last_step(), 1);
         assert_eq!(d.frame_at(0).present, [1]);
-        assert_eq!(
-            d.frame_at(2).present,
-            [1, 3],
-            "the end shows the last frame"
-        );
-        assert_eq!(d.present(), [1, 3]);
+        assert_eq!(d.frame_at(1).present, [1, 3]);
+        assert_eq!(d.present(), [1, 3], "the last step is finished");
     }
 
     #[test]
@@ -1242,20 +1232,18 @@ mod tests {
         assert_eq!(
             t.beats(),
             [
-                Beat::Start,
                 Beat::Event(a1),
                 Beat::Event(b1),
                 Beat::Event(b2),
                 Beat::Event(c1),
                 Beat::Note(1),
                 Beat::Event(a2),
-                Beat::Note(2),
-                Beat::End
+                Beat::Note(2)
             ]
         );
-        assert_eq!((t.event(c1), t.note(1), t.note(2), t.last()), (4, 5, 7, 8));
-        assert_eq!(t.now(0), None);
-        assert_eq!(t.now(5), Some(c1), "a note doesn't move the playhead");
+        assert_eq!((t.event(c1), t.note(1), t.note(2), t.last()), (3, 4, 6, 6));
+        assert_eq!(t.now(0), Some(a1));
+        assert_eq!(t.now(4), Some(c1), "a note doesn't move the playhead");
         assert_eq!(t.now(t.last()), Some(a2));
     }
 
@@ -1264,22 +1252,22 @@ mod tests {
         let mut d = SpaceTime::new("t");
         let (a, b) = (d.lane("A"), d.lane("B"));
         d.start_value(a, "{}");
+        let b1 = d.event(b, "B1", "");
         let a1 = d.event(a, "A1", "{A:1}");
-        d.event(b, "B1", "");
         let a2 = d.event(a, "A2", "");
         let t = d.timeline();
         let at = |lane, s| {
             d.lane_state(&t, lane, s)
                 .map(|x| (x.event, x.value.plain(), x.before.map(Rich::plain)))
         };
-        assert_eq!(at(a, 0), Some((None, "{}".into(), None)));
+        assert_eq!(at(a, t.event(b1)), Some((None, "{}".into(), None)));
         assert_eq!(
-            at(a, 1),
+            at(a, t.event(a1)),
             Some((Some(a1), "{A:1}".into(), Some("{}".into())))
         );
         assert_eq!(
             at(a, t.event(a2)),
-            at(a, 1),
+            at(a, t.event(a1)),
             "an empty annotation holds nothing new"
         );
         assert_eq!(at(b, t.last()), None);

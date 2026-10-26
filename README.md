@@ -81,16 +81,16 @@ and at rest, or without a player, it is the finished figure. Whether a figure
 is one is decided by its steps (`Diagram::is_walkable`), so a catalog entry
 doesn't choose.
 
-A space-time step-through's steps are the lanes, then each event in recorded
-order with each note right after its later event, then the finished figure.
-It can give each lane a start value (`SpaceTime::start_value`) and say what an
-event does (`SpaceTime::narrate`, beside an assert of what it claims); a panel
-shows what each lane holds at each step, with what its event changed marked.
-A number line steps through frames (`DotLine::frames`, then `frame` after each
-library call), then the finished figure. Either way the figure is laid out
-once, to fit every step (a space-time step-through keeps its text clear of the
-arrowheads its messages show in flight, which a finished figure never draws),
-and every version of every mark is tagged with the steps it shows at:
+A space-time step-through has a step for each event, in recorded order, with
+each note right after its later event. It can give each lane a start value
+(`SpaceTime::start_value`) and say what an event does (`SpaceTime::narrate`,
+beside an assert of what it claims); a panel shows what each lane holds at
+each step, with what its event changed marked. A number
+line steps through frames (`DotLine::frames`, then `frame` after each library
+call). Either way the last step is the finished figure, and the figure is laid
+out once, to fit every step (a space-time step-through keeps its text clear of
+the arrowheads its messages show in flight, which a finished figure never
+draws), and every version of every mark is tagged with the steps it shows at:
 
 | Hook | Means |
 |---|---|

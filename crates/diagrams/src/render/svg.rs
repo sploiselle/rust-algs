@@ -1189,8 +1189,8 @@ fn describe(d: &SpaceTime, with_notes: bool) -> String {
     parts.join(" ")
 }
 
-/// "Timelines for A, B, C": what there is before anything happens.
-pub(crate) fn lanes_sentence(d: &SpaceTime) -> String {
+/// "Timelines for A, B, C": how a figure's description opens.
+fn lanes_sentence(d: &SpaceTime) -> String {
     let names: Vec<&str> = d.lanes().iter().map(|l| l.name.as_str()).collect();
     format!("Timelines for {}", names.join(", "))
 }

@@ -1,4 +1,4 @@
-<figure class="ds-fig" data-figure="lamport-register-lost-write" data-kind="space-time" data-steps="8" data-steps-v="1">
+<figure class="ds-fig" data-figure="lamport-register-lost-write" data-kind="space-time" data-steps="6" data-steps-v="1">
 <div class="ds-fig-canvas">
 <svg xmlns="http://www.w3.org/2000/svg" class="ds-figure" data-figure="lamport-register-lost-write" data-kind="space-time" role="img" viewBox="0 0 583 174" width="583" height="174" style="--ds-w: 583" fill="currentColor" font-family="system-ui, sans-serif">
   <title>Last writer wins on Lamport stamps: B never saw milk, which is lost</title>
@@ -55,56 +55,56 @@
   </g>
   <g class="ds-messages">
     <g class="ds-message" data-message="eggs-to-a" data-from="eggs" data-to="a-syncs" data-notes="2">
-      <line class="ds-message-line" data-in="6" style="--ds-len: 76.4; --ds-grow: 76.4" x1="385.8" y1="105.8" x2="436.5" y2="48.7" stroke="currentColor" stroke-width="1.5"/>
-      <polygon class="ds-message-head ds-flight" data-in="4" data-out="6" display="none" style="--ds-dx: 0; --ds-dy: 0" points="391.8,99.1 388.4,108.1 383.2,103.5"/>
-      <polygon class="ds-message-head" data-in="6" data-cont="" style="--ds-dx: -50.7; --ds-dy: 57.1" points="442.5,42 439.2,51 433.9,46.4"/>
-      <text class="ds-message-label" data-in="6" x="407" y="66.9" text-anchor="end" font-size="12"><tspan class="ds-v" font-family="ui-monospace, Menlo, Consolas, monospace"><tspan class="ds-stamp" data-stamp="3,B">(</tspan><tspan class="ds-stamp ds-time" data-stamp="3,B">3</tspan><tspan class="ds-stamp" data-stamp="3,B">,</tspan><tspan class="ds-stamp ds-actor" data-actor="B" data-stamp="3,B" data-actor-n="2">B</tspan><tspan class="ds-stamp" data-stamp="3,B">)</tspan><tspan class="ds-sym">→</tspan><tspan class="ds-str">"eggs"</tspan></tspan></text>
+      <line class="ds-message-line" data-in="5" style="--ds-len: 76.4; --ds-grow: 76.4" x1="385.8" y1="105.8" x2="436.5" y2="48.7" stroke="currentColor" stroke-width="1.5"/>
+      <polygon class="ds-message-head ds-flight" data-in="3" data-out="5" display="none" style="--ds-dx: 0; --ds-dy: 0" points="391.8,99.1 388.4,108.1 383.2,103.5"/>
+      <polygon class="ds-message-head" data-in="5" data-cont="" style="--ds-dx: -50.7; --ds-dy: 57.1" points="442.5,42 439.2,51 433.9,46.4"/>
+      <text class="ds-message-label" data-in="5" x="407" y="66.9" text-anchor="end" font-size="12"><tspan class="ds-v" font-family="ui-monospace, Menlo, Consolas, monospace"><tspan class="ds-stamp" data-stamp="3,B">(</tspan><tspan class="ds-stamp ds-time" data-stamp="3,B">3</tspan><tspan class="ds-stamp" data-stamp="3,B">,</tspan><tspan class="ds-stamp ds-actor" data-actor="B" data-stamp="3,B" data-actor-n="2">B</tspan><tspan class="ds-stamp" data-stamp="3,B">)</tspan><tspan class="ds-sym">→</tspan><tspan class="ds-str">"eggs"</tspan></tspan></text>
     </g>
   </g>
   <g class="ds-events">
-    <g class="ds-event" data-in="1" data-event="milk" data-lane="a" data-actor="A" data-actor-n="1" data-notes="1">
+    <g class="ds-event" data-event="milk" data-lane="a" data-actor="A" data-actor-n="1" data-notes="1">
       <circle class="ds-event-dot" cx="102" cy="33" r="5"/>
       <text class="ds-event-name" x="102" y="17.8" text-anchor="middle" font-size="13">write milk</text>
       <text class="ds-event-value" x="102" y="54.8" text-anchor="middle" font-size="13" font-family="ui-monospace, Menlo, Consolas, monospace"><tspan class="ds-field">L </tspan><tspan class="ds-lamport">1</tspan>           <tspan x="102" dy="15"><tspan class="ds-field">x </tspan><tspan class="ds-stamp" data-stamp="1,A">(</tspan><tspan class="ds-stamp ds-time" data-stamp="1,A">1</tspan><tspan class="ds-stamp" data-stamp="1,A">,</tspan><tspan class="ds-stamp ds-actor" data-actor="A" data-stamp="1,A" data-actor-n="1">A</tspan><tspan class="ds-stamp" data-stamp="1,A">)</tspan><tspan class="ds-sym">→</tspan><tspan class="ds-str">"milk"</tspan></tspan></text>
     </g>
-    <g class="ds-event" data-in="2" data-event="b-1" data-lane="b" data-actor="B" data-actor-n="2">
+    <g class="ds-event" data-in="1" data-event="b-1" data-lane="b" data-actor="B" data-actor-n="2">
       <circle class="ds-event-dot" cx="174" cy="114" r="5"/>
       <text class="ds-event-name" x="174" y="98.8" text-anchor="middle" font-size="13">local</text>
       <text class="ds-event-value" x="174" y="135.8" text-anchor="middle" font-size="13" font-family="ui-monospace, Menlo, Consolas, monospace"><tspan class="ds-field">L </tspan><tspan class="ds-lamport">1</tspan>      <tspan x="174" dy="15"><tspan class="ds-field">x </tspan><tspan class="ds-empty">(empty)</tspan></tspan></text>
     </g>
-    <g class="ds-event" data-in="3" data-event="b-2" data-lane="b" data-actor="B" data-actor-n="2">
+    <g class="ds-event" data-in="2" data-event="b-2" data-lane="b" data-actor="B" data-actor-n="2">
       <circle class="ds-event-dot" cx="265" cy="114" r="5"/>
       <text class="ds-event-name" x="265" y="98.8" text-anchor="middle" font-size="13">local</text>
       <text class="ds-event-value" x="265" y="135.8" text-anchor="middle" font-size="13" font-family="ui-monospace, Menlo, Consolas, monospace"><tspan class="ds-field">L </tspan><tspan class="ds-lamport">2</tspan>      <tspan x="265" dy="15"><tspan class="ds-field">x </tspan><tspan class="ds-empty">(empty)</tspan></tspan></text>
     </g>
-    <g class="ds-event" data-in="4" data-event="eggs" data-lane="b" data-actor="B" data-actor-n="2" data-notes="1 2">
+    <g class="ds-event" data-in="3" data-event="eggs" data-lane="b" data-actor="B" data-actor-n="2" data-notes="1 2">
       <circle class="ds-event-dot" cx="378.5" cy="114" r="5"/>
       <text class="ds-event-name" x="382.5" y="98.8" text-anchor="end" font-size="13">write eggs</text>
       <text class="ds-event-value" x="378.5" y="135.8" text-anchor="middle" font-size="13" font-family="ui-monospace, Menlo, Consolas, monospace"><tspan class="ds-field">L </tspan><tspan class="ds-lamport">3</tspan>           <tspan x="378.5" dy="15"><tspan class="ds-field">x </tspan><tspan class="ds-stamp" data-stamp="3,B">(</tspan><tspan class="ds-stamp ds-time" data-stamp="3,B">3</tspan><tspan class="ds-stamp" data-stamp="3,B">,</tspan><tspan class="ds-stamp ds-actor" data-actor="B" data-stamp="3,B" data-actor-n="2">B</tspan><tspan class="ds-stamp" data-stamp="3,B">)</tspan><tspan class="ds-sym">→</tspan><tspan class="ds-str">"eggs"</tspan></tspan></text>
     </g>
-    <g class="ds-event" data-in="6" data-event="a-syncs" data-lane="a" data-actor="A" data-actor-n="1" data-notes="2">
+    <g class="ds-event" data-in="5" data-event="a-syncs" data-lane="a" data-actor="A" data-actor-n="1" data-notes="2">
       <circle class="ds-event-dot" cx="450.5" cy="33" r="5"/>
       <text class="ds-event-name" x="450.5" y="17.8" text-anchor="middle" font-size="13">sync</text>
       <text class="ds-event-value" x="446.5" y="54.8" text-anchor="start" font-size="13" font-family="ui-monospace, Menlo, Consolas, monospace"><tspan class="ds-field">L </tspan><tspan class="ds-lamport">4</tspan>           <tspan x="446.5" dy="15"><tspan class="ds-field">x </tspan><tspan class="ds-stamp" data-stamp="3,B">(</tspan><tspan class="ds-stamp ds-time" data-stamp="3,B">3</tspan><tspan class="ds-stamp" data-stamp="3,B">,</tspan><tspan class="ds-stamp ds-actor" data-actor="B" data-stamp="3,B" data-actor-n="2">B</tspan><tspan class="ds-stamp" data-stamp="3,B">)</tspan><tspan class="ds-sym">→</tspan><tspan class="ds-str">"eggs"</tspan></tspan></text>
     </g>
   </g>
   <g class="ds-marks">
-    <circle class="ds-ring" data-in="5" data-event="milk" data-notes="1" cx="102" cy="33" r="9" fill="none" stroke="currentColor" stroke-width="1.5"/>
-    <circle class="ds-ring" data-in="5" data-event="eggs" data-notes="1 2" cx="378.5" cy="114" r="9" fill="none" stroke="currentColor" stroke-width="1.5"/>
-    <circle class="ds-ring" data-in="7" data-event="a-syncs" data-notes="2" cx="450.5" cy="33" r="9" fill="none" stroke="currentColor" stroke-width="1.5"/>
-    <g class="ds-badge" data-in="5" data-note="1" data-event="milk" data-relation="concurrent">
+    <circle class="ds-ring" data-in="4" data-event="milk" data-notes="1" cx="102" cy="33" r="9" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <circle class="ds-ring" data-in="4" data-event="eggs" data-notes="1 2" cx="378.5" cy="114" r="9" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <circle class="ds-ring" data-in="6" data-event="a-syncs" data-notes="2" cx="450.5" cy="33" r="9" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <g class="ds-badge" data-in="4" data-note="1" data-event="milk" data-relation="concurrent">
       <circle class="ds-badge-disc" cx="150" cy="14.5" r="7.5"/>
       <text class="ds-badge-n" x="150" y="18.5" text-anchor="middle" font-size="11" fill="Canvas">1</text>
     </g>
-    <g class="ds-badge" data-in="5" data-note="1" data-event="eggs" data-relation="concurrent">
+    <g class="ds-badge" data-in="4" data-note="1" data-event="eggs" data-relation="concurrent">
       <circle class="ds-badge-disc" cx="398" cy="114" r="7.5"/>
       <text class="ds-badge-n" x="398" y="118" text-anchor="middle" font-size="11" fill="Canvas">1</text>
     </g>
-    <g class="ds-badge" data-in="7" data-note="2" data-event="eggs">
+    <g class="ds-badge" data-in="6" data-note="2" data-event="eggs">
       <circle class="ds-badge-disc" cx="416" cy="114" r="7.5"/>
       <text class="ds-badge-n" x="416" y="118" text-anchor="middle" font-size="11" fill="Canvas">2</text>
     </g>
-    <g class="ds-badge" data-in="7" data-note="2" data-event="a-syncs">
+    <g class="ds-badge" data-in="6" data-note="2" data-event="a-syncs">
       <circle class="ds-badge-disc" cx="477" cy="14.5" r="7.5"/>
       <text class="ds-badge-n" x="477" y="18.5" text-anchor="middle" font-size="11" fill="Canvas">2</text>
     </g>
@@ -114,15 +114,13 @@
 <div class="ds-play" hidden>
 <div class="ds-play-bar"></div>
 <div class="ds-beats">
-<p class="ds-beat" data-in="0" data-out="1"><span class="ds-beat-body">Timelines for A, B; time runs left to right</span></p>
-<p class="ds-beat" data-in="1" data-out="2" data-cont="" data-event="milk"><span class="ds-beat-body"><span class="ds-lead">write milk</span> on A: <span class="ds-field">L </span><code class="ds-v"><span class="ds-lamport">1</span></code>; <span class="ds-field">x </span><code class="ds-v"><span class="ds-stamp" data-stamp="1,A">(</span><span class="ds-stamp ds-time" data-stamp="1,A">1</span><span class="ds-stamp" data-stamp="1,A">,</span><span class="ds-stamp ds-actor" data-actor="A" data-stamp="1,A" data-actor-n="1">A</span><span class="ds-stamp" data-stamp="1,A">)</span><span class="ds-sym">→</span><span class="ds-str">"milk"</span></code></span></p>
-<p class="ds-beat" data-in="2" data-out="3" data-cont="" data-event="b-1"><span class="ds-beat-body"><span class="ds-lead">local</span> on B does something that isn't a write to x: its clock ticks, and nothing else changes</span></p>
-<p class="ds-beat" data-in="3" data-out="4" data-cont="" data-event="b-2"><span class="ds-beat-body"><span class="ds-lead">local</span> on B does something else: its clock reaches <code class="ds-v">2</code>, where syncing from A took it in the history where B saw milk</span></p>
-<p class="ds-beat" data-in="4" data-out="5" data-cont="" data-event="eggs"><span class="ds-beat-body"><span class="ds-lead">write eggs</span> on B writes "eggs", stamped <code class="ds-v"><span class="ds-stamp" data-stamp="3,B">(</span><span class="ds-stamp ds-time" data-stamp="3,B">3</span><span class="ds-stamp" data-stamp="3,B">,</span><span class="ds-stamp ds-actor" data-actor="B" data-stamp="3,B" data-actor-n="2">B</span><span class="ds-stamp" data-stamp="3,B">)</span></code>: the same stamp as when it had seen milk, though it never heard from A</span></p>
-<p class="ds-beat" data-in="5" data-out="6" data-cont="" data-note="1"><span class="ds-note-n" aria-hidden="true">1</span> <span class="ds-beat-body">milk is concurrent with eggs: B never heard from A. Yet the stamps are the same as when B saw milk, <code class="ds-v"><span class="ds-stamp" data-stamp="1,A">(</span><span class="ds-stamp ds-time" data-stamp="1,A">1</span><span class="ds-stamp" data-stamp="1,A">,</span><span class="ds-stamp ds-actor" data-actor="A" data-stamp="1,A" data-actor-n="1">A</span><span class="ds-stamp" data-stamp="1,A">)</span></code> and <code class="ds-v"><span class="ds-stamp" data-stamp="3,B">(</span><span class="ds-stamp ds-time" data-stamp="3,B">3</span><span class="ds-stamp" data-stamp="3,B">,</span><span class="ds-stamp ds-actor" data-actor="B" data-stamp="3,B" data-actor-n="2">B</span><span class="ds-stamp" data-stamp="3,B">)</span></code>, so nothing in them can tell</span></p>
-<p class="ds-beat" data-in="6" data-out="7" data-cont="" data-event="a-syncs"><span class="ds-beat-body"><span class="ds-lead">sync</span> on A syncs from B: <code class="ds-v"><span class="ds-stamp" data-stamp="3,B">(</span><span class="ds-stamp ds-time" data-stamp="3,B">3</span><span class="ds-stamp" data-stamp="3,B">,</span><span class="ds-stamp ds-actor" data-actor="B" data-stamp="3,B" data-actor-n="2">B</span><span class="ds-stamp" data-stamp="3,B">)</span></code> beats <code class="ds-v"><span class="ds-stamp" data-stamp="1,A">(</span><span class="ds-stamp ds-time" data-stamp="1,A">1</span><span class="ds-stamp" data-stamp="1,A">,</span><span class="ds-stamp ds-actor" data-actor="A" data-stamp="1,A" data-actor-n="1">A</span><span class="ds-stamp" data-stamp="1,A">)</span></code>, so "eggs" replaces "milk", which B never saw, and nothing records that "milk" was written</span></p>
-<p class="ds-beat" data-in="7" data-out="8" data-cont="" data-note="2"><span class="ds-note-n" aria-hidden="true">2</span> <span class="ds-beat-body">A drops "milk" for "eggs" and ends exactly as when B saw milk: no one chose to discard "milk", and nothing on either replica records it was written</span></p>
-<p class="ds-beat" data-in="8" data-cont=""><span class="ds-beat-body">Last writer wins on Lamport stamps: B never saw milk, which is lost</span></p>
+<p class="ds-beat" data-in="0" data-out="1" data-event="milk"><span class="ds-beat-body"><span class="ds-lead">write milk</span> on A: <span class="ds-field">L </span><code class="ds-v"><span class="ds-lamport">1</span></code>; <span class="ds-field">x </span><code class="ds-v"><span class="ds-stamp" data-stamp="1,A">(</span><span class="ds-stamp ds-time" data-stamp="1,A">1</span><span class="ds-stamp" data-stamp="1,A">,</span><span class="ds-stamp ds-actor" data-actor="A" data-stamp="1,A" data-actor-n="1">A</span><span class="ds-stamp" data-stamp="1,A">)</span><span class="ds-sym">→</span><span class="ds-str">"milk"</span></code></span></p>
+<p class="ds-beat" data-in="1" data-out="2" data-cont="" data-event="b-1"><span class="ds-beat-body"><span class="ds-lead">local</span> on B does something that isn't a write to x: its clock ticks, and nothing else changes</span></p>
+<p class="ds-beat" data-in="2" data-out="3" data-cont="" data-event="b-2"><span class="ds-beat-body"><span class="ds-lead">local</span> on B does something else: its clock reaches <code class="ds-v">2</code>, where syncing from A took it in the history where B saw milk</span></p>
+<p class="ds-beat" data-in="3" data-out="4" data-cont="" data-event="eggs"><span class="ds-beat-body"><span class="ds-lead">write eggs</span> on B writes "eggs", stamped <code class="ds-v"><span class="ds-stamp" data-stamp="3,B">(</span><span class="ds-stamp ds-time" data-stamp="3,B">3</span><span class="ds-stamp" data-stamp="3,B">,</span><span class="ds-stamp ds-actor" data-actor="B" data-stamp="3,B" data-actor-n="2">B</span><span class="ds-stamp" data-stamp="3,B">)</span></code>: the same stamp as when it had seen milk, though it never heard from A</span></p>
+<p class="ds-beat" data-in="4" data-out="5" data-cont="" data-note="1"><span class="ds-note-n" aria-hidden="true">1</span> <span class="ds-beat-body">milk is concurrent with eggs: B never heard from A. Yet the stamps are the same as when B saw milk, <code class="ds-v"><span class="ds-stamp" data-stamp="1,A">(</span><span class="ds-stamp ds-time" data-stamp="1,A">1</span><span class="ds-stamp" data-stamp="1,A">,</span><span class="ds-stamp ds-actor" data-actor="A" data-stamp="1,A" data-actor-n="1">A</span><span class="ds-stamp" data-stamp="1,A">)</span></code> and <code class="ds-v"><span class="ds-stamp" data-stamp="3,B">(</span><span class="ds-stamp ds-time" data-stamp="3,B">3</span><span class="ds-stamp" data-stamp="3,B">,</span><span class="ds-stamp ds-actor" data-actor="B" data-stamp="3,B" data-actor-n="2">B</span><span class="ds-stamp" data-stamp="3,B">)</span></code>, so nothing in them can tell</span></p>
+<p class="ds-beat" data-in="5" data-out="6" data-cont="" data-event="a-syncs"><span class="ds-beat-body"><span class="ds-lead">sync</span> on A syncs from B: <code class="ds-v"><span class="ds-stamp" data-stamp="3,B">(</span><span class="ds-stamp ds-time" data-stamp="3,B">3</span><span class="ds-stamp" data-stamp="3,B">,</span><span class="ds-stamp ds-actor" data-actor="B" data-stamp="3,B" data-actor-n="2">B</span><span class="ds-stamp" data-stamp="3,B">)</span></code> beats <code class="ds-v"><span class="ds-stamp" data-stamp="1,A">(</span><span class="ds-stamp ds-time" data-stamp="1,A">1</span><span class="ds-stamp" data-stamp="1,A">,</span><span class="ds-stamp ds-actor" data-actor="A" data-stamp="1,A" data-actor-n="1">A</span><span class="ds-stamp" data-stamp="1,A">)</span></code>, so "eggs" replaces "milk", which B never saw, and nothing records that "milk" was written</span></p>
+<p class="ds-beat" data-in="6" data-cont="" data-note="2"><span class="ds-note-n" aria-hidden="true">2</span> <span class="ds-beat-body">A drops "milk" for "eggs" and ends exactly as when B saw milk: no one chose to discard "milk", and nothing on either replica records it was written</span></p>
 </div>
 <div class="ds-state">
 <table aria-label="What each lane holds at this step">
@@ -131,29 +129,27 @@
 <tr class="ds-state-lane" data-lane="a" data-actor="A" data-actor-n="1">
 <th scope="row">A</th>
 <td><span class="ds-cells">
-<span class="ds-cell" data-in="0" data-out="1"><code class="ds-v"><span class="ds-lamport">0</span></code></span>
-<span class="ds-cell" data-in="1" data-out="6" data-cont="" data-event="milk"><code class="ds-v"><span class="ds-lamport ds-changed">1</span></code></span>
-<span class="ds-cell" data-in="6" data-cont="" data-event="a-syncs"><code class="ds-v"><span class="ds-lamport ds-changed">4</span></code></span>
+<span class="ds-cell" data-in="0" data-out="5" data-event="milk"><code class="ds-v"><span class="ds-lamport ds-changed">1</span></code></span>
+<span class="ds-cell" data-in="5" data-cont="" data-event="a-syncs"><code class="ds-v"><span class="ds-lamport ds-changed">4</span></code></span>
 </span></td>
 <td><span class="ds-cells">
-<span class="ds-cell" data-in="0" data-out="1"><code class="ds-v"><span class="ds-empty">(empty)</span></code></span>
-<span class="ds-cell" data-in="1" data-out="6" data-cont="" data-event="milk"><code class="ds-v"><span class="ds-stamp ds-changed" data-stamp="1,A">(</span><span class="ds-stamp ds-time ds-changed" data-stamp="1,A">1</span><span class="ds-stamp ds-changed" data-stamp="1,A">,</span><span class="ds-stamp ds-actor ds-changed" data-actor="A" data-stamp="1,A" data-actor-n="1">A</span><span class="ds-stamp ds-changed" data-stamp="1,A">)</span><span class="ds-sym">→</span><span class="ds-str ds-changed">"milk"</span></code></span>
-<span class="ds-cell" data-in="6" data-cont="" data-event="a-syncs"><code class="ds-v"><span class="ds-stamp ds-changed" data-stamp="3,B">(</span><span class="ds-stamp ds-time ds-changed" data-stamp="3,B">3</span><span class="ds-stamp ds-changed" data-stamp="3,B">,</span><span class="ds-stamp ds-actor ds-changed" data-actor="B" data-stamp="3,B" data-actor-n="2">B</span><span class="ds-stamp ds-changed" data-stamp="3,B">)</span><span class="ds-sym">→</span><span class="ds-str ds-changed">"eggs"</span></code></span>
+<span class="ds-cell" data-in="0" data-out="5" data-event="milk"><code class="ds-v"><span class="ds-stamp ds-changed" data-stamp="1,A">(</span><span class="ds-stamp ds-time ds-changed" data-stamp="1,A">1</span><span class="ds-stamp ds-changed" data-stamp="1,A">,</span><span class="ds-stamp ds-actor ds-changed" data-actor="A" data-stamp="1,A" data-actor-n="1">A</span><span class="ds-stamp ds-changed" data-stamp="1,A">)</span><span class="ds-sym">→</span><span class="ds-str ds-changed">"milk"</span></code></span>
+<span class="ds-cell" data-in="5" data-cont="" data-event="a-syncs"><code class="ds-v"><span class="ds-stamp ds-changed" data-stamp="3,B">(</span><span class="ds-stamp ds-time ds-changed" data-stamp="3,B">3</span><span class="ds-stamp ds-changed" data-stamp="3,B">,</span><span class="ds-stamp ds-actor ds-changed" data-actor="B" data-stamp="3,B" data-actor-n="2">B</span><span class="ds-stamp ds-changed" data-stamp="3,B">)</span><span class="ds-sym">→</span><span class="ds-str ds-changed">"eggs"</span></code></span>
 </span></td>
 </tr>
 <tr class="ds-state-lane" data-lane="b" data-actor="B" data-actor-n="2">
 <th scope="row">B</th>
 <td><span class="ds-cells">
-<span class="ds-cell" data-in="0" data-out="2"><code class="ds-v"><span class="ds-lamport">0</span></code></span>
-<span class="ds-cell" data-in="2" data-out="3" data-cont="" data-event="b-1"><code class="ds-v"><span class="ds-lamport ds-changed">1</span></code></span>
-<span class="ds-cell" data-in="3" data-out="4" data-cont="" data-event="b-2"><code class="ds-v"><span class="ds-lamport ds-changed">2</span></code></span>
-<span class="ds-cell" data-in="4" data-cont="" data-event="eggs"><code class="ds-v"><span class="ds-lamport ds-changed">3</span></code></span>
+<span class="ds-cell" data-in="0" data-out="1"><code class="ds-v"><span class="ds-lamport">0</span></code></span>
+<span class="ds-cell" data-in="1" data-out="2" data-cont="" data-event="b-1"><code class="ds-v"><span class="ds-lamport ds-changed">1</span></code></span>
+<span class="ds-cell" data-in="2" data-out="3" data-cont="" data-event="b-2"><code class="ds-v"><span class="ds-lamport ds-changed">2</span></code></span>
+<span class="ds-cell" data-in="3" data-cont="" data-event="eggs"><code class="ds-v"><span class="ds-lamport ds-changed">3</span></code></span>
 </span></td>
 <td><span class="ds-cells">
-<span class="ds-cell" data-in="0" data-out="2"><code class="ds-v"><span class="ds-empty">(empty)</span></code></span>
-<span class="ds-cell" data-in="2" data-out="3" data-cont="" data-event="b-1"><code class="ds-v"><span class="ds-empty">(empty)</span></code></span>
-<span class="ds-cell" data-in="3" data-out="4" data-cont="" data-event="b-2"><code class="ds-v"><span class="ds-empty">(empty)</span></code></span>
-<span class="ds-cell" data-in="4" data-cont="" data-event="eggs"><code class="ds-v"><span class="ds-stamp ds-changed" data-stamp="3,B">(</span><span class="ds-stamp ds-time ds-changed" data-stamp="3,B">3</span><span class="ds-stamp ds-changed" data-stamp="3,B">,</span><span class="ds-stamp ds-actor ds-changed" data-actor="B" data-stamp="3,B" data-actor-n="2">B</span><span class="ds-stamp ds-changed" data-stamp="3,B">)</span><span class="ds-sym">→</span><span class="ds-str ds-changed">"eggs"</span></code></span>
+<span class="ds-cell" data-in="0" data-out="1"><code class="ds-v"><span class="ds-empty">(empty)</span></code></span>
+<span class="ds-cell" data-in="1" data-out="2" data-cont="" data-event="b-1"><code class="ds-v"><span class="ds-empty">(empty)</span></code></span>
+<span class="ds-cell" data-in="2" data-out="3" data-cont="" data-event="b-2"><code class="ds-v"><span class="ds-empty">(empty)</span></code></span>
+<span class="ds-cell" data-in="3" data-cont="" data-event="eggs"><code class="ds-v"><span class="ds-stamp ds-changed" data-stamp="3,B">(</span><span class="ds-stamp ds-time ds-changed" data-stamp="3,B">3</span><span class="ds-stamp ds-changed" data-stamp="3,B">,</span><span class="ds-stamp ds-actor ds-changed" data-actor="B" data-stamp="3,B" data-actor-n="2">B</span><span class="ds-stamp ds-changed" data-stamp="3,B">)</span><span class="ds-sym">→</span><span class="ds-str ds-changed">"eggs"</span></code></span>
 </span></td>
 </tr>
 </tbody>
@@ -163,8 +159,8 @@
 <figcaption class="ds-fig-caption">
 <p class="ds-fig-title">Last writer wins on Lamport stamps: B never saw milk, which is lost</p>
 <ol class="ds-notes">
-<li class="ds-note" data-in="5" data-note="1" data-relation="concurrent"><span class="ds-note-n" aria-hidden="true">1</span> <span class="ds-note-body">milk is concurrent with eggs: B never heard from A. Yet the stamps are the same as when B saw milk, <code class="ds-v"><span class="ds-stamp" data-stamp="1,A">(</span><span class="ds-stamp ds-time" data-stamp="1,A">1</span><span class="ds-stamp" data-stamp="1,A">,</span><span class="ds-stamp ds-actor" data-actor="A" data-stamp="1,A" data-actor-n="1">A</span><span class="ds-stamp" data-stamp="1,A">)</span></code> and <code class="ds-v"><span class="ds-stamp" data-stamp="3,B">(</span><span class="ds-stamp ds-time" data-stamp="3,B">3</span><span class="ds-stamp" data-stamp="3,B">,</span><span class="ds-stamp ds-actor" data-actor="B" data-stamp="3,B" data-actor-n="2">B</span><span class="ds-stamp" data-stamp="3,B">)</span></code>, so nothing in them can tell</span></li>
-<li class="ds-note" data-in="7" data-note="2"><span class="ds-note-n" aria-hidden="true">2</span> <span class="ds-note-body">A drops "milk" for "eggs" and ends exactly as when B saw milk: no one chose to discard "milk", and nothing on either replica records it was written</span></li>
+<li class="ds-note" data-in="4" data-note="1" data-relation="concurrent"><span class="ds-note-n" aria-hidden="true">1</span> <span class="ds-note-body">milk is concurrent with eggs: B never heard from A. Yet the stamps are the same as when B saw milk, <code class="ds-v"><span class="ds-stamp" data-stamp="1,A">(</span><span class="ds-stamp ds-time" data-stamp="1,A">1</span><span class="ds-stamp" data-stamp="1,A">,</span><span class="ds-stamp ds-actor" data-actor="A" data-stamp="1,A" data-actor-n="1">A</span><span class="ds-stamp" data-stamp="1,A">)</span></code> and <code class="ds-v"><span class="ds-stamp" data-stamp="3,B">(</span><span class="ds-stamp ds-time" data-stamp="3,B">3</span><span class="ds-stamp" data-stamp="3,B">,</span><span class="ds-stamp ds-actor" data-actor="B" data-stamp="3,B" data-actor-n="2">B</span><span class="ds-stamp" data-stamp="3,B">)</span></code>, so nothing in them can tell</span></li>
+<li class="ds-note" data-in="6" data-note="2"><span class="ds-note-n" aria-hidden="true">2</span> <span class="ds-note-body">A drops "milk" for "eggs" and ends exactly as when B saw milk: no one chose to discard "milk", and nothing on either replica records it was written</span></li>
 </ol>
 </figcaption>
 </figure>

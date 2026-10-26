@@ -21,8 +21,8 @@
 use super::Render;
 use super::steps::{At, timed};
 use super::svg::{
-    actor_attrs, dot_line_svg, dot_line_with_slots, escape_attr, event_sentence, lanes_sentence,
-    one_line, relation_attr, role_classes, space_time_svg, subject, with_actor_slots,
+    actor_attrs, dot_line_svg, dot_line_with_slots, escape_attr, event_sentence, one_line,
+    relation_attr, role_classes, space_time_svg, subject, with_actor_slots,
 };
 use crate::label::split_fields;
 use crate::model::{Beat, Diagram, DotLine, LaneId, Note, Rich, SpaceTime, Span, Timeline};
@@ -95,11 +95,7 @@ pub(crate) fn dot_line_html(stem: &str, d: &DotLine, at: At) -> String {
     let last = d.last_step();
     let play = (at != At::End).then(|| {
         let beats = timed(at, last, "", |s| {
-            let body = if s == last {
-                text(&one_line(d.title()))
-            } else {
-                rich_html(&squeezed(&d.frame_at(s).narration))
-            };
+            let body = rich_html(&squeezed(&d.frame_at(s).narration));
             Some(
                 format!(r#"<p class="ds-beat"><span class="ds-beat-body">{body}</span></p>"#)
                     + "\n",
@@ -209,15 +205,10 @@ fn cell(d: &SpaceTime, t: &Timeline, lane: LaneId, s: usize, column: Option<usiz
     ) + "\n"
 }
 
-/// What step `s` says: the lanes; what happened at an event, including what
-/// it sent; a note, with its number; the figure's title once it is finished.
+/// What step `s` says: what happened at an event, including what it sent, or
+/// a note, with its number.
 fn beat(d: &SpaceTime, t: &Timeline, s: usize) -> String {
     let (attrs, lead, body) = match t.beats()[s] {
-        Beat::Start => (
-            String::new(),
-            String::new(),
-            text(&format!("{}; time runs left to right", lanes_sentence(d))),
-        ),
         Beat::Event(e) => {
             let narration = &d.events()[e.0].narration;
             let said = if narration.is_empty() {
@@ -243,7 +234,6 @@ fn beat(d: &SpaceTime, t: &Timeline, s: usize) -> String {
                 rich_html(&note.callout.text),
             )
         }
-        Beat::End => (String::new(), String::new(), text(&one_line(d.title()))),
     };
     format!(r#"<p class="ds-beat"{attrs}>{lead}<span class="ds-beat-body">{body}</span></p>"#)
         + "\n"
@@ -658,18 +648,20 @@ mod tests {
         d.callout(a1, b1, "about m1");
         let html = steps_html("fig", &Diagram::SpaceTime(d));
         assert!(html.starts_with(
-            r#"<figure class="ds-fig" data-figure="fig" data-kind="space-time" data-steps="4" data-steps-v="1">"#
+            r#"<figure class="ds-fig" data-figure="fig" data-kind="space-time" data-steps="2" data-steps-v="1">"#
         ));
         for needle in [
             r#"<div class="ds-play" hidden>"#,
-            r#"<p class="ds-beat" data-in="0" data-out="1"><span class="ds-beat-body">Timelines for A, B; time runs left to right</span></p>"#,
-            r#"<p class="ds-beat" data-in="1" data-out="2" data-cont="" data-event="a-1"><span class="ds-beat-body"><span class="ds-lead">A1</span> on A, sending m1 to B: x 1; y 2</span></p>"#,
-            r#"<p class="ds-beat" data-in="3" data-out="4" data-cont="" data-note="1"><span class="ds-note-n" aria-hidden="true">1</span> <span class="ds-beat-body">about m1</span></p>"#,
-            r#"<p class="ds-beat" data-in="4" data-cont=""><span class="ds-beat-body">Two lanes</span></p>"#,
-            r#"<li class="ds-note" data-in="3" data-note="1">"#,
+            r#"<p class="ds-beat" data-in="0" data-out="1" data-event="a-1"><span class="ds-beat-body"><span class="ds-lead">A1</span> on A, sending m1 to B: x 1; y 2</span></p>"#,
+            r#"<p class="ds-beat" data-in="2" data-cont="" data-note="1"><span class="ds-note-n" aria-hidden="true">1</span> <span class="ds-beat-body">about m1</span></p>"#,
+            r#"<li class="ds-note" data-in="2" data-note="1">"#,
         ] {
             assert!(html.contains(needle), "missing {needle:?} in:\n{html}");
         }
+        assert!(
+            !html.contains(r#"<span class="ds-beat-body">Two lanes</span>"#),
+            "no step repeats the title the caption shows"
+        );
         assert!(!html.contains("\n\n"));
     }
 
