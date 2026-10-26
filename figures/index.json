@@ -1,5 +1,6 @@
 {
   "figures": [
+    { "stem": "lamport-taking-turns", "kind": "space-time", "form": "steps", "title": "Lamport clocks: two processes taking turns" },
     { "stem": "lamport-clock-trace", "kind": "space-time", "form": "steps", "title": "Lamport clocks: three processes, two messages" },
     { "stem": "vector-clock-trace", "kind": "space-time", "form": "steps", "title": "Vector clocks: three processes, two messages" },
     { "stem": "clock-comparison", "kind": "space-time", "form": "steps", "title": "Three clocks, one trace: Lamport, hybrid logical, and vector" },

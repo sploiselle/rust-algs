@@ -61,6 +61,7 @@ impl Form {
 /// Every figure, in the order their files are written.
 pub fn all() -> Vec<Figure> {
     let mut figures = vec![
+        lamport_taking_turns(),
         lamport_clock_trace(),
         vector_clock_trace(),
         clock_comparison(),
@@ -264,6 +265,95 @@ fn vector_trace() -> VectorTrace {
     }
 }
 
+/// Two processes taking turns, each acting only once it has heard from the
+/// other: the happy path, with nothing concurrent. Every event happened
+/// before the next, so the times count the events off in the order they
+/// happened, as if one counter were handed back and forth in the messages.
+///
+/// Stepped through, each process's clock is in a panel from 0.
+fn lamport_taking_turns() -> Figure {
+    let mut d = SpaceTime::new("Lamport clocks: two processes taking turns");
+    let (la, lb) = (d.actor_lane("A", 'A'), d.actor_lane("B", 'B'));
+    let (mut a, mut b) = (LamportClock::new('A'), LamportClock::new('B'));
+    d.start_value(la, a.spans());
+    d.start_value(lb, b.spans());
+    let mut times: Vec<(EventId, u64)> = Vec::new();
+    let mut record = |d: &mut SpaceTime, lane, name, clock: &LamportClock<char>| {
+        let e = d.event(lane, name, clock.spans());
+        times.push((e, clock.time()));
+        e
+    };
+
+    a.tick();
+    record(&mut d, la, "A1", &a);
+    let m1 = a.tick().time();
+    let a2 = record(&mut d, la, "A2", &a);
+    let b0_time = b.time();
+    b.receive(m1);
+    let b1 = record(&mut d, lb, "B1", &b);
+    let m1_msg = d.message(a2, b1, rich!["m1 ", Span::value(m1.to_string())]);
+    b.tick();
+    record(&mut d, lb, "B2", &b);
+    let m2 = b.tick().time();
+    let b3 = record(&mut d, lb, "B3", &b);
+    let a2_time = a.time();
+    a.receive(m2);
+    let a3 = record(&mut d, la, "A3", &a);
+    let m2_msg = d.message(b3, a3, rich!["m2 ", Span::value(m2.to_string())]);
+
+    assert_eq!(
+        times.iter().map(|&(_, t)| t).collect::<Vec<_>>(),
+        [1, 2, 3, 4, 5, 6],
+        "the times count the events off in the order they happened"
+    );
+    assert!(
+        times.windows(2).all(|w| d.happened_before(w[0].0, w[1].0)),
+        "the processes take turns: every event happened before the next"
+    );
+    assert_clock_condition(&d, &times);
+    let time = |e: EventId| times.iter().find(|(x, _)| *x == e).unwrap().1;
+    // B's start value is off the panel by B1's step, so B1 can't quote it.
+    assert_eq!((b0_time, time(b1)), (0, m1 + 1), "B1 is B's first event");
+    d.narrate(
+        b1,
+        rich![
+            "receives a message sent at time ",
+            Span::value(m1.to_string()),
+            " as its first event, so its clock takes that and adds one, reaching ",
+            Span::value(time(b1).to_string())
+        ],
+    );
+    assert!(a2_time < m2, "A's clock jumps forward");
+    narrate_receive(&mut d, a3, a2_time, m2, time(a3));
+    for (e, _) in &times {
+        let key = d.events()[e.0].name.to_lowercase();
+        d.pin_event(*e, &key);
+    }
+    d.pin_message(m1_msg, "m1");
+    d.pin_message(m2_msg, "m2");
+    Figure {
+        stem: "lamport-taking-turns",
+        diagram: Diagram::SpaceTime(d),
+    }
+}
+
+/// What a Lamport receive does by rule 2: its process's time before it, the
+/// time the message was sent at, and its time after.
+fn narrate_receive(d: &mut SpaceTime, event: EventId, before: u64, sent: u64, after: u64) {
+    assert_eq!(before.max(sent) + 1, after, "rule 2: the larger, plus one");
+    d.narrate(
+        event,
+        rich![
+            "receives a message sent at time ",
+            Span::value(sent.to_string()),
+            ": its clock takes the larger of its own ",
+            Span::value(before.to_string()),
+            " and that, then adds one, reaching ",
+            Span::value(after.to_string())
+        ],
+    );
+}
+
 /// The vector clock trace stamped by Lamport clocks alone: the scenario in
 /// the library test `three_process_trace`. A1 reaches C2 through B, and its
 /// time is smaller; A3 and B3 are concurrent, and their times are ordered
@@ -276,18 +366,7 @@ fn lamport_clock_trace() -> Figure {
         t.d.start_value(lane, LamportClock::new(process).spans());
     }
     for (event, before, sent, after) in [t.b2, t.c2] {
-        assert_eq!(before.max(sent) + 1, after, "rule 2: the larger, plus one");
-        t.d.narrate(
-            event,
-            rich![
-                "receives a message sent at time ",
-                Span::value(sent.to_string()),
-                ": its clock takes the larger of its own ",
-                Span::value(before.to_string()),
-                " and that, then adds one, reaching ",
-                Span::value(after.to_string())
-            ],
-        );
+        narrate_receive(&mut t.d, event, before, sent, after);
     }
     let (a3, a3_time, b3_time) = t.a3;
     assert!(a3_time < b3_time);
