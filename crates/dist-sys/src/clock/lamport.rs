@@ -58,7 +58,6 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LamportClock<P> {
     time: u64,
-    /// Breaks ties between this process's stamps and others' at the same time.
     process: P,
 }
 
@@ -103,8 +102,23 @@ impl<P: Clone> LamportClock<P> {
 /// happened-before.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct LamportStamp<P> {
-    pub time: u64,
-    pub process: P,
+    time: u64,
+    /// Breaks ties between this process's stamps and others' at the same time.
+    process: P,
+}
+
+impl<P> LamportStamp<P> {
+    pub fn new(time: u64, process: P) -> Self {
+        Self { time, process }
+    }
+
+    pub fn time(&self) -> u64 {
+        self.time
+    }
+
+    pub fn process(&self) -> &P {
+        &self.process
+    }
 }
 
 #[cfg(test)]

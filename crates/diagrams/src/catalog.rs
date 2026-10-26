@@ -356,7 +356,7 @@ fn lamport_trace() -> LamportTrace {
 
     a.tick();
     let a1 = record(&mut d, la, "A1", &a);
-    let m1 = a.tick().time;
+    let m1 = a.tick().time();
     let a2 = record(&mut d, la, "A2", &a);
     b.tick();
     record(&mut d, lb, "B1", &b);
@@ -367,7 +367,7 @@ fn lamport_trace() -> LamportTrace {
     c.tick();
     record(&mut d, lc, "C1", &c);
     let c1_time = c.time();
-    let m2 = b.tick().time;
+    let m2 = b.tick().time();
     let b3 = record(&mut d, lb, "B3", &b);
     c.receive(m2);
     let c2 = record(&mut d, lc, "C2", &c);
@@ -590,7 +590,7 @@ impl Process {
 
     fn local(&mut self, physical: u64) -> Stamps {
         self.physical.set(physical);
-        let lamport = self.lamport.tick().time;
+        let lamport = self.lamport.tick().time();
         let hlc = self.hlc.now();
         self.vector.tick(&self.id);
         self.stamps(physical, lamport, hlc)
@@ -598,7 +598,7 @@ impl Process {
 
     fn send(&mut self, physical: u64) -> Stamps {
         self.physical.set(physical);
-        let lamport = self.lamport.tick().time;
+        let lamport = self.lamport.tick().time();
         let hlc = self.hlc.now();
         self.vector.send(&self.id);
         self.stamps(physical, lamport, hlc)
@@ -606,7 +606,7 @@ impl Process {
 
     fn receive(&mut self, physical: u64, message: &Stamps) -> Stamps {
         self.physical.set(physical);
-        let lamport = self.lamport.receive(message.lamport).time;
+        let lamport = self.lamport.receive(message.lamport).time();
         let hlc = self.hlc.update(message.hlc).expect("no max offset is set");
         self.vector.receive(&self.id, &message.vector);
         self.stamps(physical, lamport, hlc)
@@ -794,7 +794,7 @@ struct RegisterRun {
 fn lamport_register_histories() -> [RegisterRun; 2] {
     let mut saw = lamport_register_run(true);
     let mut never = lamport_register_run(false);
-    let stamp = |time, process| LamportStamp { time, process };
+    let stamp = LamportStamp::new;
     for r in [&saw, &never] {
         assert_eq!((r.milk_stamp, r.eggs_stamp), (stamp(1, 'A'), stamp(3, 'B')));
         assert_eq!(r.ends[0].get(), Some(&"eggs"));
@@ -1259,10 +1259,7 @@ fn mutex_fifo_steps() -> Figure {
         a4,
         rich![
             "leaves: drops its request ",
-            v(&LamportStamp {
-                time: 1,
-                process: 'A'
-            }),
+            v(&LamportStamp::new(1, 'A')),
             " from its queue and sends a release to B"
         ],
     );
@@ -1287,7 +1284,7 @@ struct MutexRun {
 /// agree: each process requests, then A gets B's request and enters. Each
 /// lane starts from a process that has done nothing yet.
 fn narrate_requests(r: &mut MutexRun) {
-    let stamp = |time, process| LamportStamp { time, process };
+    let stamp = LamportStamp::new;
     for (lane, me) in r.lanes.into_iter().zip(['A', 'B']) {
         r.d.start_value(lane, LamportMutex::new(me, ['A', 'B']).spans());
     }
@@ -1326,7 +1323,7 @@ fn mutex_fifo_run() -> MutexRun {
     let (la, lb) = (d.actor_lane("A", 'A'), d.actor_lane("B", 'B'));
     let mut a = LamportMutex::new('A', ['A', 'B']);
     let mut b = LamportMutex::new('B', ['A', 'B']);
-    let stamp = |time, process| LamportStamp { time, process };
+    let stamp = LamportStamp::new;
     let mut times: Vec<(EventId, u64)> = Vec::new();
 
     let req_a = only(a.request());
@@ -1357,7 +1354,7 @@ fn mutex_fifo_run() -> MutexRun {
     assert!(!b.holds());
 
     let ack_a_label = message_label(&ack_a);
-    assert_eq!((ack_a.kind, ack_a.stamp.time), (Kind::Ack, 3));
+    assert_eq!((ack_a.kind, ack_a.stamp.time()), (Kind::Ack, 3));
     b.receive(ack_a);
     let b3 = d.event(lb, "ack from A", b.spans());
     times.push((b3, b.clock().time()));
@@ -1381,7 +1378,7 @@ fn mutex_fifo_run() -> MutexRun {
     let a4 = d.event(la, "release", a.spans());
     times.push((a4, a.clock().time()));
     let release_label = message_label(&release);
-    assert_eq!((release.kind, release.stamp.time), (Kind::Release, 5));
+    assert_eq!((release.kind, release.stamp.time()), (Kind::Release, 5));
     b.receive(release);
     let b4 = d.event(lb, "release from A", b.spans());
     times.push((b4, b.clock().time()));
@@ -1463,10 +1460,7 @@ fn mutex_overtaking_steps() -> Figure {
         r.b[2],
         rich![
             "gets A's request at last: ",
-            v(&LamportStamp {
-                time: 1,
-                process: 'A'
-            }),
+            v(&LamportStamp::new(1, 'A')),
             " goes ahead of its own, so B no longer holds by its queue, but it is already in"
         ],
     );
@@ -1483,7 +1477,7 @@ fn mutex_overtaking_run() -> MutexRun {
     let (la, lb) = (d.actor_lane("A", 'A'), d.actor_lane("B", 'B'));
     let mut a = LamportMutex::new('A', ['A', 'B']);
     let mut b = LamportMutex::new('B', ['A', 'B']);
-    let stamp = |time, process| LamportStamp { time, process };
+    let stamp = LamportStamp::new;
 
     let mut times: Vec<(EventId, u64)> = Vec::new();
 
@@ -1505,7 +1499,7 @@ fn mutex_overtaking_run() -> MutexRun {
     assert!(a.holds(), "rightly: A's request is the earliest");
 
     let ack_label = message_label(&ack);
-    assert_eq!((ack.kind, ack.stamp.time), (Kind::Ack, 3));
+    assert_eq!((ack.kind, ack.stamp.time()), (Kind::Ack, 3));
     b.receive(ack);
     let b2 = d.event(lb, "ack from A", b.spans());
     times.push((b2, b.clock().time()));
@@ -1584,7 +1578,7 @@ fn mutex_crash() -> Figure {
 /// where it starts.
 fn mutex_crash_steps() -> Figure {
     let mut r = mutex_crash_run();
-    let stamp = |time, process| LamportStamp { time, process };
+    let stamp = LamportStamp::new;
     for (lane, me) in r.lanes.into_iter().zip(['A', 'B', 'C']) {
         r.d.start_value(lane, LamportMutex::new(me, ['A', 'B', 'C']).spans());
     }
@@ -1663,7 +1657,7 @@ fn mutex_crash_run() -> CrashRun {
     let mut a = LamportMutex::new('A', everyone);
     let mut b = LamportMutex::new('B', everyone);
     let mut c = LamportMutex::new('C', everyone);
-    let stamp = |time, process| LamportStamp { time, process };
+    let stamp = LamportStamp::new;
     let mut times: Vec<(EventId, u64)> = Vec::new();
     let mut record = |d: &mut SpaceTime, lane, name, p: &LamportMutex<char>| {
         let e = d.event(lane, name, p.spans());
@@ -1823,7 +1817,7 @@ fn message_label<P>(m: &Message<P>) -> Rich {
         Kind::Ack => "ack ",
         Kind::Release => "release ",
     };
-    rich![kind, Span::value(m.stamp.time.to_string())]
+    rich![kind, Span::value(m.stamp.time().to_string())]
 }
 
 fn sorted_values(r: &MvRegister<char, &'static str>) -> Vec<&'static str> {

@@ -154,12 +154,10 @@ impl<P: Ord + Clone> LamportMutex<P> {
             return false;
         };
         self.queue.first() == Some(mine)
-            && self.heard.iter().all(|(p, &time)| {
-                LamportStamp {
-                    time,
-                    process: p.clone(),
-                } > *mine
-            })
+            && self
+                .heard
+                .iter()
+                .all(|(p, &time)| LamportStamp::new(time, p.clone()) > *mine)
     }
 
     /// Rule 1: ask for the resource. Returns the request to send to every other
@@ -198,15 +196,15 @@ impl<P: Ord + Clone> LamportMutex<P> {
     /// Messages from each sender must arrive in the order it sent them.
     pub fn receive(&mut self, msg: Message<P>) -> Option<Message<P>> {
         debug_assert!(msg.to == *self.me(), "delivered to the wrong process");
-        self.clock.receive(msg.stamp.time);
+        self.clock.receive(msg.stamp.time());
         let heard = self
             .heard
-            .get_mut(&msg.stamp.process)
+            .get_mut(msg.stamp.process())
             .expect("message from an unknown process");
-        *heard = (*heard).max(msg.stamp.time);
+        *heard = (*heard).max(msg.stamp.time());
         match msg.kind {
             Kind::Request => {
-                let to = msg.stamp.process.clone();
+                let to = msg.stamp.process().clone();
                 self.queue.insert(msg.stamp);
                 Some(Message {
                     to,
@@ -217,7 +215,7 @@ impl<P: Ord + Clone> LamportMutex<P> {
             Kind::Ack => None,
             Kind::Release => {
                 // A process has at most one request outstanding, so this is it.
-                self.queue.retain(|s| s.process != msg.stamp.process);
+                self.queue.retain(|s| s.process() != msg.stamp.process());
                 None
             }
         }
@@ -250,7 +248,7 @@ mod tests {
     }
 
     fn stamp(time: u64, process: char) -> LamportStamp<char> {
-        LamportStamp { time, process }
+        LamportStamp::new(time, process)
     }
 
     /// A and B ask at once, with the same counter value. Both queues sort the
@@ -261,7 +259,7 @@ mod tests {
         let mut b = LamportMutex::new('B', ['A', 'B']);
         let req_a = a.request().pop().unwrap();
         let req_b = b.request().pop().unwrap();
-        assert_eq!((req_a.stamp.time, req_b.stamp.time), (1, 1));
+        assert_eq!((req_a.stamp.time(), req_b.stamp.time()), (1, 1));
 
         let ack_from_b = b.receive(req_a).unwrap();
         let ack_from_a = a.receive(req_b).unwrap();
@@ -348,7 +346,7 @@ mod tests {
                             msgs: Vec<Message<usize>>| {
                 for m in msgs {
                     sent += 1;
-                    channels[m.stamp.process][m.to].push_back(m);
+                    channels[*m.stamp.process()][m.to].push_back(m);
                 }
             };
 

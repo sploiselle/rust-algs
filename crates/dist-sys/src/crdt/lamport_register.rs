@@ -160,7 +160,7 @@ mod tests {
     #[test]
     fn two_histories_get_the_same_stamps() {
         let (saw, never) = (history(true), history(false));
-        let stamp = |time, process| LamportStamp { time, process };
+        let stamp = LamportStamp::new;
         for h in [&saw, &never] {
             assert_eq!((&h.milk.0, &h.eggs.0), (&stamp(1, 'A'), &stamp(3, 'B')));
             assert_eq!(h.a.get(), Some(&"eggs"));
@@ -196,16 +196,7 @@ mod tests {
         // (2,B) is the largest stamp, though C wrote last.
         for order in [[0, 1, 2], [2, 1, 0], [1, 2, 0]] {
             for r in sync_all(regs.clone(), order) {
-                assert_eq!(
-                    r.entry(),
-                    Some((
-                        &LamportStamp {
-                            time: 2,
-                            process: 'B'
-                        },
-                        &2
-                    ))
-                );
+                assert_eq!(r.entry(), Some((&LamportStamp::new(2, 'B'), &2)));
             }
         }
     }

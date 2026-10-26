@@ -272,13 +272,13 @@ impl<P: Display> Label for LamportStamp<P> {
     }
 
     fn spans(&self) -> Rich {
-        let process = self.process.to_string();
-        let key = format!("{},{process}", self.time);
+        let process = self.process().to_string();
+        let key = format!("{},{process}", self.time());
         Rich {
             lines: vec![
                 [
                     Span::part("(", "stamp"),
-                    Span::part(self.time.to_string(), "stamp").also("time"),
+                    Span::part(self.time().to_string(), "stamp").also("time"),
                     Span::part(",", "stamp"),
                     Span::part(process.clone(), "stamp")
                         .also("actor")
@@ -500,14 +500,7 @@ mod tests {
 
     #[test]
     fn lamport_mutex() {
-        assert_eq!(
-            LamportStamp {
-                time: 1,
-                process: 'A'
-            }
-            .label(),
-            "(1,A)"
-        );
+        assert_eq!(LamportStamp::new(1, 'A').label(), "(1,A)");
         let mut a = LamportMutex::new('A', ['A', 'B']);
         a.request();
         assert_eq!(
