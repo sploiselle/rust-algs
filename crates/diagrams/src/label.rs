@@ -8,6 +8,7 @@
 use std::collections::BTreeSet;
 use std::fmt::{Debug, Display};
 
+use dist_sys::broadcast::Cbcast;
 use dist_sys::clock::{
     CausalContext, Causality, Dot, LamportClock, LamportStamp, Timestamp, VectorClock,
 };
@@ -459,6 +460,45 @@ where
     ])
 }
 
+/// One process's side of causal broadcast, as [`fields`]: how many of each
+/// process's broadcasts it has delivered, then the messages it is delaying,
+/// each as `dot→payload`, the dot naming the message as its sender's `n`th
+/// broadcast.
+///
+/// ```text
+/// delivered {}
+/// delayed   B:1→"answer"
+/// ```
+impl<P: Ord + Clone + Display, T: Debug> Label for Cbcast<P, T> {
+    fn label(&self) -> String {
+        self.spans().plain()
+    }
+
+    fn spans(&self) -> Rich {
+        let mut delayed = Rich::default();
+        for (i, m) in self.delayed().enumerate() {
+            if i > 0 {
+                delayed = delayed.then(Span::value(" "));
+            }
+            let dot = Dot {
+                actor: m.sender.clone(),
+                counter: m.stamp.get(&m.sender),
+            };
+            delayed = delayed
+                .then(dot.spans())
+                .then(Span::part("→", "sym"))
+                .then(Span::part(format!("{:?}", m.payload), "str"));
+        }
+        if delayed.is_empty() {
+            delayed = Span::part("(empty)", "empty").into();
+        }
+        fields(vec![
+            ("delivered", self.delivered().spans()),
+            ("delayed", delayed),
+        ])
+    }
+}
+
 /// The relation symbol: `→` before, `←` after, `=` equal, `∥` concurrent.
 impl Label for Causality {
     fn label(&self) -> String {
@@ -689,6 +729,27 @@ mod tests {
         r.tick();
         r.write("eggs");
         assert_eq!(r.label(), "L\u{a0}2\nx\u{a0}(2,B)→\"eggs\"");
+    }
+
+    #[test]
+    fn cbcast() {
+        let mut a: Cbcast<char, &str> = Cbcast::new('A');
+        let mut b: Cbcast<char, &str> = Cbcast::new('B');
+        let mut c: Cbcast<char, &str> = Cbcast::new('C');
+        assert_eq!(
+            c.label(),
+            "delivered\u{a0}{}\ndelayed\u{a0}\u{a0}\u{a0}(empty)"
+        );
+        let a1 = a.broadcast("a1");
+        let a2 = a.broadcast("a2");
+        b.receive(a1);
+        b.receive(a2.clone());
+        c.receive(a2);
+        c.receive(b.broadcast("b1")); // stamped {A:2, B:1}, B's first
+        assert_eq!(
+            c.label(),
+            "delivered\u{a0}{}\ndelayed\u{a0}\u{a0}\u{a0}A:2→\"a2\" B:1→\"b1\""
+        );
     }
 
     #[test]

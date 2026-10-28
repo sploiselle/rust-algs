@@ -20,7 +20,10 @@
 //!   [`UserMachine`](state_machine::UserMachine) whose commands are ordered,
 //!   such as Lamport's airline reservation example,
 //!   [`Airline`](state_machine::airline::Airline).
+//! - [`broadcast`]: delivering broadcasts in an order that respects causality.
+//!   [`Cbcast`](broadcast::Cbcast).
 
+pub mod broadcast;
 pub mod clock;
 pub mod coordination;
 pub mod counter;

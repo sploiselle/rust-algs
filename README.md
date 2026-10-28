@@ -22,6 +22,8 @@ crates/dist-sys/          the library
     user_machine.rs       the machine: commands in, responses out
     bookkeeper.rs         Lamport's reliable state machine, through failures
     airline.rs            Lamport's airline reservation example
+  src/broadcast/          delivering broadcasts in causal order
+    cbcast.rs             causal broadcast
   examples/               programs to run against the library
 crates/diagrams/          figures drawn from the library (SVG, HTML and Mermaid)
 figures/                  the rendered figures, committed
@@ -131,7 +133,7 @@ figure and a new role picks up the right tier without a mapping of its own.
 |---|---|
 | `--ds-ink`, `--ds-muted`, `--ds-rule` | the tiers: everything; event names, message labels, counters, legend; lane lines |
 | `--ds-font-sans`, `--ds-font-mono` | names and prose; library values |
-| `--ds-font-sym` | the `→` inside register entries, for monospace fonts that lack it |
+| `--ds-font-sym` | the `→` inside register entries and delayed broadcasts, for monospace fonts that lack it |
 | `--ds-lane-line`, `--ds-lane-opacity`, `--ds-lane-width`, `--ds-lane-name` | timelines (opacity defaults to .5) and their names |
 | `--ds-event-dot`, `--ds-event-name`, `--ds-value` | event markers, event names, library values under events and beside number-line rows |
 | `--ds-crash` | the × where an actor crashes (falls back to `--ds-event-dot`) |
@@ -173,7 +175,7 @@ the parts set their own paint, and a stroke on a group outlines its text.
 | `li.ds-note[data-note][data-relation]` | a note in the figcaption; `data-relation` is `before` or `concurrent` when the note claims one |
 | `.ds-v` | a library value inside prose: a `<tspan>` in a message label, a `<code>` in a figcaption note |
 | `.ds-entry[data-actor]` | one entry of a vector clock, in values, labels and figcaption notes, as two parts: `.ds-actor` (`A`) and `.ds-count` (`:2`) |
-| `.ds-dot-id[data-dot][data-actor]`, `.ds-cloud`, `.ds-sym`, `.ds-str`, `.ds-empty` | a dot's name (also split into `.ds-actor` and `.ds-count`), a dot past a causal context's gap (also `.ds-dot-id`), a register entry's arrow and value, an empty register |
+| `.ds-dot-id[data-dot][data-actor]`, `.ds-cloud`, `.ds-sym`, `.ds-str`, `.ds-empty` | a dot's name (also split into `.ds-actor` and `.ds-count`), a dot past a causal context's gap (also `.ds-dot-id`), a `dot→value` entry's arrow and value (a register's entries, a delayed broadcast), an empty register, queue or set of pending commands |
 | `.ds-stamp[data-stamp]`, `.ds-heard[data-actor]`, `.ds-holds`, `.ds-lamport` | a Lamport stamp `(1,A)`, every part keyed `data-stamp="1,A"` (its time also `.ds-time`, its process also `.ds-actor`); the latest stamp a mutex process has heard from a peer, or when a peer sent the latest message a bookkeeper has received from it (split into `.ds-actor` and `.ds-count`); whether it holds the resource; a Lamport clock's time |
 | `.ds-command[data-command]`, `.ds-voter[data-actor]`, `.ds-clock`, `.ds-known`, `.ds-booked` | a stamped command `1:reserve 221 Smith`, every part keyed `data-command="1:reserve 221 Smith"` (its time also `.ds-time`); in a bookkeeper's pending commands, just the time, keyed the same way; a bookkeeper among those that voted for a command (also `.ds-actor`); a bookkeeper's clock; the latest time up to which it knows every accepted command; a passenger its copy of the airline has booked |
 | `.ds-field` | a field's name in a value made of named fields (`label::fields`), padded so the values form a column |

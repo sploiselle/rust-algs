@@ -1,0 +1,223 @@
+<figure class="ds-fig" data-figure="cbcast-delay" data-kind="space-time" data-steps="8" data-steps-v="1">
+<div class="ds-fig-canvas">
+<svg xmlns="http://www.w3.org/2000/svg" class="ds-figure" data-figure="cbcast-delay" data-kind="space-time" role="img" viewBox="0 0 976 351" width="976" height="351" style="--ds-w: 976" fill="currentColor" font-family="system-ui, sans-serif">
+  <title>Causal broadcast: an answer waits for its question</title>
+  <desc>Timelines for A, B, C. question on A: delivered {A:1}; delayed (empty). question from A on B, receiving question {A:1} from question on A: delivered {A:1}; delayed (empty). answer on B: delivered {A:1, B:1}; delayed (empty). answer from B on C, receiving answer {A:1, B:1} from answer on B: delivered {}; delayed B:1→"answer". answer from B on A, receiving answer {A:1, B:1} from answer on B: delivered {A:1, B:1}; delayed (empty). question from A on C, receiving question {A:1} from question on A: delivered {A:1, B:1}; delayed (empty).</desc>
+  <style>
+    @layer ds-figure {
+      .ds-figure { max-width: 100%; height: auto; font-family: var(--ds-font-sans, system-ui, -apple-system, "Segoe UI", sans-serif); }
+      .ds-figure:root { color-scheme: light dark; color: CanvasText; }
+      .ds-figure text { fill: var(--ds-ink, currentColor); }
+      .ds-figure :is(.ds-event-value, .ds-row-value, .ds-v) { font-family: var(--ds-font-mono, ui-monospace, "SF Mono", Menlo, Consolas, monospace); }
+      .ds-figure .ds-sym { font-family: var(--ds-font-sym, system-ui, sans-serif); }
+      .ds-figure .ds-lane-line { stroke: var(--ds-lane-line, var(--ds-rule, var(--ds-ink, currentColor))); stroke-opacity: var(--ds-lane-opacity, .5); stroke-width: var(--ds-lane-width, 1); }
+      .ds-figure .ds-lane-head { fill: var(--ds-lane-line, var(--ds-rule, var(--ds-ink, currentColor))); fill-opacity: var(--ds-lane-opacity, .5); }
+      .ds-figure [data-actor-n="1"] { --ds-actor: var(--ds-actor-1); }
+      .ds-figure [data-actor-n="2"] { --ds-actor: var(--ds-actor-2); }
+      .ds-figure [data-actor-n="3"] { --ds-actor: var(--ds-actor-3); }
+      .ds-figure [data-actor-n="4"] { --ds-actor: var(--ds-actor-4); }
+      .ds-figure [data-actor-n="5"] { --ds-actor: var(--ds-actor-5); }
+      .ds-figure [data-actor-n="6"] { --ds-actor: var(--ds-actor-6); }
+      .ds-figure [data-actor-n="7"] { --ds-actor: var(--ds-actor-7); }
+      .ds-figure [data-actor-n="8"] { --ds-actor: var(--ds-actor-8); }
+      .ds-figure .ds-actor { fill: var(--ds-actor); }
+      .ds-figure .ds-lane-name { fill: var(--ds-lane-name, var(--ds-actor, var(--ds-ink, currentColor))); font-weight: 600; }
+      .ds-figure .ds-row-name { fill: var(--ds-lane-name, var(--ds-ink, currentColor)); font-weight: 600; }
+      .ds-figure .ds-event-dot { fill: var(--ds-event-dot, var(--ds-ink, currentColor)); }
+      .ds-figure .ds-event-crash { stroke: var(--ds-crash, var(--ds-event-dot, var(--ds-ink, currentColor))); stroke-width: 2; }
+      .ds-figure .ds-event-name { fill: var(--ds-event-name, var(--ds-muted, var(--ds-ink, currentColor))); }
+      .ds-figure .ds-field { fill: var(--ds-field, var(--ds-muted, var(--ds-ink, currentColor))); }
+      .ds-figure :is(.ds-event-value, .ds-row-value) { fill: var(--ds-value, var(--ds-ink, currentColor)); }
+      .ds-figure .ds-message-line { fill: none; stroke: var(--ds-message-line, var(--ds-ink, currentColor)); stroke-width: var(--ds-message-width, 1.5); }
+      .ds-figure .ds-message-head { fill: var(--ds-message-line, var(--ds-ink, currentColor)); }
+      .ds-figure .ds-message-label { fill: var(--ds-message-label, var(--ds-muted, var(--ds-ink, currentColor))); }
+      .ds-figure .ds-ring { fill: none; stroke: var(--ds-accent, var(--ds-ink, currentColor)); stroke-width: var(--ds-ring-width, 1.5); stroke-dasharray: var(--ds-ring-dash, none); }
+      .ds-figure .ds-badge-disc { fill: var(--ds-accent, var(--ds-ink, currentColor)); }
+      .ds-figure .ds-badge-n { fill: var(--ds-on-accent, Canvas); font-weight: 700; }
+      .ds-figure .ds-caption { fill: var(--ds-caption, var(--ds-ink, currentColor)); }
+      .ds-figure :is(.ds-counter, .ds-legend) { fill: var(--ds-muted, var(--ds-ink, currentColor)); }
+      .ds-figure :is(.ds-dot, .ds-claim) { fill: var(--ds-dot, var(--ds-ink, currentColor)); }
+      .ds-figure .ds-dot.ds-gap { fill: none; stroke: var(--ds-gap, var(--ds-ink, currentColor)); stroke-width: 1.5; stroke-dasharray: 3 2; }
+      .ds-figure .ds-wrong { fill: var(--ds-wrong, var(--ds-accent, var(--ds-ink, currentColor))); font-weight: 700; }
+    }
+  </style>
+  <g class="ds-lanes">
+    <g class="ds-lane" data-lane="a" data-actor="A" data-actor-n="1">
+      <line class="ds-lane-line" x1="28" y1="65" x2="968" y2="65" stroke="currentColor" stroke-opacity=".5"/>
+      <polygon class="ds-lane-head" points="968,61 976,65 968,69" fill-opacity=".5"/>
+      <text class="ds-lane-name" x="18" y="70" text-anchor="end" font-size="14">A</text>
+    </g>
+    <g class="ds-lane" data-lane="b" data-actor="B" data-actor-n="2">
+      <line class="ds-lane-line" x1="28" y1="178" x2="968" y2="178" stroke="currentColor" stroke-opacity=".5"/>
+      <polygon class="ds-lane-head" points="968,174 976,178 968,182" fill-opacity=".5"/>
+      <text class="ds-lane-name" x="18" y="183" text-anchor="end" font-size="14">B</text>
+    </g>
+    <g class="ds-lane" data-lane="c" data-actor="C" data-actor-n="3">
+      <line class="ds-lane-line" x1="28" y1="291" x2="968" y2="291" stroke="currentColor" stroke-opacity=".5"/>
+      <polygon class="ds-lane-head" points="968,287 976,291 968,295" fill-opacity=".5"/>
+      <text class="ds-lane-name" x="18" y="296" text-anchor="end" font-size="14">C</text>
+    </g>
+  </g>
+  <g class="ds-messages">
+    <g class="ds-message" data-message="question-to-b" data-from="question" data-to="b-1" data-notes="1">
+      <line class="ds-message-line" data-in="1" style="--ds-len: 106; --ds-grow: 106" x1="119.4" y1="74.3" x2="176.4" y2="163.7" stroke="currentColor" stroke-width="1.5"/>
+      <polygon class="ds-message-head" data-in="1" style="--ds-dx: -57; --ds-dy: -89.4" points="181.2,171.3 173.4,165.5 179.3,161.8"/>
+      <text class="ds-message-label" data-in="1" x="141.1" y="126.9" text-anchor="end" font-size="12">question <tspan class="ds-v" font-family="ui-monospace, Menlo, Consolas, monospace">{<tspan class="ds-entry ds-actor" data-actor="A" data-actor-n="1">A</tspan><tspan class="ds-entry ds-count" data-actor="A" data-actor-n="1">:1</tspan>}</tspan></text>
+    </g>
+    <g class="ds-message" data-message="answer-to-c" data-from="answer" data-to="c-delays" data-notes="2">
+      <line class="ds-message-line" data-in="4" style="--ds-len: 102; --ds-grow: 102" x1="577.4" y1="187.3" x2="632.2" y2="273.3" stroke="currentColor" stroke-width="1.5"/>
+      <polygon class="ds-message-head" data-in="4" style="--ds-dx: -54.8; --ds-dy: -86" points="637.1,280.9 629.3,275.2 635.2,271.4"/>
+      <text class="ds-message-label" data-in="4" x="606.3" y="251.2" text-anchor="end" font-size="12">answer <tspan class="ds-v" font-family="ui-monospace, Menlo, Consolas, monospace">{<tspan class="ds-entry ds-actor" data-actor="A" data-actor-n="1">A</tspan><tspan class="ds-entry ds-count" data-actor="A" data-actor-n="1">:1</tspan>, <tspan class="ds-entry ds-actor" data-actor="B" data-actor-n="2">B</tspan><tspan class="ds-entry ds-count" data-actor="B" data-actor-n="2">:1</tspan>}</tspan></text>
+    </g>
+    <g class="ds-message" data-message="answer-to-a" data-from="answer" data-to="a-2">
+      <line class="ds-message-line ds-flight" data-in="4" data-out="6" display="none" style="--ds-len: 71.5; --ds-grow: 71.5" x1="580.2" y1="171.2" x2="636.4" y2="127.1" stroke="currentColor" stroke-width="1.5"/>
+      <line class="ds-message-line" data-in="6" data-cont="" style="--ds-len: 155; --ds-grow: 83.5" x1="580.2" y1="171.2" x2="702.1" y2="75.5" stroke="currentColor" stroke-width="1.5"/>
+      <polygon class="ds-message-head ds-flight" data-in="4" data-out="6" display="none" style="--ds-dx: -56.3; --ds-dy: 44.2" points="643.5,121.5 638.6,129.8 634.3,124.3"/>
+      <polygon class="ds-message-head" data-in="6" data-cont="" style="--ds-dx: -65.7; --ds-dy: 51.6" points="709.2,69.9 704.3,78.2 700,72.7"/>
+      <text class="ds-message-label" data-in="6" x="637.3" y="113.6" text-anchor="end" font-size="12">answer <tspan class="ds-v" font-family="ui-monospace, Menlo, Consolas, monospace">{<tspan class="ds-entry ds-actor" data-actor="A" data-actor-n="1">A</tspan><tspan class="ds-entry ds-count" data-actor="A" data-actor-n="1">:1</tspan>, <tspan class="ds-entry ds-actor" data-actor="B" data-actor-n="2">B</tspan><tspan class="ds-entry ds-count" data-actor="B" data-actor-n="2">:1</tspan>}</tspan></text>
+    </g>
+    <g class="ds-message" data-message="question-to-c" data-from="question" data-to="c-delivers" data-notes="3">
+      <line class="ds-message-line ds-flight" data-in="1" data-out="2" display="none" style="--ds-len: 55.4; --ds-grow: 55.4" x1="124" y1="68.3" x2="176.9" y2="84.8" stroke="currentColor" stroke-width="1.5"/>
+      <line class="ds-message-line ds-flight" data-in="2" data-out="4" display="none" data-cont="" style="--ds-len: 459.7; --ds-grow: 404.3" x1="124" y1="68.3" x2="562.9" y2="205" stroke="currentColor" stroke-width="1.5"/>
+      <line class="ds-message-line ds-flight" data-in="4" data-out="6" display="none" data-cont="" style="--ds-len: 535.1; --ds-grow: 75.4" x1="124" y1="68.3" x2="634.9" y2="227.4" stroke="currentColor" stroke-width="1.5"/>
+      <line class="ds-message-line ds-flight" data-in="6" data-out="7" display="none" data-cont="" style="--ds-len: 610.5; --ds-grow: 75.4" x1="124" y1="68.3" x2="706.9" y2="249.9" stroke="currentColor" stroke-width="1.5"/>
+      <line class="ds-message-line" data-in="7" data-cont="" style="--ds-len: 727.9; --ds-grow: 117.4" x1="124" y1="68.3" x2="819" y2="284.8" stroke="currentColor" stroke-width="1.5"/>
+      <polygon class="ds-message-head ds-flight" data-in="1" data-out="2" display="none" style="--ds-dx: -52.9; --ds-dy: -16.5" points="185.5,87.4 175.9,88.1 177.9,81.4"/>
+      <polygon class="ds-message-head ds-flight" data-in="2" data-out="4" display="none" data-cont="" style="--ds-dx: -386; --ds-dy: -120.2" points="571.5,207.7 561.9,208.3 563.9,201.7"/>
+      <polygon class="ds-message-head ds-flight" data-in="4" data-out="6" display="none" data-cont="" style="--ds-dx: -72; --ds-dy: -22.4" points="643.5,230.1 633.9,230.8 635.9,224.1"/>
+      <polygon class="ds-message-head ds-flight" data-in="6" data-out="7" display="none" data-cont="" style="--ds-dx: -72; --ds-dy: -22.4" points="715.5,252.5 705.9,253.2 707.9,246.5"/>
+      <polygon class="ds-message-head" data-in="7" data-cont="" style="--ds-dx: -112; --ds-dy: -34.9" points="827.5,287.4 817.9,288.1 820,281.4"/>
+      <text class="ds-message-label" data-in="7" x="624.3" y="213.7" text-anchor="start" font-size="12">question <tspan class="ds-v" font-family="ui-monospace, Menlo, Consolas, monospace">{<tspan class="ds-entry ds-actor" data-actor="A" data-actor-n="1">A</tspan><tspan class="ds-entry ds-count" data-actor="A" data-actor-n="1">:1</tspan>}</tspan></text>
+    </g>
+  </g>
+  <g class="ds-events">
+    <g class="ds-event" data-event="question" data-lane="a" data-actor="A" data-actor-n="1" data-notes="1 3">
+      <circle class="ds-event-dot" cx="113.5" cy="65" r="5"/>
+      <text class="ds-event-name" x="113.5" y="49.8" text-anchor="middle" font-size="13">question</text>
+      <text class="ds-event-value" x="113.5" y="17.8" text-anchor="middle" font-size="13" font-family="ui-monospace, Menlo, Consolas, monospace"><tspan class="ds-field">delivered </tspan>{<tspan class="ds-entry ds-actor" data-actor="A" data-actor-n="1">A</tspan><tspan class="ds-entry ds-count" data-actor="A" data-actor-n="1">:1</tspan>}  <tspan x="113.5" dy="15"><tspan class="ds-field">delayed   </tspan><tspan class="ds-empty">(empty)</tspan></tspan></text>
+    </g>
+    <g class="ds-event" data-in="1" data-event="b-1" data-lane="b" data-actor="B" data-actor-n="2" data-notes="1">
+      <circle class="ds-event-dot" cx="185.5" cy="178" r="5"/>
+      <text class="ds-event-name" x="181.5" y="162.8" text-anchor="start" font-size="13">question from A</text>
+      <text class="ds-event-value" x="185.5" y="199.8" text-anchor="middle" font-size="13" font-family="ui-monospace, Menlo, Consolas, monospace"><tspan class="ds-field">delivered </tspan>{<tspan class="ds-entry ds-actor" data-actor="A" data-actor-n="1">A</tspan><tspan class="ds-entry ds-count" data-actor="A" data-actor-n="1">:1</tspan>}  <tspan x="185.5" dy="15"><tspan class="ds-field">delayed   </tspan><tspan class="ds-empty">(empty)</tspan></tspan></text>
+    </g>
+    <g class="ds-event" data-in="2" data-event="answer" data-lane="b" data-actor="B" data-actor-n="2" data-notes="1 2">
+      <circle class="ds-event-dot" cx="571.5" cy="178" r="5"/>
+      <text class="ds-event-name" x="575.5" y="162.8" text-anchor="end" font-size="13">answer</text>
+      <text class="ds-event-value" x="575.5" y="130.8" text-anchor="end" font-size="13" font-family="ui-monospace, Menlo, Consolas, monospace"><tspan class="ds-field">delivered </tspan>{<tspan class="ds-entry ds-actor" data-actor="A" data-actor-n="1">A</tspan><tspan class="ds-entry ds-count" data-actor="A" data-actor-n="1">:1</tspan>, <tspan class="ds-entry ds-actor" data-actor="B" data-actor-n="2">B</tspan><tspan class="ds-entry ds-count" data-actor="B" data-actor-n="2">:1</tspan>}<tspan x="575.5" dy="15"><tspan class="ds-field">delayed   </tspan><tspan class="ds-empty">(empty)</tspan>   </tspan></text>
+    </g>
+    <g class="ds-event" data-in="4" data-event="c-delays" data-lane="c" data-actor="C" data-actor-n="3" data-notes="2">
+      <circle class="ds-event-dot" cx="643.5" cy="291" r="5"/>
+      <text class="ds-event-name" x="639.5" y="275.8" text-anchor="start" font-size="13">answer from B</text>
+      <text class="ds-event-value" x="643.5" y="312.8" text-anchor="middle" font-size="13" font-family="ui-monospace, Menlo, Consolas, monospace"><tspan class="ds-field">delivered </tspan>{}          <tspan x="643.5" dy="15"><tspan class="ds-field">delayed   </tspan><tspan class="ds-dot-id ds-actor" data-actor="B" data-dot="B:1" data-actor-n="2">B</tspan><tspan class="ds-dot-id ds-count" data-actor="B" data-dot="B:1" data-actor-n="2">:1</tspan><tspan class="ds-sym">→</tspan><tspan class="ds-str">"answer"</tspan></tspan></text>
+    </g>
+    <g class="ds-event" data-in="6" data-event="a-2" data-lane="a" data-actor="A" data-actor-n="1">
+      <circle class="ds-event-dot" cx="715.5" cy="65" r="5"/>
+      <text class="ds-event-name" x="715.5" y="49.8" text-anchor="middle" font-size="13">answer from B</text>
+      <text class="ds-event-value" x="711.5" y="86.8" text-anchor="start" font-size="13" font-family="ui-monospace, Menlo, Consolas, monospace"><tspan class="ds-field">delivered </tspan>{<tspan class="ds-entry ds-actor" data-actor="A" data-actor-n="1">A</tspan><tspan class="ds-entry ds-count" data-actor="A" data-actor-n="1">:1</tspan>, <tspan class="ds-entry ds-actor" data-actor="B" data-actor-n="2">B</tspan><tspan class="ds-entry ds-count" data-actor="B" data-actor-n="2">:1</tspan>}<tspan x="711.5" dy="15"><tspan class="ds-field">delayed   </tspan><tspan class="ds-empty">(empty)</tspan>   </tspan></text>
+    </g>
+    <g class="ds-event" data-in="7" data-event="c-delivers" data-lane="c" data-actor="C" data-actor-n="3" data-notes="3">
+      <circle class="ds-event-dot" cx="839" cy="291" r="5"/>
+      <text class="ds-event-name" x="835" y="275.8" text-anchor="start" font-size="13">question from A</text>
+      <text class="ds-event-value" x="839" y="312.8" text-anchor="middle" font-size="13" font-family="ui-monospace, Menlo, Consolas, monospace"><tspan class="ds-field">delivered </tspan>{<tspan class="ds-entry ds-actor" data-actor="A" data-actor-n="1">A</tspan><tspan class="ds-entry ds-count" data-actor="A" data-actor-n="1">:1</tspan>, <tspan class="ds-entry ds-actor" data-actor="B" data-actor-n="2">B</tspan><tspan class="ds-entry ds-count" data-actor="B" data-actor-n="2">:1</tspan>}<tspan x="839" dy="15"><tspan class="ds-field">delayed   </tspan><tspan class="ds-empty">(empty)</tspan>   </tspan></text>
+    </g>
+  </g>
+  <g class="ds-marks">
+    <circle class="ds-ring" data-in="3" data-event="question" data-notes="1 3" cx="113.5" cy="65" r="9" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <circle class="ds-ring" data-in="3" data-event="answer" data-notes="1 2" cx="571.5" cy="178" r="9" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <circle class="ds-ring" data-in="5" data-event="c-delays" data-notes="2" cx="643.5" cy="291" r="9" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <circle class="ds-ring" data-in="8" data-event="c-delivers" data-notes="3" cx="839" cy="291" r="9" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <g class="ds-badge" data-in="3" data-note="1" data-event="question" data-relation="before">
+      <circle class="ds-badge-disc" cx="154.5" cy="46.5" r="7.5"/>
+      <text class="ds-badge-n" x="154.5" y="50.5" text-anchor="middle" font-size="11" fill="Canvas">1</text>
+    </g>
+    <g class="ds-badge" data-in="8" data-note="3" data-event="question">
+      <circle class="ds-badge-disc" cx="172.5" cy="46.5" r="7.5"/>
+      <text class="ds-badge-n" x="172.5" y="50.5" text-anchor="middle" font-size="11" fill="Canvas">3</text>
+    </g>
+    <g class="ds-badge" data-in="3" data-note="1" data-event="answer" data-relation="before">
+      <circle class="ds-badge-disc" cx="502" cy="159.5" r="7.5"/>
+      <text class="ds-badge-n" x="502" y="163.5" text-anchor="middle" font-size="11" fill="Canvas">1</text>
+    </g>
+    <g class="ds-badge" data-in="5" data-note="2" data-event="answer">
+      <circle class="ds-badge-disc" cx="520" cy="159.5" r="7.5"/>
+      <text class="ds-badge-n" x="520" y="163.5" text-anchor="middle" font-size="11" fill="Canvas">2</text>
+    </g>
+    <g class="ds-badge" data-in="5" data-note="2" data-event="c-delays">
+      <circle class="ds-badge-disc" cx="663" cy="291" r="7.5"/>
+      <text class="ds-badge-n" x="663" y="295" text-anchor="middle" font-size="11" fill="Canvas">2</text>
+    </g>
+    <g class="ds-badge" data-in="8" data-note="3" data-event="c-delivers">
+      <circle class="ds-badge-disc" cx="956.5" cy="272.5" r="7.5"/>
+      <text class="ds-badge-n" x="956.5" y="276.5" text-anchor="middle" font-size="11" fill="Canvas">3</text>
+    </g>
+  </g>
+</svg>
+</div>
+<div class="ds-play" hidden>
+<div class="ds-play-bar"></div>
+<div class="ds-beats">
+<p class="ds-beat" data-in="0" data-out="1" data-event="question"><span class="ds-beat-body"><span class="ds-lead ds-actor" data-actor="A" data-actor-n="1">question</span> on <span class="ds-actor" data-actor="A" data-actor-n="1">A</span> broadcasts it, stamped <code class="ds-v">{<span class="ds-entry ds-actor" data-actor="A" data-actor-n="1">A</span><span class="ds-entry ds-count" data-actor="A" data-actor-n="1">:1</span>}</code>: the stamp counts one broadcast from A, this one, and A delivers it as it sends it</span></p>
+<p class="ds-beat" data-in="1" data-out="2" data-cont="" data-event="b-1"><span class="ds-beat-body"><span class="ds-lead ds-actor" data-actor="B" data-actor-n="2">question from A</span> on <span class="ds-actor" data-actor="B" data-actor-n="2">B</span> delivers the question as it arrives: it is the first from A, and its stamp counts no other broadcast</span></p>
+<p class="ds-beat" data-in="2" data-out="3" data-cont="" data-event="answer"><span class="ds-beat-body"><span class="ds-lead ds-actor" data-actor="B" data-actor-n="2">answer</span> on <span class="ds-actor" data-actor="B" data-actor-n="2">B</span> replies, stamped <code class="ds-v">{<span class="ds-entry ds-actor" data-actor="A" data-actor-n="1">A</span><span class="ds-entry ds-count" data-actor="A" data-actor-n="1">:1</span>, <span class="ds-entry ds-actor" data-actor="B" data-actor-n="2">B</span><span class="ds-entry ds-count" data-actor="B" data-actor-n="2">:1</span>}</code>: the stamp counts the question, which B delivered before replying</span></p>
+<p class="ds-beat" data-in="3" data-out="4" data-cont="" data-note="1"><span class="ds-note-n" aria-hidden="true">1</span> <span class="ds-beat-body">The question happened before the answer: B delivered it, then answered. So everyone must deliver the question first</span></p>
+<p class="ds-beat" data-in="4" data-out="5" data-cont="" data-event="c-delays"><span class="ds-beat-body"><span class="ds-lead ds-actor" data-actor="C" data-actor-n="3">answer from B</span> on <span class="ds-actor" data-actor="C" data-actor-n="3">C</span> gets the answer first and delays it: it is the next from B, but C hasn't delivered the question it counts</span></p>
+<p class="ds-beat" data-in="5" data-out="6" data-cont="" data-note="2"><span class="ds-note-n" aria-hidden="true">2</span> <span class="ds-beat-body">The answer <code class="ds-v">{<span class="ds-entry ds-actor" data-actor="A" data-actor-n="1">A</span><span class="ds-entry ds-count" data-actor="A" data-actor-n="1">:1</span>, <span class="ds-entry ds-actor" data-actor="B" data-actor-n="2">B</span><span class="ds-entry ds-count" data-actor="B" data-actor-n="2">:1</span>}</code> reaches C first. It comes from another sender, so FIFO channels wouldn't stop that, but it counts a broadcast from A that C hasn't delivered, so C delays it</span></p>
+<p class="ds-beat" data-in="6" data-out="7" data-cont="" data-event="a-2"><span class="ds-beat-body"><span class="ds-lead ds-actor" data-actor="A" data-actor-n="1">answer from B</span> on <span class="ds-actor" data-actor="A" data-actor-n="1">A</span> delivers the answer as it arrives: A has delivered the question it counts</span></p>
+<p class="ds-beat" data-in="7" data-out="8" data-cont="" data-event="c-delivers"><span class="ds-beat-body"><span class="ds-lead ds-actor" data-actor="C" data-actor-n="3">question from A</span> on <span class="ds-actor" data-actor="C" data-actor-n="3">C</span> delivers the question, and with it the delayed answer</span></p>
+<p class="ds-beat" data-in="8" data-cont="" data-note="3"><span class="ds-note-n" aria-hidden="true">3</span> <span class="ds-beat-body">The question reaches C at last. C delivers it, and then the answer, which was waiting only on the question</span></p>
+</div>
+<div class="ds-state">
+<table aria-label="What each lane holds at this step">
+<thead><tr><td></td><th scope="col">delivered</th><th scope="col">delayed</th></tr></thead>
+<tbody>
+<tr class="ds-state-lane" data-lane="a" data-actor="A" data-actor-n="1">
+<th scope="row">A</th>
+<td><span class="ds-cells">
+<span class="ds-cell" data-in="0" data-out="6" data-event="question"><code class="ds-v">{<span class="ds-entry ds-actor ds-changed" data-actor="A" data-actor-n="1">A</span><span class="ds-entry ds-count ds-changed" data-actor="A" data-actor-n="1">:1</span>}</code></span>
+<span class="ds-cell" data-in="6" data-cont="" data-event="a-2"><code class="ds-v">{<span class="ds-entry ds-actor" data-actor="A" data-actor-n="1">A</span><span class="ds-entry ds-count" data-actor="A" data-actor-n="1">:1</span>, <span class="ds-entry ds-actor ds-changed" data-actor="B" data-actor-n="2">B</span><span class="ds-entry ds-count ds-changed" data-actor="B" data-actor-n="2">:1</span>}</code></span>
+</span></td>
+<td><span class="ds-cells">
+<span class="ds-cell" data-in="0" data-out="6" data-event="question"><code class="ds-v"><span class="ds-empty">(empty)</span></code></span>
+<span class="ds-cell" data-in="6" data-cont="" data-event="a-2"><code class="ds-v"><span class="ds-empty">(empty)</span></code></span>
+</span></td>
+</tr>
+<tr class="ds-state-lane" data-lane="b" data-actor="B" data-actor-n="2">
+<th scope="row">B</th>
+<td><span class="ds-cells">
+<span class="ds-cell" data-in="0" data-out="1"><code class="ds-v">{}</code></span>
+<span class="ds-cell" data-in="1" data-out="2" data-cont="" data-event="b-1"><code class="ds-v">{<span class="ds-entry ds-actor ds-changed" data-actor="A" data-actor-n="1">A</span><span class="ds-entry ds-count ds-changed" data-actor="A" data-actor-n="1">:1</span>}</code></span>
+<span class="ds-cell" data-in="2" data-cont="" data-event="answer"><code class="ds-v">{<span class="ds-entry ds-actor" data-actor="A" data-actor-n="1">A</span><span class="ds-entry ds-count" data-actor="A" data-actor-n="1">:1</span>, <span class="ds-entry ds-actor ds-changed" data-actor="B" data-actor-n="2">B</span><span class="ds-entry ds-count ds-changed" data-actor="B" data-actor-n="2">:1</span>}</code></span>
+</span></td>
+<td><span class="ds-cells">
+<span class="ds-cell" data-in="0" data-out="1"><code class="ds-v"><span class="ds-empty">(empty)</span></code></span>
+<span class="ds-cell" data-in="1" data-out="2" data-cont="" data-event="b-1"><code class="ds-v"><span class="ds-empty">(empty)</span></code></span>
+<span class="ds-cell" data-in="2" data-cont="" data-event="answer"><code class="ds-v"><span class="ds-empty">(empty)</span></code></span>
+</span></td>
+</tr>
+<tr class="ds-state-lane" data-lane="c" data-actor="C" data-actor-n="3">
+<th scope="row">C</th>
+<td><span class="ds-cells">
+<span class="ds-cell" data-in="0" data-out="4"><code class="ds-v">{}</code></span>
+<span class="ds-cell" data-in="4" data-out="7" data-cont="" data-event="c-delays"><code class="ds-v">{}</code></span>
+<span class="ds-cell" data-in="7" data-cont="" data-event="c-delivers"><code class="ds-v">{<span class="ds-entry ds-actor ds-changed" data-actor="A" data-actor-n="1">A</span><span class="ds-entry ds-count ds-changed" data-actor="A" data-actor-n="1">:1</span>, <span class="ds-entry ds-actor ds-changed" data-actor="B" data-actor-n="2">B</span><span class="ds-entry ds-count ds-changed" data-actor="B" data-actor-n="2">:1</span>}</code></span>
+</span></td>
+<td><span class="ds-cells">
+<span class="ds-cell" data-in="0" data-out="4"><code class="ds-v"><span class="ds-empty">(empty)</span></code></span>
+<span class="ds-cell" data-in="4" data-out="7" data-cont="" data-event="c-delays"><code class="ds-v"><span class="ds-dot-id ds-actor ds-changed" data-actor="B" data-dot="B:1" data-actor-n="2">B</span><span class="ds-dot-id ds-count ds-changed" data-actor="B" data-dot="B:1" data-actor-n="2">:1</span><span class="ds-sym">→</span><span class="ds-str ds-changed">"answer"</span></code></span>
+<span class="ds-cell" data-in="7" data-cont="" data-event="c-delivers"><code class="ds-v"><span class="ds-empty ds-changed">(empty)</span></code></span>
+</span></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<figcaption class="ds-fig-caption">
+<p class="ds-fig-title">Causal broadcast: an answer waits for its question</p>
+<ol class="ds-notes">
+<li class="ds-note" data-in="3" data-note="1" data-relation="before"><span class="ds-note-n" aria-hidden="true">1</span> <span class="ds-note-body">The question happened before the answer: B delivered it, then answered. So everyone must deliver the question first</span></li>
+<li class="ds-note" data-in="5" data-note="2"><span class="ds-note-n" aria-hidden="true">2</span> <span class="ds-note-body">The answer <code class="ds-v">{<span class="ds-entry ds-actor" data-actor="A" data-actor-n="1">A</span><span class="ds-entry ds-count" data-actor="A" data-actor-n="1">:1</span>, <span class="ds-entry ds-actor" data-actor="B" data-actor-n="2">B</span><span class="ds-entry ds-count" data-actor="B" data-actor-n="2">:1</span>}</code> reaches C first. It comes from another sender, so FIFO channels wouldn't stop that, but it counts a broadcast from A that C hasn't delivered, so C delays it</span></li>
+<li class="ds-note" data-in="8" data-note="3"><span class="ds-note-n" aria-hidden="true">3</span> <span class="ds-note-body">The question reaches C at last. C delivers it, and then the answer, which was waiting only on the question</span></li>
+</ol>
+</figcaption>
+</figure>

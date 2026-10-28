@@ -11,6 +11,7 @@ use std::cmp::Ordering;
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
+use dist_sys::broadcast::{self, Cbcast};
 use dist_sys::clock::hybrid::ManualClock;
 use dist_sys::clock::{
     CausalContext, Causality, Dot, Hlc, LamportClock, LamportStamp, Timestamp, VectorClock,
@@ -81,6 +82,7 @@ pub fn all() -> Vec<Figure> {
         mutex_overtaking(),
         mutex_crash(),
         bookkeeper_crash(),
+        cbcast_delay(),
     ];
     for f in &mut figures {
         if let (Form::Steps, Diagram::SpaceTime(d)) = (f.form(), &mut f.diagram) {
@@ -2381,6 +2383,143 @@ fn book_message_label(m: &BookMessage) -> Rich {
     }
 }
 
+/// Causal broadcast among three processes: the scenario in the library test
+/// `an_answer_waits_for_its_question`, which is the paper's Figure 2. A
+/// broadcasts a question, and B delivers it and broadcasts an answer, which
+/// reaches C before the question does. C delays the answer until the question
+/// arrives, then delivers both, the question first.
+///
+/// Stepped through, each process's state is in a panel from where it starts.
+fn cbcast_delay() -> Figure {
+    let mut d = SpaceTime::new("Causal broadcast: an answer waits for its question");
+    let (la, lb, lc) = (
+        d.actor_lane("A", 'A'),
+        d.actor_lane("B", 'B'),
+        d.actor_lane("C", 'C'),
+    );
+    let mut a: Cbcast<char, &str> = Cbcast::new('A');
+    let mut b: Cbcast<char, &str> = Cbcast::new('B');
+    let mut c: Cbcast<char, &str> = Cbcast::new('C');
+    for (lane, p) in [(la, &a), (lb, &b), (lc, &c)] {
+        d.start_value(lane, p.spans());
+    }
+    let payloads = |msgs: Vec<broadcast::Message<char, &'static str>>| -> Vec<&str> {
+        msgs.into_iter().map(|m| m.payload).collect()
+    };
+
+    let question = a.broadcast("question");
+    let a1 = d.event(la, "question", a.spans());
+    assert_eq!(question.stamp, VectorClock::from_iter([('A', 1)]));
+    assert_eq!(
+        a.delivered(),
+        &question.stamp,
+        "A delivers its own as it sends it"
+    );
+    d.narrate(
+        a1,
+        rich![
+            "broadcasts it, stamped ",
+            v(&question.stamp),
+            ": the stamp counts one broadcast from A, this one, and A delivers it as it sends it"
+        ],
+    );
+
+    assert_eq!(payloads(b.receive(question.clone())), ["question"]);
+    let b1 = d.event(lb, "question from A", b.spans());
+    let question_b = d.message(a1, b1, broadcast_label(&question));
+    d.narrate(
+        b1,
+        "delivers the question as it arrives: it is the first from A, and its stamp counts no other broadcast",
+    );
+
+    let answer = b.broadcast("answer");
+    let b2 = d.event(lb, "answer", b.spans());
+    assert_eq!(answer.stamp, VectorClock::from_iter([('A', 1), ('B', 1)]));
+    assert!(question.stamp < answer.stamp);
+    d.narrate(
+        b2,
+        rich![
+            "replies, stamped ",
+            v(&answer.stamp),
+            ": the stamp counts the question, which B delivered before replying"
+        ],
+    );
+
+    assert!(c.receive(answer.clone()).is_empty());
+    let c1 = d.event(lc, "answer from B", c.spans());
+    let answer_c = d.message(b2, c1, broadcast_label(&answer));
+    assert_eq!(c.delayed().collect::<Vec<_>>(), [&answer]);
+    assert_eq!(
+        answer.stamp.get(&'B'),
+        c.delivered().get(&'B') + 1,
+        "the next from B"
+    );
+    assert!(
+        answer.stamp.get(&'A') > c.delivered().get(&'A'),
+        "but C hasn't delivered the question"
+    );
+    d.narrate(
+        c1,
+        "gets the answer first and delays it: it is the next from B, but C hasn't delivered the question it counts",
+    );
+
+    assert_eq!(payloads(a.receive(answer.clone())), ["answer"]);
+    let a2 = d.event(la, "answer from B", a.spans());
+    let answer_a = d.message(b2, a2, broadcast_label(&answer));
+    d.narrate(
+        a2,
+        "delivers the answer as it arrives: A has delivered the question it counts",
+    );
+
+    assert_eq!(
+        c.receive(question.clone()),
+        [question.clone(), answer.clone()]
+    );
+    let c2 = d.event(lc, "question from A", c.spans());
+    let question_c = d.message(a1, c2, broadcast_label(&question));
+    assert_eq!(c.delayed().count(), 0);
+    assert!(
+        [a.delivered(), b.delivered()]
+            .iter()
+            .all(|v| *v == c.delivered())
+    );
+    d.narrate(c2, "delivers the question, and with it the delayed answer");
+
+    assert!(d.recorded_before(c1, c2), "the answer reaches C first");
+    assert_ne!(question.sender, answer.sender);
+    d.pin_event(a1, "question");
+    d.pin_event(b2, "answer");
+    d.pin_event(c1, "c-delays");
+    d.pin_event(c2, "c-delivers");
+    d.pin_message(question_b, "question-to-b");
+    d.pin_message(question_c, "question-to-c");
+    d.pin_message(answer_a, "answer-to-a");
+    d.pin_message(answer_c, "answer-to-c");
+    d.callout_before(
+        a1,
+        b2,
+        "The question happened before the answer: B delivered it, then answered. So everyone must deliver the question first",
+    );
+    d.callout(
+        b2,
+        c1,
+        rich![
+            "The answer ",
+            v(&answer.stamp),
+            " reaches C first. It comes from another sender, so FIFO channels wouldn't stop that, but it counts a broadcast from A that C hasn't delivered, so C delays it"
+        ],
+    );
+    d.callout(
+        a1,
+        c2,
+        "The question reaches C at last. C delivers it, and then the answer, which was waiting only on the question",
+    );
+    Figure {
+        stem: "cbcast-delay",
+        diagram: Diagram::SpaceTime(d),
+    }
+}
+
 /// The clock condition on the drawn graph: whatever an arrow or a lane carries
 /// into an event's past has a smaller Lamport time. `times` holds every event's
 /// but a crash's, which the clock never stamps.
@@ -2423,6 +2562,11 @@ fn message_label<P>(m: &Message<P>) -> Rich {
         Kind::Release => "release ",
     };
     rich![kind, Span::value(m.stamp.time().to_string())]
+}
+
+/// `question {A:1}`: what a broadcast carries, and its stamp.
+fn broadcast_label(m: &broadcast::Message<char, &str>) -> Rich {
+    rich![m.payload, " ", v(&m.stamp)]
 }
 
 fn sorted_values(r: &MvRegister<char, &'static str>) -> Vec<&'static str> {

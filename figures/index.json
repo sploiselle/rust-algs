@@ -15,6 +15,7 @@
     { "stem": "mutex-fifo", "kind": "space-time", "form": "steps", "title": "Lamport's mutex over FIFO channels: B waits its turn" },
     { "stem": "mutex-overtaking", "kind": "space-time", "form": "steps", "title": "Lamport's mutex: an overtaking message lets two processes in" },
     { "stem": "mutex-crash", "kind": "space-time", "form": "steps", "title": "Lamport's mutex: A crashes, and B never enters" },
-    { "stem": "bookkeeper-crash", "kind": "space-time", "form": "steps", "title": "Lamport's bookkeepers: A crashes, and B and C carry on" }
+    { "stem": "bookkeeper-crash", "kind": "space-time", "form": "steps", "title": "Lamport's bookkeepers: A crashes, and B and C carry on" },
+    { "stem": "cbcast-delay", "kind": "space-time", "form": "steps", "title": "Causal broadcast: an answer waits for its question" }
   ]
 }
