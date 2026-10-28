@@ -5,6 +5,7 @@
 //! so they live here. And since a crate can't implement a foreign trait such as
 //! `Display` for foreign types, they form a trait of this crate's own.
 
+use std::collections::BTreeSet;
 use std::fmt::{Debug, Display};
 
 use dist_sys::clock::{
@@ -12,6 +13,8 @@ use dist_sys::clock::{
 };
 use dist_sys::coordination::LamportMutex;
 use dist_sys::crdt::{LamportRegister, MvRegister};
+use dist_sys::state_machine::airline::Command;
+use dist_sys::state_machine::{Bookkeeper, Stamped, UserMachine};
 
 use crate::model::{Rich, Span};
 
@@ -339,6 +342,123 @@ impl<P: Ord + Clone + Display> Label for LamportMutex<P> {
     }
 }
 
+/// `reserve 221 Smith`: what the request asks, then the flight and the
+/// passenger.
+impl Label for Command {
+    fn label(&self) -> String {
+        match self {
+            Command::Reserve { flight, passenger } => format!("reserve {flight} {passenger}"),
+            Command::Cancel { flight, passenger } => format!("cancel {flight} {passenger}"),
+        }
+    }
+}
+
+/// `1:reserve 221 Smith`, the paper's `T:C`: the time (role `time`), then the
+/// command, all inside a `command` and keyed by it
+/// (`data-command="1:reserve 221 Smith"`), so a page can pick out one command
+/// wherever it appears.
+impl<C: Label> Label for Stamped<C> {
+    fn label(&self) -> String {
+        self.spans().plain()
+    }
+
+    fn spans(&self) -> Rich {
+        let command = self.command().label();
+        let key = format!("{}:{command}", self.time());
+        Rich {
+            lines: vec![
+                [
+                    Span::part(self.time().to_string(), "command").also("time"),
+                    Span::part(":", "command"),
+                    Span::part(command, "command"),
+                ]
+                .into_iter()
+                .map(|s| s.with("command", &key))
+                .collect(),
+            ],
+        }
+    }
+}
+
+/// `{A,B}`: the bookkeepers known to have voted for a command, each name an
+/// actor's (roles `voter` and `actor`).
+pub fn voters<P: Display>(voters: &BTreeSet<P>) -> Rich {
+    let mut line = vec![Span::value("{")];
+    for (i, p) in voters.iter().enumerate() {
+        if i > 0 {
+            line.push(Span::value(","));
+        }
+        let p = p.to_string();
+        line.push(
+            Span::part(p.clone(), "voter")
+                .also("actor")
+                .with("actor", p),
+        );
+    }
+    line.push(Span::value("}"));
+    Rich { lines: vec![line] }
+}
+
+/// A bookkeeper whose clock reads `now`, as [`fields`]: the time, which a
+/// bookkeeper is handed rather than keeps; each command stamped after `known`
+/// that it has heard of, with who it knows voted for it; for each other
+/// bookkeeper, when it sent the latest message this one has received from it;
+/// the latest time up to which it knows every accepted command; and `copy`, a
+/// field showing its copy of the user machine.
+///
+/// A whole command is too wide to repeat under every event, so a pending one
+/// is shown by its stamp's time alone, and no two pending commands may share
+/// a time (this panics if they do). That time is still keyed by the whole
+/// command, as [`Stamped`]'s parts are.
+///
+/// ```text
+/// clock   12
+/// pending 1 {A,C}
+/// heard   A:4 B:0
+/// known   0
+/// booked  (empty)
+/// ```
+pub fn bookkeeper<P, M>(now: u64, b: &Bookkeeper<P, M>, copy: (&str, Rich)) -> Rich
+where
+    P: Ord + Clone + Display,
+    M: UserMachine,
+    M::Command: Ord + Label,
+{
+    let mut pending = Rich::default();
+    let mut times = BTreeSet::new();
+    for (i, (command, who)) in b.pending().enumerate() {
+        assert!(
+            times.insert(command.time()),
+            "two pending commands stamped {}",
+            command.time()
+        );
+        if i > 0 {
+            pending = pending.then(Span::value(", "));
+        }
+        let time = Span::part(command.time().to_string(), "command")
+            .also("time")
+            .with("command", command.label());
+        pending = pending.then(time).then(Span::value(" ")).then(voters(who));
+    }
+    if pending.is_empty() {
+        pending = Span::part("(empty)", "empty").into();
+    }
+    let mut heard = Vec::new();
+    for (i, (p, sent)) in b.heard().enumerate() {
+        if i > 0 {
+            heard.push(Span::value(" "));
+        }
+        heard.extend(actor_parts(&p.to_string(), sent, "heard"));
+    }
+    fields(vec![
+        ("clock", Span::part(now.to_string(), "clock").into()),
+        ("pending", pending),
+        ("heard", Rich { lines: vec![heard] }),
+        ("known", Span::part(b.known().to_string(), "known").into()),
+        copy,
+    ])
+}
+
 /// The relation symbol: `→` before, `←` after, `=` equal, `∥` concurrent.
 impl Label for Causality {
     fn label(&self) -> String {
@@ -374,6 +494,8 @@ pub fn sorted_entries<A: Ord + Clone, V: Clone>(r: &MvRegister<A, V>) -> Vec<(&D
 #[cfg(test)]
 mod tests {
     use super::*;
+    use dist_sys::state_machine::Config;
+    use dist_sys::state_machine::airline::Airline;
 
     #[test]
     fn split_fields_inverts_fields() {
@@ -507,6 +629,50 @@ mod tests {
             a.label(),
             "L\u{a0}\u{a0}\u{a0}\u{a0}\u{a0}1\nqueue\u{a0}(1,A)\nheard\u{a0}B:0\nholds\u{a0}no"
         );
+    }
+
+    #[test]
+    fn stamped_command() {
+        let command = Stamped::new(1, Command::reserve(221, "Smith"));
+        assert_eq!(command.label(), "1:reserve 221 Smith");
+        assert_eq!(Command::cancel(221, "Smith").label(), "cancel 221 Smith");
+        let spans = command.spans();
+        assert!(
+            spans.lines[0]
+                .iter()
+                .all(|s| s.data == [("command", "1:reserve 221 Smith".to_string())])
+        );
+        assert_eq!(spans.lines[0][0].roles, ["command", "time"]);
+    }
+
+    #[test]
+    fn bookkeeper_shows_a_pending_command_by_its_time() {
+        let config = Config::majority(['A', 'B', 'C'], 10, 40);
+        let mut a = Bookkeeper::new('A', config, Airline::new([(221, 1)]));
+        a.submit(4, Stamped::new(1, Command::reserve(221, "Smith")));
+        let r = bookkeeper(4, &a, ("booked", Rich::from("-")));
+        assert_eq!(
+            r.plain(),
+            "clock\u{a0}\u{a0}\u{a0}4\npending\u{a0}1 {A}\nheard\u{a0}\u{a0}\u{a0}B:0 C:0\nknown\u{a0}\u{a0}\u{a0}0\nbooked\u{a0}\u{a0}-"
+        );
+        let time = r.lines[1].iter().find(|s| s.text == "1").unwrap();
+        assert_eq!(time.data, [("command", "1:reserve 221 Smith".to_string())]);
+        assert_eq!(time.roles, ["command", "time"]);
+        assert!(
+            r.lines[1]
+                .iter()
+                .any(|s| s.roles == ["voter", "actor"] && s.text == "A")
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "two pending commands stamped 1")]
+    fn bookkeeper_needs_a_time_per_pending_command() {
+        let config = Config::majority(['A', 'B', 'C'], 10, 40);
+        let mut a = Bookkeeper::new('A', config, Airline::new([(221, 1)]));
+        a.submit(4, Stamped::new(1, Command::reserve(221, "Smith")));
+        a.submit(5, Stamped::new(1, Command::reserve(221, "Jones")));
+        bookkeeper(5, &a, ("booked", Rich::from("-")));
     }
 
     #[test]

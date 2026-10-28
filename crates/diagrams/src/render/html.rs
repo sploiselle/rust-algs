@@ -553,9 +553,12 @@ mod tests {
                     })
                     .collect();
                 assert!(!cells.is_empty(), "{stem}: no panel value from {key}");
+                let s = t.event(EventId(i));
                 for cell in &cells {
+                    // A value shown from the first step to the last is untagged.
+                    let untagged = s == 0 && !cell.contains(" data-in=");
                     assert!(
-                        cell.contains(&format!(r#" data-in="{}""#, t.event(EventId(i)))),
+                        cell.contains(&format!(r#" data-in="{s}""#)) || untagged,
                         "{stem}: {key}'s value shows from another step: {cell}"
                     );
                 }

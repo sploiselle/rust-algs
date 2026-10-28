@@ -7,6 +7,7 @@
 //! changes under a figure the assert fails loudly instead of a wrong picture
 //! being drawn.
 
+use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use dist_sys::clock::hybrid::ManualClock;
@@ -15,8 +16,10 @@ use dist_sys::clock::{
 };
 use dist_sys::coordination::{Kind, LamportMutex, Message};
 use dist_sys::crdt::{LamportRegister, MvRegister};
+use dist_sys::state_machine::airline::{Airline, Command, Response};
+use dist_sys::state_machine::{self, Bookkeeper, Config, Stamped};
 
-use crate::label::{Label, fields, phrase, sorted_entries, split_fields, v};
+use crate::label::{Label, bookkeeper, fields, phrase, sorted_entries, split_fields, v, voters};
 use crate::model::{Claim, Diagram, DotLine, EventId, LaneId, Rich, SpaceTime, Span, rich};
 
 /// A figure and the file stem its renderings are written under.
@@ -73,6 +76,7 @@ pub fn all() -> Vec<Figure> {
         mutex_fifo(),
         mutex_overtaking(),
         mutex_crash(),
+        bookkeeper_crash(),
     ];
     for f in &mut figures {
         if let (Form::Steps, Diagram::SpaceTime(d)) = (f.form(), &mut f.diagram) {
@@ -1964,6 +1968,305 @@ fn mutex_crash_run() -> CrashRun {
         a: vec![a1, crash],
         b: vec![b1, b2, b3, b4],
         c: vec![c1, c2, c3, c4],
+    }
+}
+
+/// Lamport's reliable state machine with a crash, the counterpart of
+/// `mutex_crash`. A user's reservation reaches A, which votes for it and
+/// crashes as its vote goes out. B and C vote too, and once voting has closed
+/// and each has heard so from the other, both book the passenger: between
+/// them B and C meet every majority graph, so they need nothing more from A.
+/// The opening of the library test
+/// `three_bookkeepers_accept_and_execute_a_command`, on the airline, with A
+/// crashing once it has voted.
+///
+/// Stepped through, each bookkeeper's state is in a panel from where it
+/// starts.
+fn bookkeeper_crash() -> Figure {
+    let mut r = bookkeeper_crash_run();
+    for (lane, me) in r.lanes.into_iter().zip(['A', 'B', 'C']) {
+        let fresh = Bookkeeper::new(me, r.config.clone(), Airline::new([(FLIGHT, 1)]));
+        r.d.start_value(lane, bookkeeper_spans(0, &fresh));
+    }
+    // The run asserts every time, vote and decision these sentences give.
+    let [a, b, c] = [&r.a, &r.b, &r.c];
+    assert_eq!((r.config.delta(), FLIGHT), (10, 221));
+    let set = |ps: &[char]| voters(&ps.iter().copied().collect::<BTreeSet<char>>());
+    r.d.narrate(
+        a[0],
+        "votes to accept the user's command: reserve a seat on flight 221 for Smith. The user issued it at 1, so it's stamped 1, and it reached A at 4, before 1 + δ = 11 (δ is 10 here). A sends its vote to B and C",
+    );
+    r.d.narrate(
+        a[1],
+        "crashes as its vote goes out. Nothing sent to A from now on is delivered",
+    );
+    r.d.narrate(
+        b[0],
+        rich![
+            "hears of the command at 9, before 1 + 2δ = 21, and votes too. ",
+            set(&['A', 'B']),
+            " is a majority graph, so the command is accepted, and the message B sends with its vote says so"
+        ],
+    );
+    r.d.narrate(
+        c[0],
+        rich![
+            "votes too: ",
+            set(&['A', 'C']),
+            " is another majority graph, so C's message says the command is accepted, as B's did"
+        ],
+    );
+    r.d.narrate(
+        b[1],
+        "learns that C voted too. The message B sent with its vote at 9 already said the command is accepted, so B sends nothing",
+    );
+    r.d.narrate(c[1], "learns that B voted too, and likewise sends nothing");
+    r.d.narrate(
+        b[2],
+        rich![
+            "at 21: from now on B votes for nothing stamped 1 or earlier, and its message says so just by when it was sent. B can't execute the command yet: it has heard from A only up to 4 and from C only up to 12, so for all B knows, ",
+            set(&['A', 'C']),
+            " accepted another command stamped 1"
+        ],
+    );
+    r.d.narrate(c[2], "at 21 too, and C's message says so the same way");
+    r.d.narrate(
+        b[3],
+        "hears that C's voting closed at 21 too. Every majority graph includes B or C, so no command stamped 1 or earlier that neither voted for can be accepted. B now knows every accepted command up to 1, says so to C, and executes the one there is: Smith is booked",
+    );
+    r.d.narrate(
+        c[3],
+        "hears the same, books Smith too, and says so to B. The figure ends with both of those messages on their way. Neither B nor C has heard from A since the vote it sent at 4",
+    );
+    Figure {
+        stem: "bookkeeper-crash",
+        diagram: Diagram::SpaceTime(r.d),
+    }
+}
+
+/// The flight the bookkeepers' airline flies, with one seat.
+const FLIGHT: u32 = 221;
+
+/// The bookkeeper crash run.
+struct BookkeeperRun {
+    d: SpaceTime,
+    /// The configuration the bookkeepers share.
+    config: Config<char>,
+    lanes: [LaneId; 3],
+    /// A's events: its vote, then its crash.
+    a: Vec<EventId>,
+    /// B's events in order.
+    b: Vec<EventId>,
+    /// C's events in order.
+    c: Vec<EventId>,
+}
+
+fn bookkeeper_crash_run() -> BookkeeperRun {
+    const DELTA: u64 = 10;
+    let config = Config::majority(['A', 'B', 'C'], DELTA, 4 * DELTA);
+    assert_eq!(config.window(), 2 * DELTA, "voting closes at T + 2δ");
+    let mut d = SpaceTime::new("Lamport's bookkeepers: A crashes, and B and C carry on");
+    let (la, lb, lc) = (
+        d.actor_lane("A", 'A'),
+        d.actor_lane("B", 'B'),
+        d.actor_lane("C", 'C'),
+    );
+    let book = |me| Bookkeeper::new(me, config.clone(), Airline::new([(FLIGHT, 1)]));
+    let (mut a, mut b, mut c) = (book('A'), book('B'), book('C'));
+    // What each bookkeeper's clock last read.
+    let (mut ta, mut tb, mut tc) = (0, 0, 0);
+    let command = Stamped::new(1, Command::reserve(FLIGHT, "Smith"));
+    let set = |ps: &[char]| ps.iter().copied().collect::<BTreeSet<char>>();
+    let record = |d: &mut SpaceTime, lane, name, now, p: &Bookkeeper<char, Airline>| {
+        d.event(lane, name, bookkeeper_spans(now, p))
+    };
+    // The user issues the command at 1, and it reaches A at 4.
+    run_clock(&mut a, &mut ta, 4);
+    assert!(4 < command.time() + DELTA, "in time for A to vote");
+    let vote_a = only_book(a.submit(4, command.clone()));
+    assert_eq!(votes_of(&vote_a, &command), set(&['A']));
+    let a1 = record(&mut d, la, "from user", ta, &a);
+    let crash = d.crash(la, "crash");
+
+    // A's vote reaches B and C, each in time to vote too, and each vote
+    // completes a majority graph.
+    assert!(
+        12 < command.time() + 2 * DELTA,
+        "in time for B and C to vote"
+    );
+    let notice_b = only_book(deliver(&mut b, &mut tb, 9, vote_a.clone()));
+    assert_eq!(votes_of(&notice_b, &command), set(&['A', 'B']));
+    assert!(config.contains_majority_graph(&set(&['A', 'B'])));
+    let b1 = record(&mut d, lb, "vote from A", tb, &b);
+    let vote_a_b = d.message(a1, b1, book_message_label(&vote_a));
+    let notice_c = only_book(deliver(&mut c, &mut tc, 12, vote_a.clone()));
+    assert_eq!(votes_of(&notice_c, &command), set(&['A', 'C']));
+    assert!(config.contains_majority_graph(&set(&['A', 'C'])));
+    let c1 = record(&mut d, lc, "vote from A", tc, &c);
+    let vote_a_c = d.message(a1, c1, book_message_label(&vote_a));
+
+    // B and C each learn the other voted, which changes nothing they say.
+    assert!(deliver(&mut b, &mut tb, 14, notice_c.clone()).is_empty());
+    let b2 = record(&mut d, lb, "votes from C", tb, &b);
+    d.message(c1, b2, book_message_label(&notice_c));
+    assert!(deliver(&mut c, &mut tc, 15, notice_b.clone()).is_empty());
+    let c2 = record(&mut d, lc, "votes from B", tc, &c);
+    d.message(b1, c2, book_message_label(&notice_b));
+    for p in [&b, &c] {
+        let pending: Vec<_> = p.pending().collect();
+        assert_eq!(pending, [(&command, &set(&['A', 'B', 'C']))]);
+        assert_eq!(p.known(), 0);
+    }
+
+    // Voting on the command closes at 1 + 2δ, and each says so. Neither can
+    // execute it yet: until B hears from A or C in a message sent at 21 or
+    // later, {A, C} could have accepted another command stamped 1, and
+    // likewise {A, B} for C.
+    let closes = command.time() + config.window();
+    assert_eq!(closes, 21);
+    run_clock(&mut b, &mut tb, closes);
+    let closed_b = only_book(b.advance_to(closes));
+    let b3 = record(&mut d, lb, "voting closes", tb, &b);
+    run_clock(&mut c, &mut tc, closes);
+    let closed_c = only_book(c.advance_to(closes));
+    let c3 = record(&mut d, lc, "voting closes", tc, &c);
+    for (p, closed, other) in [(&b, &closed_b, 'C'), (&c, &closed_c, 'B')] {
+        assert_eq!((closed.sent, closed.votes.is_none()), (closes, true));
+        assert_eq!(p.known(), 0, "{} executes nothing yet", p.me());
+        let heard = p.heard().find(|(q, _)| **q == other).unwrap().1;
+        assert!(heard < closes, "{} hasn't heard from {other} since", p.me());
+        assert!(config.contains_majority_graph(&set(&['A', other])));
+    }
+    assert_eq!(b.heard().collect::<Vec<_>>(), [(&'A', 4), (&'C', 12)]);
+
+    // Each hears the other's, and both execute the command.
+    let known_b = only_book(deliver(&mut b, &mut tb, 25, closed_c.clone()));
+    let b4 = record(&mut d, lb, "close from C", tb, &b);
+    let closed_c_b = d.message(c3, b4, book_message_label(&closed_c));
+    let known_c = only_book(deliver(&mut c, &mut tc, 26, closed_b.clone()));
+    let c4 = record(&mut d, lc, "close from B", tc, &c);
+    let closed_b_c = d.message(b3, c4, book_message_label(&closed_b));
+    assert!(config.meets_every_majority_graph(&set(&['B', 'C'])));
+    for p in [&b, &c] {
+        assert_eq!(p.known(), 1, "{} knows everything up to 1", p.me());
+        assert_eq!(p.executed(), [(command.clone(), Response::Booked)]);
+        assert_eq!(
+            p.machine().seated(FLIGHT).unwrap().collect::<Vec<_>>(),
+            ["Smith"]
+        );
+        assert_eq!(p.pending().count(), 0);
+        // A's vote is the last either heard from it.
+        assert_eq!(p.heard().find(|(q, _)| **q == 'A'), Some((&'A', 4)));
+    }
+    assert!(a.executed().is_empty(), "A crashed before it could execute");
+    // Each tells the other it knows everything up to 1, and the figure ends
+    // with both messages on their way. B and C sent nothing else, and every
+    // message they sent went to A too, where it was never delivered.
+    for m in [&known_b, &known_c] {
+        assert_eq!((m.known, m.votes.is_none()), (1, true));
+    }
+    assert_eq!((known_b.sent, known_c.sent), (25, 26));
+
+    d.pin_event(a1, "a-votes");
+    d.pin_event(crash, "a-crashes");
+    d.pin_event(b3, "b-closes");
+    d.pin_event(c3, "c-closes");
+    d.pin_event(b4, "b-executes");
+    d.pin_event(c4, "c-executes");
+    d.pin_message(vote_a_b, "vote-a-b");
+    d.pin_message(vote_a_c, "vote-a-c");
+    d.pin_message(closed_c_b, "closed-c-b");
+    d.pin_message(closed_b_c, "closed-b-c");
+    d.callout(
+        a1,
+        crash,
+        rich![
+            "A votes for ",
+            v(&command),
+            " and crashes. Its vote still reaches B and C, but everything sent to A afterwards goes nowhere"
+        ],
+    );
+    d.callout(
+        b4,
+        c4,
+        rich![
+            "B and C have each heard from the other since voting closed at 21, and every majority graph includes B or C, so without A they know every accepted command up to 1: both book Smith"
+        ],
+    );
+    BookkeeperRun {
+        d,
+        config,
+        lanes: [la, lb, lc],
+        a: vec![a1, crash],
+        b: vec![b1, b2, b3, b4],
+        c: vec![c1, c2, c3, c4],
+    }
+}
+
+/// A bookkeeper's state with its clock reading `now`, its copy shown as who
+/// is booked on the flight.
+fn bookkeeper_spans(now: u64, p: &Bookkeeper<char, Airline>) -> Rich {
+    let mut booked = Rich::default();
+    for (i, passenger) in p.machine().seated(FLIGHT).expect("the flight").enumerate() {
+        if i > 0 {
+            booked = booked.then(Span::value(" "));
+        }
+        booked = booked.then(Span::part(passenger, "booked"));
+    }
+    if booked.is_empty() {
+        booked = Span::part("(empty)", "empty").into();
+    }
+    bookkeeper(now, p, ("booked", booked))
+}
+
+/// Run `p`'s clock on from `*clock` to just before `now`, one unit at a time
+/// as its driver must, asserting nothing comes of it, and set `*clock` to
+/// `now` for the call that follows.
+fn run_clock(p: &mut Bookkeeper<char, Airline>, clock: &mut u64, now: u64) {
+    assert!(now > *clock, "a clock moves forward");
+    let known = p.known();
+    for t in *clock + 1..now {
+        assert!(p.advance_to(t).is_empty(), "{} sends at {t}", p.me());
+        assert_eq!(p.known(), known, "{} learns something at {t}", p.me());
+    }
+    *clock = now;
+}
+
+/// Deliver `msg` to `p` at `now`, less than `δ` after it was sent, as a
+/// working line does.
+fn deliver(
+    p: &mut Bookkeeper<char, Airline>,
+    clock: &mut u64,
+    now: u64,
+    msg: BookMessage,
+) -> Vec<BookMessage> {
+    assert!(msg.sent < now && now - msg.sent < p.config().delta());
+    run_clock(p, clock, now);
+    p.receive(now, msg)
+}
+
+type BookMessage = state_machine::Message<char, Command>;
+
+/// The one message a bookkeeper sends, to every other.
+fn only_book(mut msgs: Vec<BookMessage>) -> BookMessage {
+    assert_eq!(msgs.len(), 1, "one message, to everyone");
+    msgs.pop().unwrap()
+}
+
+/// Who `msg` says voted for `command`.
+fn votes_of(msg: &BookMessage, command: &Stamped<Command>) -> BTreeSet<char> {
+    let votes = msg.votes.as_ref().expect("votes");
+    assert_eq!(&votes.command, command);
+    votes.voters.clone()
+}
+
+/// `votes {A,B}`, for a message carrying votes (the figure has one command,
+/// so it leaves out which), or `sent 21` for one whose news is when it was
+/// sent.
+fn book_message_label(m: &BookMessage) -> Rich {
+    match &m.votes {
+        Some(votes) => rich!["votes ", voters(&votes.voters)],
+        None => rich!["sent ", Span::value(m.sent.to_string())],
     }
 }
 
