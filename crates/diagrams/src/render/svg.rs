@@ -51,7 +51,7 @@ const STACK_GAP: f64 = 4.0; // between stacked text blocks
 const CLEAR: f64 = 2.0; // an arrow must miss text by this much
 const HEAD_CLEAR: f64 = 1.0; // and a head in flight, by this much
 const PUSH: f64 = 16.0; // how far events are pushed apart per collision
-const MIN_W: f64 = 420.0; // captions wrap to the figure's width, but not below this
+const MIN_W: f64 = 420.0; // no figure is narrower; captions wrap to its width
 const BADGE_R: f64 = 7.5; // note badge radius
 const BADGE_GAP: f64 = 3.0; // between badges on one event
 const LANE_PX: f64 = 14.0;
@@ -739,6 +739,19 @@ fn place(d: &SpaceTime, quad: &[[bool; 4]], ringed: &[bool], moves: &Moves) -> G
             }
         }
         x.push(xi + moves.extra[i]);
+    }
+    // A short scenario spreads out until it reaches MIN_W, rather than being
+    // drawn tiny beside the others. Every gap widens by the same amount, so
+    // nothing that was clear of its neighbours stops being so.
+    let right = (0..x.len())
+        .map(|i| x[i] + above[i].extent().1.max(below[i].extent().1).max(RING))
+        .fold(0.0, f64::max);
+    let short = MIN_W - GAP - right;
+    if x.len() > 1 && short > 0.0 {
+        let widen = short / (x.len() - 1) as f64;
+        for (i, xi) in x.iter_mut().enumerate() {
+            *xi += widen * i as f64;
+        }
     }
 
     let (mut name, mut annotation) = (vec![None; events.len()], vec![None; events.len()]);
@@ -2094,6 +2107,21 @@ mod tests {
         d.event(lane, "", "x".repeat(40));
         let l = layout(&d, true);
         assert!(l.x[1] - l.x[0] > COL_W);
+    }
+
+    #[test]
+    fn a_short_scenario_spreads_out() {
+        let mut d = SpaceTime::new("t");
+        let (a, b) = (d.lane("A"), d.lane("B"));
+        let sent = d.event(a, "A1", Rich::default());
+        let got = d.event(b, "B1", Rich::default());
+        d.message(sent, got, "m");
+        let l = layout(&d, false);
+        assert!(l.width >= MIN_W);
+        assert!(
+            l.x[1] - l.x[0] > COL_W,
+            "the events spread out, not just the lanes"
+        );
     }
 
     #[test]

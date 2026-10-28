@@ -7,6 +7,7 @@
 //! changes under a figure the assert fails loudly instead of a wrong picture
 //! being drawn.
 
+use std::cmp::Ordering;
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
@@ -64,6 +65,8 @@ impl Form {
 /// Every figure, in the order their files are written.
 pub fn all() -> Vec<Figure> {
     let mut figures = vec![
+        concurrency_one_message(),
+        concurrency_crossing_writes(),
         lamport_taking_turns(),
         lamport_clock_trace(),
         vector_clock_trace(),
@@ -84,6 +87,160 @@ pub fn all() -> Vec<Figure> {
         }
     }
     figures
+}
+
+/// One message from A to B, for a reader who hasn't met a clock yet: it puts
+/// A's send before B's receive, and leaves the event B has in between
+/// unordered with A's. Nothing is drawn under the events. Vector clocks, kept
+/// off screen, check the arrows and give the comparisons the notes quote.
+fn concurrency_one_message() -> Figure {
+    let mut d = SpaceTime::new("Concurrency: one message from A to B");
+    let (a, b) = ('A', 'B');
+    let (la, lb) = (d.actor_lane("A", a), d.actor_lane("B", b));
+    let (mut va, mut vb) = (VectorClock::new(), VectorClock::new());
+    let mut clocks: Vec<(EventId, VectorClock<char>)> = Vec::new();
+
+    let m = va.send(&a);
+    let a1 = d.event(la, "A1", Rich::default());
+    clocks.push((a1, va.clone()));
+    vb.tick(&b);
+    let b1 = d.event(lb, "B1", Rich::default());
+    clocks.push((b1, vb.clone()));
+    vb.receive(&b, &m);
+    let b2 = d.event(lb, "B2", Rich::default());
+    clocks.push((b2, vb.clone()));
+    let m_msg = d.message(a1, b2, "m");
+
+    assert_arrows_match_clocks(&d, &clocks);
+    let clock = |e: EventId| &clocks.iter().find(|(x, _)| *x == e).unwrap().1;
+    let a1_b1 = clock(a1).partial_cmp(clock(b1));
+    let a1_b2 = clock(a1).partial_cmp(clock(b2));
+    assert_eq!((a1_b1, a1_b2), (None, Some(Ordering::Less)));
+    assert!(
+        d.recorded_before(a1, b1),
+        "the note says B1 is later on the wall clock"
+    );
+    for (e, _) in &clocks {
+        let key = d.events()[e.0].name.to_lowercase();
+        d.pin_event(*e, &key);
+    }
+    d.pin_message(m_msg, "m");
+    d.narrate(b1, "does something of its own while m is still on its way");
+    d.callout_concurrent(
+        a1,
+        b1,
+        rich![
+            "A1 and B1 are concurrent: B1 is later on the wall clock, but m hasn't reached B yet, so nothing at B1 can depend on A1. Comparing them gives ",
+            Span::value(format!("{a1_b1:?}"))
+        ],
+    );
+    d.callout_before(
+        a1,
+        b2,
+        rich![
+            "A1 comes before B2: B2 is B receiving the message A sent at A1. Comparing them gives ",
+            Span::value(format!("{a1_b2:?}"))
+        ],
+    );
+    Figure {
+        stem: "concurrency-one-message",
+        diagram: Diagram::SpaceTime(d),
+    }
+}
+
+/// A and B both write x and send the write to the other. B writes after A on
+/// the wall clock but before A's write reaches it, so the writes are
+/// concurrent, and receiving them doesn't order them. Nothing is drawn under
+/// the events: a register holding x would need stamps or dots, which come
+/// later, and would decide which write wins. Vector clocks, kept off screen,
+/// check the arrows.
+fn concurrency_crossing_writes() -> Figure {
+    let mut d = SpaceTime::new("Concurrency: A and B both write x and tell each other");
+    let (a, b) = ('A', 'B');
+    let (la, lb) = (d.actor_lane("A", a), d.actor_lane("B", b));
+    let (mut va, mut vb) = (VectorClock::new(), VectorClock::new());
+    let mut clocks: Vec<(EventId, VectorClock<char>)> = Vec::new();
+
+    let from_a = va.send(&a);
+    let a1 = d.event(la, "A1", Rich::default());
+    clocks.push((a1, va.clone()));
+    let from_b = vb.send(&b);
+    let b1 = d.event(lb, "B1", Rich::default());
+    clocks.push((b1, vb.clone()));
+    va.receive(&a, &from_b);
+    let a2 = d.event(la, "A2", Rich::default());
+    clocks.push((a2, va.clone()));
+    vb.receive(&b, &from_a);
+    let b2 = d.event(lb, "B2", Rich::default());
+    clocks.push((b2, vb.clone()));
+    let x_from_a = d.message(a1, b2, "write x");
+    let x_from_b = d.message(b1, a2, "write x");
+
+    assert_arrows_match_clocks(&d, &clocks);
+    let clock = |e: EventId| &clocks.iter().find(|(x, _)| *x == e).unwrap().1;
+    assert_eq!(clock(a1).partial_cmp(clock(b1)), None);
+    assert!(
+        d.recorded_before(a1, b1),
+        "the note says B wrote later on the wall clock"
+    );
+    for knower in [a2, b2] {
+        for write in [a1, b1] {
+            assert!(
+                d.happened_before(write, knower),
+                "each machine ends up knowing of both writes"
+            );
+        }
+    }
+    for (e, _) in &clocks {
+        let key = d.events()[e.0].name.to_lowercase();
+        d.pin_event(*e, &key);
+    }
+    d.pin_message(x_from_a, "x-from-a");
+    d.pin_message(x_from_b, "x-from-b");
+    d.narrate(a1, "writes x and sends the write to B");
+    d.narrate(
+        b1,
+        "writes x too, and sends it to A, while A's write is still on its way",
+    );
+    d.narrate(a2, "receives B's write, and now knows of both");
+    d.narrate(b2, "receives A's write, and now knows of both");
+    d.callout_concurrent(
+        a1,
+        b1,
+        "A1 and B1 are concurrent: B wrote x later on the wall clock, but before A's write reached it, so neither write knew of the other",
+    );
+    d.callout(
+        a2,
+        b2,
+        "Each machine now knows of both writes, but that doesn't order them: they are still concurrent, so nothing says which should win",
+    );
+    Figure {
+        stem: "concurrency-crossing-writes",
+        diagram: Diagram::SpaceTime(d),
+    }
+}
+
+/// The arrows are wired by hand. The graph they draw must agree with the
+/// clocks about every pair of events, or the picture would contradict the
+/// clocks behind it.
+fn assert_arrows_match_clocks(d: &SpaceTime, clocks: &[(EventId, VectorClock<char>)]) {
+    assert_eq!(
+        clocks.len(),
+        d.events().len(),
+        "every event's clock is checked"
+    );
+    let pasts = d.pasts();
+    for (x, cx) in clocks {
+        for (y, cy) in clocks {
+            assert_eq!(
+                pasts[y.0].contains(x),
+                cx < cy,
+                "the drawn arrows and the clocks disagree about {} and {}",
+                cx.label(),
+                cy.label()
+            );
+        }
+    }
 }
 
 /// Three processes, two messages: the scenario in the library test
@@ -203,26 +360,7 @@ fn vector_trace() -> VectorTrace {
     let a1_c2 = a1_clock.compare(&c2_clock);
     assert_eq!(a1_c2, Causality::Before);
     assert!(a1_clock < m2, "m2 carries A1 because B received m1 first");
-    // The arrows are wired by hand above. The graph they draw must agree with
-    // the clocks about every pair of events, or the picture would contradict
-    // the values printed on it.
-    assert_eq!(
-        clocks.len(),
-        d.events().len(),
-        "every event's clock is checked"
-    );
-    let pasts = d.pasts();
-    for (x, cx) in &clocks {
-        for (y, cy) in &clocks {
-            assert_eq!(
-                pasts[y.0].contains(x),
-                cx < cy,
-                "the drawn arrows and the clocks disagree about {} and {}",
-                cx.label(),
-                cy.label()
-            );
-        }
-    }
+    assert_arrows_match_clocks(&d, &clocks);
     assert!(
         d.recorded_before(b3, a3),
         "the note says A3 is later in real time"
@@ -1948,18 +2086,19 @@ fn mutex_crash_run() -> CrashRun {
         a1,
         crash,
         rich![
-            "A crashes holding the earliest request, ",
+            "A crashes with the earliest request, ",
             v(&stamp(1, 'A')),
-            ". Everything sent to it afterwards, B's and C's requests and their acks, goes nowhere"
+            ", still outstanding. Nothing sent to A is ever delivered: not B's and C's requests, already on their way, nor the acks they send for ",
+            v(&stamp(1, 'A'))
         ],
     );
     d.callout(
         b4,
         c4,
         rich![
-            "B and C have each heard from the other past their own requests, but ",
+            "B and C have each heard from the other past their own requests, but from A only at ",
             v(&stamp(1, 'A')),
-            " heads both queues, and only A can release it: neither ever enters"
+            ", which heads both queues. Only A can release it: neither ever enters"
         ],
     );
     CrashRun {
