@@ -995,7 +995,9 @@ fn finish(d: &SpaceTime, mut geo: Geo, captions: bool) -> Layout {
 
     // Message labels: beside the line, pushed out along its normal, at the
     // first of several spots along it that nothing else occupies, and off the
-    // timelines, where a label would read as part of the lane it sits on.
+    // timelines, where a label would read as part of the lane it sits on. A
+    // spot well clear of the other arrows comes first, so that the labels of
+    // two arrows that cross don't share the wedge between them.
     let lane_lines: Vec<(Pt, Pt)> = geo.lane_y.iter().map(|&y| ((0.0, y), (1e9, y))).collect();
     let mut labels = vec![None; d.messages().len()];
     for (mi, m) in d.messages().iter().enumerate() {
@@ -1016,14 +1018,21 @@ fn finish(d: &SpaceTime, mut geo: Geo, captions: bool) -> Layout {
                 Anchor::End
             },
         };
-        let placed = [0.5, 0.4, 0.6, 0.3, 0.7, 0.2, 0.8]
-            .into_iter()
-            .flat_map(|t| [(t, 1.0), (t, -1.0)])
-            .map(|(t, sign)| candidate(t, sign))
-            .find(|p| {
-                let r = p.rect().grow(CLEAR);
-                is_free(&r, &taken, &segments, Some(mi)) && is_free(&r, &[], &lane_lines, None)
-            })
+        let spots = || {
+            [0.5, 0.4, 0.6, 0.3, 0.7, 0.2, 0.8]
+                .into_iter()
+                .flat_map(|t| [(t, 1.0), (t, -1.0)])
+                .map(|(t, sign)| candidate(t, sign))
+        };
+        let fits = |p: &Placed, from_arrows: f64| {
+            let r = p.rect().grow(CLEAR);
+            is_free(&r, &taken, &segments, Some(mi))
+                && is_free(&p.rect().grow(from_arrows), &[], &segments, Some(mi))
+                && is_free(&r, &[], &lane_lines, None)
+        };
+        let placed = spots()
+            .find(|p| fits(p, GAP))
+            .or_else(|| spots().find(|p| fits(p, CLEAR)))
             .unwrap_or_else(|| candidate(0.5, 1.0));
         taken.push(placed.rect());
         labels[mi] = Some(placed);
