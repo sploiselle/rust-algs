@@ -1904,209 +1904,105 @@ fn mutex_overtaking_run() -> MutexRun {
     }
 }
 
-/// Lamport's mutual exclusion with a crash. B, C and A request in turn; A's
-/// request, the earliest, reaches B and C, and A crashes before it hears from
-/// anyone. B and C hear from each other past their own requests, but A's
-/// request heads both queues for good, and neither ever enters.
+/// Lamport's mutual exclusion with a crash, as small as it gets. A never asks
+/// for the resource; it just crashes, with B's request on its way to it. C
+/// answers B, so B's request heads its queue and C has answered past it. But
+/// B has to hear from every other process past its request, and A never
+/// speaks again, so B never enters.
 ///
 /// Stepped through, each process's state is in a panel from where it starts.
 fn mutex_crash() -> Figure {
-    let mut r = mutex_crash_run();
-    let stamp = LamportStamp::new;
-    for (lane, me) in r.lanes.into_iter().zip(['A', 'B', 'C']) {
-        r.d.start_value(lane, LamportMutex::new(me, ['A', 'B', 'C']).spans());
-    }
-    // The run asserts each request's stamp and how they sort.
-    let [a, b, c] = [&r.a, &r.b, &r.c];
-    r.d.narrate(
-        b[0],
-        rich![
-            "asks for the resource: stamps its request ",
-            v(&stamp(1, 'B')),
-            ", queues it, and sends it to A and C"
-        ],
-    );
-    r.d.narrate(
-        c[0],
-        rich![
-            "asks too: ",
-            v(&stamp(1, 'C')),
-            " ranks after ",
-            v(&stamp(1, 'B'))
-        ],
-    );
-    r.d.narrate(
-        a[0],
-        rich![
-            "asks too: ",
-            v(&stamp(1, 'A')),
-            " ranks first of the three, since A's id is the smallest"
-        ],
-    );
-    r.d.narrate(
-        a[1],
-        "crashes before anything reaches it. B's and C's requests, already on their way, are never delivered",
-    );
-    r.d.narrate(
-        b[1],
-        rich![
-            "queues ",
-            v(&stamp(1, 'A')),
-            " ahead of its own request and acks it, but the ack goes to a process that has crashed"
-        ],
-    );
-    r.d.narrate(
-        b[3],
-        rich![
-            "has now heard from C past its request, but ",
-            v(&stamp(1, 'A')),
-            " is first in its queue, and only A can release it"
-        ],
-    );
-    Figure {
-        stem: "mutex-crash",
-        diagram: Diagram::SpaceTime(r.d),
-    }
-}
-
-/// The crash run: its figure, lanes, and each process's
-/// events in order (A's second is its crash).
-struct CrashRun {
-    d: SpaceTime,
-    lanes: [LaneId; 3],
-    a: Vec<EventId>,
-    b: Vec<EventId>,
-    c: Vec<EventId>,
-}
-
-fn mutex_crash_run() -> CrashRun {
     let everyone = ['A', 'B', 'C'];
-    let mut d = SpaceTime::new("Lamport's mutex: A crashes, and no one enters again");
+    let mut d = SpaceTime::new("Lamport's mutex: A crashes, and B never enters");
     let (la, lb, lc) = (
         d.actor_lane("A", 'A'),
         d.actor_lane("B", 'B'),
         d.actor_lane("C", 'C'),
     );
-    let mut a = LamportMutex::new('A', everyone);
+    for (lane, me) in [la, lb, lc].into_iter().zip(everyone) {
+        d.start_value(lane, LamportMutex::new(me, everyone).spans());
+    }
     let mut b = LamportMutex::new('B', everyone);
     let mut c = LamportMutex::new('C', everyone);
-    let stamp = LamportStamp::new;
+    let mine = LamportStamp::new(1, 'B');
     let mut times: Vec<(EventId, u64)> = Vec::new();
     let mut record = |d: &mut SpaceTime, lane, name, p: &LamportMutex<char>| {
         let e = d.event(lane, name, p.spans());
         times.push((e, p.clock().time()));
         e
     };
-    // Messages sent but never delivered: everything addressed to A.
-    let mut undelivered: Vec<Message<char>> = Vec::new();
 
-    let reqs_b = b.request();
-    let b1 = record(&mut d, lb, "request", &b);
-    let reqs_c = c.request();
-    let c1 = record(&mut d, lc, "request", &c);
-    let reqs_a = a.request();
-    let a1 = record(&mut d, la, "request", &a);
-    assert!(stamp(1, 'A') < stamp(1, 'B') && stamp(1, 'B') < stamp(1, 'C'));
-    assert_eq!(
-        [a.pending(), b.pending(), c.pending()],
-        [
-            Some(&stamp(1, 'A')),
-            Some(&stamp(1, 'B')),
-            Some(&stamp(1, 'C'))
-        ]
-    );
+    let reqs = b.request();
+    assert_eq!(b.pending(), Some(&mine));
+    let asks = record(&mut d, lb, "request", &b);
+    // B's request to A is on its way when A crashes, and is never delivered.
     let crash = d.crash(la, "crash");
-    undelivered.push(to(&reqs_b, 'A'));
-    undelivered.push(to(&reqs_c, 'A'));
+    assert_eq!(reqs.len(), 2);
+    to(&reqs, 'A');
+    let req = to(&reqs, 'C');
+    let label = message_label(&req);
+    let ack = c.receive(req).expect("a request is acknowledged");
+    let acks = record(&mut d, lc, "req from B", &c);
+    let req_msg = d.message(asks, acks, label);
+    let label = message_label(&ack);
+    b.receive(ack);
+    let waits = record(&mut d, lb, "ack from C", &b);
+    let ack_msg = d.message(acks, waits, label);
 
-    // A's request reaches B and C, and heads both queues.
-    let req = to(&reqs_a, 'B');
-    let label = message_label(&req);
-    undelivered.push(b.receive(req).expect("a request is acknowledged"));
-    let b2 = record(&mut d, lb, "req from A", &b);
-    let req_a_to_b = d.message(a1, b2, label);
-    let req = to(&reqs_a, 'C');
-    let label = message_label(&req);
-    undelivered.push(c.receive(req).expect("a request is acknowledged"));
-    let c2 = record(&mut d, lc, "req from A", &c);
-    let req_a_to_c = d.message(a1, c2, label);
-
-    // B and C swap requests and acks.
-    let req = to(&reqs_c, 'B');
-    let label = message_label(&req);
-    let ack_b = b.receive(req).expect("a request is acknowledged");
-    let b3 = record(&mut d, lb, "req from C", &b);
-    d.message(c1, b3, label);
-    let req = to(&reqs_b, 'C');
-    let label = message_label(&req);
-    let ack_c = c.receive(req).expect("a request is acknowledged");
-    let c3 = record(&mut d, lc, "req from B", &c);
-    d.message(b1, c3, label);
-    let label = message_label(&ack_c);
-    b.receive(ack_c);
-    let b4 = record(&mut d, lb, "ack from C", &b);
-    d.message(c3, b4, label);
-    let label = message_label(&ack_b);
-    c.receive(ack_b);
-    let c4 = record(&mut d, lc, "ack from B", &c);
-    d.message(b3, c4, label);
-
-    assert!(
-        undelivered.iter().all(|m| m.to == 'A'),
-        "every message between live processes was delivered"
-    );
-    assert_eq!(undelivered.len(), 4);
-    for p in [&b, &c] {
-        assert_eq!(
-            p.queue().collect::<Vec<_>>(),
-            [&stamp(1, 'A'), &stamp(1, 'B'), &stamp(1, 'C')]
-        );
-        assert!(!p.holds(), "{} waits on A's request", p.me());
-        // It has heard from its live peer past its own request, but from A
-        // only at A's request, which is earlier.
-        let mine = *p.pending().unwrap();
-        for (q, time) in p.heard() {
-            if *q == 'A' {
-                assert_eq!(time, 1);
-                assert!(stamp(time, 'A') < mine);
-            } else {
-                assert!(stamp(time, *q) > mine);
-            }
+    // Everything between live processes has arrived, so nothing else will.
+    assert_eq!(b.queue().collect::<Vec<_>>(), [&mine]);
+    for (q, time) in b.heard() {
+        if *q == 'A' {
+            assert_eq!(time, 0, "B never hears from A");
+        } else {
+            assert!(
+                LamportStamp::new(time, *q) > mine,
+                "C answers past B's request"
+            );
         }
     }
+    assert!(!b.holds(), "B waits on A");
     assert_clock_condition(&d, &times);
 
-    d.pin_event(a1, "a-requests");
+    d.pin_event(asks, "b-requests");
     d.pin_event(crash, "a-crashes");
-    d.pin_event(b4, "b-waits");
-    d.pin_event(c4, "c-waits");
-    d.pin_message(req_a_to_b, "req-a-b");
-    d.pin_message(req_a_to_c, "req-a-c");
-    d.callout(
-        a1,
+    d.pin_event(acks, "c-acks");
+    d.pin_event(waits, "b-waits");
+    d.pin_message(req_msg, "req-b-c");
+    d.pin_message(ack_msg, "ack-c-b");
+    d.narrate(
+        asks,
+        rich![
+            "asks for the resource: stamps its request ",
+            v(&mine),
+            ", queues it, and sends it to A and C"
+        ],
+    );
+    d.narrate(
         crash,
+        "crashes, with B's request still on its way. Nothing sent to A is ever delivered",
+    );
+    d.narrate(acks, "queues B's request and acks it");
+    d.narrate(
+        waits,
         rich![
-            "A crashes with the earliest request, ",
-            v(&stamp(1, 'A')),
-            ", still outstanding. Nothing sent to A is ever delivered: not B's and C's requests, already on their way, nor the acks they send for ",
-            v(&stamp(1, 'A'))
+            "has heard from C past ",
+            v(&mine),
+            ", and its request is first in its queue, but it has heard nothing from A"
         ],
     );
     d.callout(
-        b4,
-        c4,
+        crash,
+        waits,
         rich![
-            "B and C have each heard from the other past their own requests, but from A only at ",
-            v(&stamp(1, 'A')),
-            ", which heads both queues. Only A can release it: neither ever enters"
+            "B's request, ",
+            v(&mine),
+            ", heads its queue, and C has answered past it. But B must hear from A past it too, and A crashed before the request reached it: B never enters"
         ],
     );
-    CrashRun {
-        d,
-        lanes: [la, lb, lc],
-        a: vec![a1, crash],
-        b: vec![b1, b2, b3, b4],
-        c: vec![c1, c2, c3, c4],
+    Figure {
+        stem: "mutex-crash",
+        diagram: Diagram::SpaceTime(d),
     }
 }
 
