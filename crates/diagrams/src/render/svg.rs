@@ -998,7 +998,9 @@ fn finish(d: &SpaceTime, mut geo: Geo, captions: bool) -> Layout {
     // first of several spots along it that nothing else occupies, and off the
     // timelines, where a label would read as part of the lane it sits on. A
     // spot well clear of the other arrows comes first, so that the labels of
-    // two arrows that cross don't share the wedge between them.
+    // two arrows that cross don't share the wedge between them. Every spot
+    // keeps CLEAR of the label's own arrow too: along a steep one, the far
+    // corner of a label set beside it can reach back over the line.
     let lane_lines: Vec<(Pt, Pt)> = geo.lane_y.iter().map(|&y| ((0.0, y), (1e9, y))).collect();
     let mut labels = vec![None; d.messages().len()];
     for (mi, m) in d.messages().iter().enumerate() {
@@ -1027,7 +1029,7 @@ fn finish(d: &SpaceTime, mut geo: Geo, captions: bool) -> Layout {
         };
         let fits = |p: &Placed, from_arrows: f64| {
             let r = p.rect().grow(CLEAR);
-            is_free(&r, &taken, &segments, Some(mi))
+            is_free(&r, &taken, &segments, None)
                 && is_free(&p.rect().grow(from_arrows), &[], &segments, Some(mi))
                 && is_free(&r, &[], &lane_lines, None)
         };
