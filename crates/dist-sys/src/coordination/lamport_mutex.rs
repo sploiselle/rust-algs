@@ -50,7 +50,12 @@
 //!   (`overtaking_breaks_mutual_exclusion` builds that execution).
 //! - **No message loss, and no crashes.** A process enters only after hearing
 //!   from *every* other process, so one that crashes or goes quiet blocks
-//!   everyone, forever. The algorithm tolerates no failures at all.
+//!   everyone, forever. The algorithm tolerates no failures at all. Lamport's
+//!   [reliable state machine](crate::state_machine::bookkeeper) replaces
+//!   hearing from everyone with votes from some, and deadlines, so it
+//!   survives crashes and lines that stop, for a while or for good. What it
+//!   still needs is that a line never drops a message and then delivers a
+//!   later one.
 //! - **`3(N − 1)` messages per entry**: a request, an acknowledgement and a
 //!   release for each other process. Ricart and Agrawala (1981) got it to
 //!   `2(N − 1)` by holding acknowledgements back until the release. Lamport

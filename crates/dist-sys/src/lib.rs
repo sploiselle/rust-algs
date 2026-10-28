@@ -14,11 +14,18 @@
 //!   order loses, and [`MvRegister`](crdt::MvRegister), which keeps it.
 //! - [`coordination`]: getting processes to agree on an order.
 //!   [`LamportMutex`](coordination::LamportMutex).
+//! - [`state_machine`]: running one sequential machine on many processes, so
+//!   it survives losing some of them. [`Bookkeeper`](state_machine::Bookkeeper)s
+//!   run Lamport's reliable state machine on any
+//!   [`UserMachine`](state_machine::UserMachine) whose commands are ordered,
+//!   such as Lamport's airline reservation example,
+//!   [`Airline`](state_machine::airline::Airline).
 
 pub mod clock;
 pub mod coordination;
 pub mod counter;
 pub mod crdt;
+pub mod state_machine;
 
 #[cfg(test)]
 mod test_util;

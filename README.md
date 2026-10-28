@@ -18,6 +18,10 @@ crates/dist-sys/          the library
     mv_register.rs        multi-value register
   src/coordination/       agreeing on an order
     lamport_mutex.rs      Lamport's mutual exclusion
+  src/state_machine/      one sequential machine, run on many processes
+    user_machine.rs       the machine: commands in, responses out
+    bookkeeper.rs         Lamport's reliable state machine, through failures
+    airline.rs            Lamport's airline reservation example
   examples/               programs to run against the library
 crates/diagrams/          figures drawn from the library (SVG, HTML and Mermaid)
 figures/                  the rendered figures, committed
