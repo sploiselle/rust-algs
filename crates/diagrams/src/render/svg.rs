@@ -52,6 +52,7 @@ const NEAR: f64 = 12.0; // an event's first text block starts this far from its 
 const STACK_GAP: f64 = 4.0; // between stacked text blocks
 const CLEAR: f64 = 2.0; // an arrow must miss text by this much
 const HEAD_CLEAR: f64 = 1.0; // and a head in flight, by this much
+const ROOM: f64 = 6.0; // a message label would rather miss other text by this much
 const PUSH: f64 = 16.0; // how far events are pushed apart per collision
 const MIN_W: f64 = 420.0; // no figure is narrower; captions wrap to its width
 const BADGE_R: f64 = 7.5; // note badge radius
@@ -1013,10 +1014,19 @@ fn finish(d: &SpaceTime, mut geo: Geo, captions: bool) -> Layout {
     // first of several spots along it that nothing else occupies, and off the
     // timelines, where a label would read as part of the lane it sits on. A
     // spot well clear of the other arrows comes first, so that the labels of
-    // two arrows that cross don't share the wedge between them. Every spot
+    // two arrows that cross don't share the wedge between them, and at each
+    // clearance a spot with ROOM from other text, out of every row of event
+    // names, comes before one without: a label pressed against a value reads
+    // as a line of it, and one in a row of names as one of them. Every spot
     // keeps CLEAR of the label's own arrow too: along a steep one, the far
     // corner of a label set beside it can reach back over the line.
     let lane_lines: Vec<(Pt, Pt)> = geo.lane_y.iter().map(|&y| ((0.0, y), (1e9, y))).collect();
+    let name_rows: Vec<(f64, f64)> = geo
+        .name
+        .iter()
+        .flatten()
+        .map(|p| (p.rect().y0, p.rect().y1))
+        .collect();
     let mut labels = vec![None; d.messages().len()];
     for (mi, m) in d.messages().iter().enumerate() {
         if m.label.is_empty() {
@@ -1042,15 +1052,18 @@ fn finish(d: &SpaceTime, mut geo: Geo, captions: bool) -> Layout {
                 .flat_map(|t| [(t, 1.0), (t, -1.0)])
                 .map(|(t, sign)| candidate(t, sign))
         };
-        let fits = |p: &Placed, from_arrows: f64| {
-            let r = p.rect().grow(CLEAR);
+        let fits = |p: &Placed, from_arrows: f64, roomy: bool| {
+            let (at, r) = (p.rect(), p.rect().grow(CLEAR));
             is_free(&r, &taken, &segments, None)
-                && is_free(&p.rect().grow(from_arrows), &[], &segments, Some(mi))
+                && is_free(&at.grow(from_arrows), &[], &segments, Some(mi))
                 && is_free(&r, &[], &lane_lines, None)
+                && (!roomy
+                    || is_free(&at.grow(ROOM), &taken, &[], None)
+                        && !name_rows.iter().any(|&(y0, y1)| at.y0 < y1 && y0 < at.y1))
         };
-        let placed = spots()
-            .find(|p| fits(p, GAP))
-            .or_else(|| spots().find(|p| fits(p, CLEAR)))
+        let placed = [(GAP, true), (GAP, false), (CLEAR, true), (CLEAR, false)]
+            .into_iter()
+            .find_map(|(from_arrows, roomy)| spots().find(|p| fits(p, from_arrows, roomy)))
             .unwrap_or_else(|| candidate(0.5, 1.0));
         taken.push(placed.rect());
         labels[mi] = Some(placed);
