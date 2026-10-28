@@ -56,14 +56,12 @@
   <g class="ds-messages">
     <g class="ds-message" data-message="m1" data-from="a2" data-to="b1">
       <line class="ds-message-line" data-in="2" style="--ds-len: 73.7; --ds-grow: 73.7" x1="130.7" y1="37.7" x2="185" y2="87.5" stroke="currentColor" stroke-width="1.5"/>
-      <polygon class="ds-message-head ds-flight" data-in="1" data-out="2" display="none" style="--ds-dx: 0; --ds-dy: 0" points="137.3,43.8 128.3,40.3 133,35.2"/>
-      <polygon class="ds-message-head" data-in="2" data-cont="" style="--ds-dx: -54.3; --ds-dy: -49.8" points="191.6,93.6 182.6,90.1 187.3,84.9"/>
+      <polygon class="ds-message-head" data-in="2" style="--ds-dx: -54.3; --ds-dy: -49.8" points="191.6,93.6 182.6,90.1 187.3,84.9"/>
       <text class="ds-message-label" data-in="2" x="168.3" y="58.6" text-anchor="start" font-size="12">m1 <tspan class="ds-v" font-family="ui-monospace, Menlo, Consolas, monospace">2</tspan></text>
     </g>
     <g class="ds-message" data-message="m2" data-from="b3" data-to="a3">
       <line class="ds-message-line" data-in="5" style="--ds-len: 73.7; --ds-grow: 73.7" x1="346.7" y1="94.3" x2="401" y2="44.5" stroke="currentColor" stroke-width="1.5"/>
-      <polygon class="ds-message-head ds-flight" data-in="4" data-out="5" display="none" style="--ds-dx: 0; --ds-dy: 0" points="353.3,88.2 349,96.8 344.3,91.7"/>
-      <polygon class="ds-message-head" data-in="5" data-cont="" style="--ds-dx: -54.3; --ds-dy: 49.8" points="407.6,38.4 403.3,47.1 398.6,41.9"/>
+      <polygon class="ds-message-head" data-in="5" style="--ds-dx: -54.3; --ds-dy: 49.8" points="407.6,38.4 403.3,47.1 398.6,41.9"/>
       <text class="ds-message-label" data-in="5" x="370.7" y="58.6" text-anchor="end" font-size="12">m2 <tspan class="ds-v" font-family="ui-monospace, Menlo, Consolas, monospace">5</tspan></text>
     </g>
   </g>
@@ -104,11 +102,11 @@
 <div class="ds-play" hidden>
 <div class="ds-play-bar"></div>
 <div class="ds-beats">
-<p class="ds-beat" data-in="0" data-out="1" data-event="a1"><span class="ds-beat-body"><span class="ds-lead">A1</span> on A: <span class="ds-field">L </span><code class="ds-v"><span class="ds-lamport">1</span></code></span></p>
-<p class="ds-beat" data-in="1" data-out="2" data-cont="" data-event="a2"><span class="ds-beat-body"><span class="ds-lead">A2</span> on A, sending m1 <code class="ds-v">2</code> to B: <span class="ds-field">L </span><code class="ds-v"><span class="ds-lamport">2</span></code></span></p>
+<p class="ds-beat" data-in="0" data-out="1" data-event="a1"><span class="ds-beat-body"><span class="ds-lead">A1</span> on A is a local event</span></p>
+<p class="ds-beat" data-in="1" data-out="2" data-cont="" data-event="a2"><span class="ds-beat-body"><span class="ds-lead">A2</span> on A sends m1 <code class="ds-v">2</code> to B</span></p>
 <p class="ds-beat" data-in="2" data-out="3" data-cont="" data-event="b1"><span class="ds-beat-body"><span class="ds-lead">B1</span> on B receives a message sent at time <code class="ds-v">2</code> as its first event, so its clock takes that and adds one, reaching <code class="ds-v">3</code></span></p>
-<p class="ds-beat" data-in="3" data-out="4" data-cont="" data-event="b2"><span class="ds-beat-body"><span class="ds-lead">B2</span> on B: <span class="ds-field">L </span><code class="ds-v"><span class="ds-lamport">4</span></code></span></p>
-<p class="ds-beat" data-in="4" data-out="5" data-cont="" data-event="b3"><span class="ds-beat-body"><span class="ds-lead">B3</span> on B, sending m2 <code class="ds-v">5</code> to A: <span class="ds-field">L </span><code class="ds-v"><span class="ds-lamport">5</span></code></span></p>
+<p class="ds-beat" data-in="3" data-out="4" data-cont="" data-event="b2"><span class="ds-beat-body"><span class="ds-lead">B2</span> on B is a local event</span></p>
+<p class="ds-beat" data-in="4" data-out="5" data-cont="" data-event="b3"><span class="ds-beat-body"><span class="ds-lead">B3</span> on B sends m2 <code class="ds-v">5</code> to A</span></p>
 <p class="ds-beat" data-in="5" data-cont="" data-event="a3"><span class="ds-beat-body"><span class="ds-lead">A3</span> on A receives a message sent at time <code class="ds-v">5</code>: its clock takes the larger of its own <code class="ds-v">2</code> and that, then adds one, reaching <code class="ds-v">6</code></span></p>
 </div>
 <div class="ds-state">

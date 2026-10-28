@@ -21,8 +21,8 @@
 use super::Render;
 use super::steps::{At, timed};
 use super::svg::{
-    actor_attrs, dot_line_svg, dot_line_with_slots, escape_attr, event_sentence, one_line,
-    relation_attr, role_classes, space_time_svg, subject, with_actor_slots,
+    actor_attrs, dot_line_svg, dot_line_with_slots, escape_attr, one_line, relation_attr,
+    role_classes, space_time_svg, step_sentence, subject, with_actor_slots,
 };
 use crate::label::split_fields;
 use crate::model::{Beat, Diagram, DotLine, LaneId, Note, Rich, SpaceTime, Span, Timeline};
@@ -212,7 +212,7 @@ fn beat(d: &SpaceTime, t: &Timeline, s: usize) -> String {
         Beat::Event(e) => {
             let narration = &d.events()[e.0].narration;
             let said = if narration.is_empty() {
-                event_sentence(d, e, true)
+                step_sentence(d, e)
             } else {
                 subject(d, e).then(" ").then(narration.clone())
             };
@@ -489,9 +489,11 @@ mod tests {
                     let landed = s >= arrived;
                     assert_eq!(group.contains(r#"class="ds-message-line" "#), landed);
                     assert_eq!(group.contains(r#"class="ds-message-head" "#), landed);
+                    // In flight, the head shows with its line, once it has one.
+                    let flying = (sent..arrived).contains(&s);
                     assert_eq!(
                         group.contains("ds-message-head ds-flight"),
-                        (sent..arrived).contains(&s),
+                        flying && group.contains("ds-message-line ds-flight"),
                         "{stem}: {key} in flight at step {s}"
                     );
                     if !m.label.is_empty() {
@@ -655,7 +657,7 @@ mod tests {
         ));
         for needle in [
             r#"<div class="ds-play" hidden>"#,
-            r#"<p class="ds-beat" data-in="0" data-out="1" data-event="a-1"><span class="ds-beat-body"><span class="ds-lead">A1</span> on A, sending m1 to B: x 1; y 2</span></p>"#,
+            r#"<p class="ds-beat" data-in="0" data-out="1" data-event="a-1"><span class="ds-beat-body"><span class="ds-lead">A1</span> on A sends m1 to B</span></p>"#,
             r#"<p class="ds-beat" data-in="2" data-cont="" data-note="1"><span class="ds-note-n" aria-hidden="true">1</span> <span class="ds-beat-body">about m1</span></p>"#,
             r#"<li class="ds-note" data-in="2" data-note="1">"#,
         ] {

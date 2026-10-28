@@ -842,8 +842,9 @@ fn runs_into(d: &SpaceTime, geo: &Geo, m: &Message, i: usize, r: &Rect) -> bool 
 /// The heads a message shows in flight once event `shown` is on screen: one
 /// at each column from its send, or from `shown` if that is later, up to but
 /// not including its arrival, as far as the message has got by then (see
-/// [`front`]). Events are numbered in recorded order, which is the order of
-/// the columns and of the steps.
+/// [`front`]). A head just out of the sender waits for its line, but the
+/// layout keeps clear of it all the same. Events are numbered in recorded
+/// order, which is the order of the columns and of the steps.
 fn in_flight_heads(
     geo: &Geo,
     m: &Message,
@@ -1184,7 +1185,7 @@ fn finish(d: &SpaceTime, mut geo: Geo, captions: bool) -> Layout {
 fn describe(d: &SpaceTime, with_notes: bool) -> String {
     let mut parts = vec![format!("{}.", lanes_sentence(d))];
     for i in 0..d.events().len() {
-        parts.push(format!("{}.", event_sentence(d, EventId(i), false).plain()));
+        parts.push(format!("{}.", event_sentence(d, EventId(i)).plain()));
     }
     if with_notes {
         for note in d.notes() {
@@ -1218,39 +1219,66 @@ pub(crate) fn subject(d: &SpaceTime, id: EventId) -> Rich {
     ]
 }
 
-/// What happened at an event, as one line: "B2 on B, receiving m1 {A:2} from
-/// A2 on A: {A:2, B:2}", a value's lines joined by "; ". With `sends`, also
-/// what it sent, which a step-through tells as it is sent and a description
-/// of the finished figure tells where it arrives.
-pub(crate) fn event_sentence(d: &SpaceTime, id: EventId, sends: bool) -> Rich {
-    let what = |m: &Message| {
-        if m.label.is_empty() {
-            Rich::from("a message")
-        } else {
-            joined(&m.label, " ")
-        }
-    };
+/// What happened at an event, for a description of the finished figure, as
+/// one line: "B2 on B, receiving m1 {A:2} from A2 on A: {A:2, B:2}", a value's
+/// lines joined by "; ". What it sent is told where it arrives.
+pub(crate) fn event_sentence(d: &SpaceTime, id: EventId) -> Rich {
     let mut s = subject(d, id);
     for m in d.messages().iter().filter(|m| m.to == id) {
-        s = s.then(", receiving ").then(what(m)).then(format!(
+        s = s.then(", receiving ").then(message_name(m)).then(format!(
             " from {} on {}",
             d.events()[m.from.0].name,
             lane_name(d, m.from)
         ));
-    }
-    if sends {
-        for m in d.messages().iter().filter(|m| m.from == id) {
-            s = s
-                .then(", sending ")
-                .then(what(m))
-                .then(format!(" to {}", lane_name(d, m.to)));
-        }
     }
     let e = &d.events()[id.0];
     if !e.annotation.is_empty() {
         s = s.then(": ").then(joined(&e.annotation, "; "));
     }
     s
+}
+
+/// What an event did, for its step in a step-through: "B2 on B receives m1
+/// from A and sends m2 to C", "A1 on A crashes" or "A1 on A is a local event".
+/// The arrows show which events the messages join, and the step's table what
+/// each lane holds, so neither is said here.
+pub(crate) fn step_sentence(d: &SpaceTime, id: EventId) -> Rich {
+    let received = d.messages().iter().filter(|m| m.to == id).map(|m| {
+        Rich::from("receives ")
+            .then(message_name(m))
+            .then(format!(" from {}", lane_name(d, m.from)))
+    });
+    let sent = d.messages().iter().filter(|m| m.from == id).map(|m| {
+        Rich::from("sends ")
+            .then(message_name(m))
+            .then(format!(" to {}", lane_name(d, m.to)))
+    });
+    let did: Vec<Rich> = received.chain(sent).collect();
+    let s = subject(d, id);
+    if d.lanes()[d.lane_of(id).0].crash == Some(id) {
+        return s.then(" crashes");
+    }
+    if did.is_empty() {
+        return s.then(" is a local event");
+    }
+    let last = did.len() - 1;
+    did.into_iter().enumerate().fold(s, |s, (k, clause)| {
+        s.then(match k {
+            0 => " ",
+            k if k == last => " and ",
+            _ => ", ",
+        })
+        .then(clause)
+    })
+}
+
+/// A message as a sentence names it: its label on one line, or "a message".
+fn message_name(m: &Message) -> Rich {
+    if m.label.is_empty() {
+        Rich::from("a message")
+    } else {
+        joined(&m.label, " ")
+    }
 }
 
 fn lane_name(d: &SpaceTime, e: EventId) -> &str {
@@ -1480,9 +1508,15 @@ pub(crate) fn space_time_svg(stem: &str, d: &SpaceTime, captions: bool, at: At) 
             d.event_key(m.to),
             notes_attr(&notes, |n| n.messages.contains(&mi))
         );
-        // Where the arrow's head is at each step, and whether its line shows.
-        let head = |s: usize| if s >= arrives { Some(seg.1) } else { flight(s) };
-        let line = |s: usize| head(s).filter(|&tip| dist(seg.0, tip) - HEAD >= 0.5);
+        // Where the arrow's tip is at each step, and whether its line and head
+        // show. In flight, the head waits for its line: on its own, just out of
+        // the sender, it would look detached from it.
+        let tip = |s: usize| if s >= arrives { Some(seg.1) } else { flight(s) };
+        let line = |s: usize| tip(s).filter(|&tip| has_line(seg, tip));
+        let head = |s: usize| if s >= arrives { tip(s) } else { line(s) };
+        // Where a head is first shown sliding out from, with its line: just
+        // out of the sender, where the line starts.
+        let just_sent = front(seg, l.x[m.from.0]);
         let class = |s: usize, part: &str| {
             if s >= arrives {
                 format!("ds-message-{part}")
@@ -1502,7 +1536,7 @@ pub(crate) fn space_time_svg(stem: &str, d: &SpaceTime, captions: bool, at: At) 
         }));
         out.push_str(&timed(&|s| {
             let tip = head(s)?;
-            let was = before(s, head).unwrap_or(tip);
+            let was = before(s, head).unwrap_or(just_sent);
             let vars = motion(
                 at,
                 &format!(
@@ -1640,6 +1674,12 @@ const OFF: &str = r#" display="none""#;
 /// A message's arrowhead, tip to base.
 const HEAD: f64 = 9.0;
 
+/// Whether an arrow along `seg` with its tip at `tip` has a line behind its
+/// head.
+fn has_line((start, _): (Pt, Pt), tip: Pt) -> bool {
+    dist(start, tip) - HEAD >= 0.5
+}
+
 /// Where a moving mark was before the version shown at step `s`: its
 /// position in the last step that shows it differently, if that step shows it.
 fn before(s: usize, at: impl Fn(usize) -> Option<Pt>) -> Option<Pt> {
@@ -1695,7 +1735,7 @@ fn message_head(class: &str, vars: &str, (start, tip): (Pt, Pt)) -> String {
 
 /// How far a message in flight has got by the time of the column at `x`:
 /// where its segment crosses that column, but at least a head's length out of
-/// the sender, so that a message just sent already shows which way it goes.
+/// the sender. A message just sent has no line yet there, so it isn't drawn.
 /// Messages always point right, so the segment does cross each column once.
 fn front((start, tip): (Pt, Pt), x: f64) -> Pt {
     let (ux, uy) = unit(start, tip);
@@ -2184,6 +2224,7 @@ mod tests {
         assert!((mid.0 - 60.0).abs() < 1e-9 && (mid.1 - 25.0).abs() < 1e-9);
         let just_sent = front(seg, 0.0); // the sender's own column
         assert!((dist(seg.0, just_sent) - HEAD).abs() < 1e-9);
+        assert!(!has_line(seg, just_sent));
         assert_eq!(front(seg, 500.0), seg.1);
     }
 
@@ -2248,8 +2289,25 @@ mod tests {
         }
     }
 
-    /// At each step a message is in flight, its head is drawn at the
-    /// playhead's column and its line runs to the head's base.
+    #[test]
+    fn a_step_says_what_its_event_did() {
+        let mut d = SpaceTime::new("t");
+        let (a, b, c) = (d.lane("A"), d.lane("B"), d.lane("C"));
+        let a1 = d.event(a, "A1", "x 1");
+        let b1 = d.event(b, "B1", "x 2");
+        let c1 = d.event(c, "C1", "");
+        d.message(a1, b1, "m1");
+        d.message(b1, c1, "m2");
+        let b2 = d.event(b, "B2", "x 3");
+        let crash = d.crash(a, "crash");
+        let said = |e| step_sentence(&d, e).plain();
+        assert_eq!(said(a1), "A1 on A sends m1 to B");
+        assert_eq!(said(b1), "B1 on B receives m1 from A and sends m2 to C");
+        assert_eq!(said(c1), "C1 on C receives m2 from B");
+        assert_eq!(said(b2), "B2 on B is a local event");
+        assert_eq!(said(crash), "crash on A crashes");
+    }
+
     #[test]
     fn a_crashed_lane_ends_at_its_crash_from_that_step_on() {
         let mut d = SpaceTime::new("t");
@@ -2274,6 +2332,9 @@ mod tests {
         assert!(svg.contains("ds-event-crash"));
     }
 
+    /// At each step a message is in flight, its head is drawn at the
+    /// playhead's column and its line runs to the head's base, once there is
+    /// room for a line; until then, neither is drawn.
     #[test]
     fn a_message_in_flight_is_drawn_to_the_playhead() {
         for figure in crate::catalog::all() {
@@ -2297,8 +2358,10 @@ mod tests {
                     }
                     let seg = l.segments[mi];
                     let tip = front(seg, l.x[t.now(s).unwrap().0]);
-                    assert!(
+                    let drawn = has_line(seg, tip);
+                    assert_eq!(
                         group.contains(&format!(r#"points="{},{} "#, num(tip.0), num(tip.1))),
+                        drawn,
                         "{}: {}'s head at step {s}",
                         figure.stem,
                         d.message_key(mi)
@@ -2308,7 +2371,7 @@ mod tests {
                     let line = format!(r#"x2="{}" y2="{}""#, num(base.0), num(base.1));
                     assert_eq!(
                         group.contains(&line),
-                        dist(seg.0, tip) - HEAD >= 0.5,
+                        drawn,
                         "{}: {}'s line at step {s}",
                         figure.stem,
                         d.message_key(mi)

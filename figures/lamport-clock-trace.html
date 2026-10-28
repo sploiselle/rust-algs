@@ -62,15 +62,13 @@
     <g class="ds-message" data-message="m1" data-from="a2" data-to="b2" data-notes="1">
       <line class="ds-message-line ds-flight" data-in="2" data-out="3" display="none" style="--ds-len: 63.2; --ds-grow: 63.2" x1="131.9" y1="35.9" x2="189.3" y2="62.3" stroke="currentColor" stroke-width="1.5"/>
       <line class="ds-message-line" data-in="3" data-cont="" style="--ds-len: 134.4; --ds-grow: 71.2" x1="131.9" y1="35.9" x2="254" y2="91.9" stroke="currentColor" stroke-width="1.5"/>
-      <polygon class="ds-message-head ds-flight" data-in="1" data-out="2" display="none" style="--ds-dx: 0; --ds-dy: 0" points="140,39.7 130.4,39.1 133.3,32.7"/>
-      <polygon class="ds-message-head ds-flight" data-in="2" data-out="3" display="none" data-cont="" style="--ds-dx: -57.5; --ds-dy: -26.3" points="197.5,66 187.9,65.4 190.8,59.1"/>
+      <polygon class="ds-message-head ds-flight" data-in="2" data-out="3" display="none" style="--ds-dx: -57.5; --ds-dy: -26.3" points="197.5,66 187.9,65.4 190.8,59.1"/>
       <polygon class="ds-message-head" data-in="3" data-cont="" style="--ds-dx: -64.7; --ds-dy: -29.7" points="262.2,95.7 252.6,95.1 255.5,88.7"/>
       <text class="ds-message-label" data-in="3" x="201.7" y="56.9" text-anchor="start" font-size="12">m1 <tspan class="ds-v" font-family="ui-monospace, Menlo, Consolas, monospace">2</tspan></text>
     </g>
     <g class="ds-message" data-message="m2" data-from="b3" data-to="c2" data-notes="1">
       <line class="ds-message-line" data-in="6" style="--ds-len: 65.7; --ds-grow: 65.7" x1="421.6" y1="106.4" x2="470" y2="150.8" stroke="currentColor" stroke-width="1.5"/>
-      <polygon class="ds-message-head ds-flight" data-in="5" data-out="6" display="none" style="--ds-dx: 0; --ds-dy: 0" points="428.2,112.5 419.2,109 424,103.9"/>
-      <polygon class="ds-message-head" data-in="6" data-cont="" style="--ds-dx: -48.4; --ds-dy: -44.4" points="476.7,156.9 467.7,153.4 472.4,148.2"/>
+      <polygon class="ds-message-head" data-in="6" style="--ds-dx: -48.4; --ds-dy: -44.4" points="476.7,156.9 467.7,153.4 472.4,148.2"/>
       <text class="ds-message-label" data-in="6" x="456.3" y="124.6" text-anchor="start" font-size="12">m2 <tspan class="ds-v" font-family="ui-monospace, Menlo, Consolas, monospace">4</tspan></text>
     </g>
   </g>
@@ -143,12 +141,12 @@
 <div class="ds-play" hidden>
 <div class="ds-play-bar"></div>
 <div class="ds-beats">
-<p class="ds-beat" data-in="0" data-out="1" data-event="a1"><span class="ds-beat-body"><span class="ds-lead">A1</span> on A: <span class="ds-field">L </span><code class="ds-v"><span class="ds-lamport">1</span></code></span></p>
-<p class="ds-beat" data-in="1" data-out="2" data-cont="" data-event="a2"><span class="ds-beat-body"><span class="ds-lead">A2</span> on A, sending m1 <code class="ds-v">2</code> to B: <span class="ds-field">L </span><code class="ds-v"><span class="ds-lamport">2</span></code></span></p>
-<p class="ds-beat" data-in="2" data-out="3" data-cont="" data-event="b1"><span class="ds-beat-body"><span class="ds-lead">B1</span> on B: <span class="ds-field">L </span><code class="ds-v"><span class="ds-lamport">1</span></code></span></p>
+<p class="ds-beat" data-in="0" data-out="1" data-event="a1"><span class="ds-beat-body"><span class="ds-lead">A1</span> on A is a local event</span></p>
+<p class="ds-beat" data-in="1" data-out="2" data-cont="" data-event="a2"><span class="ds-beat-body"><span class="ds-lead">A2</span> on A sends m1 <code class="ds-v">2</code> to B</span></p>
+<p class="ds-beat" data-in="2" data-out="3" data-cont="" data-event="b1"><span class="ds-beat-body"><span class="ds-lead">B1</span> on B is a local event</span></p>
 <p class="ds-beat" data-in="3" data-out="4" data-cont="" data-event="b2"><span class="ds-beat-body"><span class="ds-lead">B2</span> on B receives a message sent at time <code class="ds-v">2</code>: its clock takes the larger of its own <code class="ds-v">1</code> and that, then adds one, reaching <code class="ds-v">3</code></span></p>
-<p class="ds-beat" data-in="4" data-out="5" data-cont="" data-event="c1"><span class="ds-beat-body"><span class="ds-lead">C1</span> on C: <span class="ds-field">L </span><code class="ds-v"><span class="ds-lamport">1</span></code></span></p>
-<p class="ds-beat" data-in="5" data-out="6" data-cont="" data-event="b3"><span class="ds-beat-body"><span class="ds-lead">B3</span> on B, sending m2 <code class="ds-v">4</code> to C: <span class="ds-field">L </span><code class="ds-v"><span class="ds-lamport">4</span></code></span></p>
+<p class="ds-beat" data-in="4" data-out="5" data-cont="" data-event="c1"><span class="ds-beat-body"><span class="ds-lead">C1</span> on C is a local event</span></p>
+<p class="ds-beat" data-in="5" data-out="6" data-cont="" data-event="b3"><span class="ds-beat-body"><span class="ds-lead">B3</span> on B sends m2 <code class="ds-v">4</code> to C</span></p>
 <p class="ds-beat" data-in="6" data-out="7" data-cont="" data-event="c2"><span class="ds-beat-body"><span class="ds-lead">C2</span> on C receives a message sent at time <code class="ds-v">4</code>: its clock takes the larger of its own <code class="ds-v">1</code> and that, then adds one, reaching <code class="ds-v">5</code></span></p>
 <p class="ds-beat" data-in="7" data-out="8" data-cont="" data-note="1"><span class="ds-note-n" aria-hidden="true">1</span> <span class="ds-beat-body">A1 happened before C2, carried by m1 then m2, and its time is smaller: <code class="ds-v">1</code> &lt; <code class="ds-v">5</code></span></p>
 <p class="ds-beat" data-in="8" data-out="9" data-cont="" data-event="a3"><span class="ds-beat-body"><span class="ds-lead">A3</span> on A ticks to <code class="ds-v">3</code>, below B3's <code class="ds-v">4</code>, though nothing passed between them</span></p>

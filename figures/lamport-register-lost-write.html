@@ -56,8 +56,7 @@
   <g class="ds-messages">
     <g class="ds-message" data-message="eggs-to-a" data-from="eggs" data-to="a-syncs" data-notes="2">
       <line class="ds-message-line" data-in="5" style="--ds-len: 76.4; --ds-grow: 76.4" x1="385.8" y1="105.8" x2="436.5" y2="48.7" stroke="currentColor" stroke-width="1.5"/>
-      <polygon class="ds-message-head ds-flight" data-in="3" data-out="5" display="none" style="--ds-dx: 0; --ds-dy: 0" points="391.8,99.1 388.4,108.1 383.2,103.5"/>
-      <polygon class="ds-message-head" data-in="5" data-cont="" style="--ds-dx: -50.7; --ds-dy: 57.1" points="442.5,42 439.2,51 433.9,46.4"/>
+      <polygon class="ds-message-head" data-in="5" style="--ds-dx: -50.7; --ds-dy: 57.1" points="442.5,42 439.2,51 433.9,46.4"/>
       <text class="ds-message-label" data-in="5" x="407" y="66.9" text-anchor="end" font-size="12"><tspan class="ds-v" font-family="ui-monospace, Menlo, Consolas, monospace"><tspan class="ds-stamp" data-stamp="3,B">(</tspan><tspan class="ds-stamp ds-time" data-stamp="3,B">3</tspan><tspan class="ds-stamp" data-stamp="3,B">,</tspan><tspan class="ds-stamp ds-actor" data-actor="B" data-stamp="3,B" data-actor-n="2">B</tspan><tspan class="ds-stamp" data-stamp="3,B">)</tspan><tspan class="ds-sym">→</tspan><tspan class="ds-str">"eggs"</tspan></tspan></text>
     </g>
   </g>
@@ -114,7 +113,7 @@
 <div class="ds-play" hidden>
 <div class="ds-play-bar"></div>
 <div class="ds-beats">
-<p class="ds-beat" data-in="0" data-out="1" data-event="milk"><span class="ds-beat-body"><span class="ds-lead">write milk</span> on A: <span class="ds-field">L </span><code class="ds-v"><span class="ds-lamport">1</span></code>; <span class="ds-field">x </span><code class="ds-v"><span class="ds-stamp" data-stamp="1,A">(</span><span class="ds-stamp ds-time" data-stamp="1,A">1</span><span class="ds-stamp" data-stamp="1,A">,</span><span class="ds-stamp ds-actor" data-actor="A" data-stamp="1,A" data-actor-n="1">A</span><span class="ds-stamp" data-stamp="1,A">)</span><span class="ds-sym">→</span><span class="ds-str">"milk"</span></code></span></p>
+<p class="ds-beat" data-in="0" data-out="1" data-event="milk"><span class="ds-beat-body"><span class="ds-lead">write milk</span> on A is a local event</span></p>
 <p class="ds-beat" data-in="1" data-out="2" data-cont="" data-event="b-1"><span class="ds-beat-body"><span class="ds-lead">local</span> on B does something that isn't a write to x: its clock ticks, and nothing else changes</span></p>
 <p class="ds-beat" data-in="2" data-out="3" data-cont="" data-event="b-2"><span class="ds-beat-body"><span class="ds-lead">local</span> on B does something else: its clock reaches <code class="ds-v">2</code>, where syncing from A took it in the history where B saw milk</span></p>
 <p class="ds-beat" data-in="3" data-out="4" data-cont="" data-event="eggs"><span class="ds-beat-body"><span class="ds-lead">write eggs</span> on B writes "eggs", stamped <code class="ds-v"><span class="ds-stamp" data-stamp="3,B">(</span><span class="ds-stamp ds-time" data-stamp="3,B">3</span><span class="ds-stamp" data-stamp="3,B">,</span><span class="ds-stamp ds-actor" data-actor="B" data-stamp="3,B" data-actor-n="2">B</span><span class="ds-stamp" data-stamp="3,B">)</span></code>: the same stamp as when it had seen milk, though it never heard from A</span></p>
