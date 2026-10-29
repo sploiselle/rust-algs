@@ -1,8 +1,8 @@
-<figure class="ds-fig" data-figure="lamport-no-messages" data-kind="space-time" data-steps="4" data-steps-v="1">
+<figure class="ds-fig" data-figure="lamport-no-messages" data-kind="space-time" data-steps="3" data-steps-v="1">
 <div class="ds-fig-canvas">
 <svg xmlns="http://www.w3.org/2000/svg" class="ds-figure" data-figure="lamport-no-messages" data-kind="space-time" role="img" viewBox="0 0 433 144" width="433" height="144" style="--ds-w: 433" fill="currentColor" font-family="system-ui, sans-serif">
   <title>Lamport clocks: two processes that never speak</title>
-  <desc>Timelines for A, B. A1 on A: L 1. A2 on A: L 2. A3 on A: L 3. B1 on B: L 1.</desc>
+  <desc>Timelines for A, B. A1 on A: L 1. A2 on A: L 2. B1 on B: L 1.</desc>
   <style>
     @layer ds-figure {
       .ds-figure { max-width: 100%; height: auto; font-family: var(--ds-font-sans, system-ui, -apple-system, "Segoe UI", sans-serif); }
@@ -61,30 +61,25 @@
       <text class="ds-event-name" x="53.5" y="17.8" text-anchor="middle" font-size="13">A1</text>
       <text class="ds-event-value" x="53.5" y="54.8" text-anchor="middle" font-size="13" font-family="ui-monospace, Menlo, Consolas, monospace"><tspan class="ds-field">L </tspan><tspan class="ds-lamport">1</tspan></text>
     </g>
-    <g class="ds-event" data-in="1" data-event="a2" data-lane="a" data-actor="A" data-actor-n="1">
-      <circle class="ds-event-dot" cx="167.2" cy="33" r="5"/>
-      <text class="ds-event-name" x="167.2" y="17.8" text-anchor="middle" font-size="13">A2</text>
-      <text class="ds-event-value" x="167.2" y="54.8" text-anchor="middle" font-size="13" font-family="ui-monospace, Menlo, Consolas, monospace"><tspan class="ds-field">L </tspan><tspan class="ds-lamport">2</tspan></text>
+    <g class="ds-event" data-in="1" data-event="a2" data-lane="a" data-actor="A" data-actor-n="1" data-notes="1">
+      <circle class="ds-event-dot" cx="224" cy="33" r="5"/>
+      <text class="ds-event-name" x="224" y="17.8" text-anchor="middle" font-size="13">A2</text>
+      <text class="ds-event-value" x="224" y="54.8" text-anchor="middle" font-size="13" font-family="ui-monospace, Menlo, Consolas, monospace"><tspan class="ds-field">L </tspan><tspan class="ds-lamport">2</tspan></text>
     </g>
-    <g class="ds-event" data-in="2" data-event="a3" data-lane="a" data-actor="A" data-actor-n="1" data-notes="1">
-      <circle class="ds-event-dot" cx="280.8" cy="33" r="5"/>
-      <text class="ds-event-name" x="280.8" y="17.8" text-anchor="middle" font-size="13">A3</text>
-      <text class="ds-event-value" x="280.8" y="54.8" text-anchor="middle" font-size="13" font-family="ui-monospace, Menlo, Consolas, monospace"><tspan class="ds-field">L </tspan><tspan class="ds-lamport">3</tspan></text>
-    </g>
-    <g class="ds-event" data-in="3" data-event="b1" data-lane="b" data-actor="B" data-actor-n="2" data-notes="1">
+    <g class="ds-event" data-in="2" data-event="b1" data-lane="b" data-actor="B" data-actor-n="2" data-notes="1">
       <circle class="ds-event-dot" cx="394.5" cy="99" r="5"/>
       <text class="ds-event-name" x="394.5" y="83.8" text-anchor="middle" font-size="13">B1</text>
       <text class="ds-event-value" x="394.5" y="120.8" text-anchor="middle" font-size="13" font-family="ui-monospace, Menlo, Consolas, monospace"><tspan class="ds-field">L </tspan><tspan class="ds-lamport">1</tspan></text>
     </g>
   </g>
   <g class="ds-marks">
-    <circle class="ds-ring" data-in="4" data-event="a3" data-notes="1" cx="280.8" cy="33" r="9" fill="none" stroke="currentColor" stroke-width="1.5"/>
-    <circle class="ds-ring" data-in="4" data-event="b1" data-notes="1" cx="394.5" cy="99" r="9" fill="none" stroke="currentColor" stroke-width="1.5"/>
-    <g class="ds-badge" data-in="4" data-note="1" data-event="a3" data-relation="concurrent">
-      <circle class="ds-badge-disc" cx="299.8" cy="14.5" r="7.5"/>
-      <text class="ds-badge-n" x="299.8" y="18.5" text-anchor="middle" font-size="11" fill="Canvas">1</text>
+    <circle class="ds-ring" data-in="3" data-event="a2" data-notes="1" cx="224" cy="33" r="9" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <circle class="ds-ring" data-in="3" data-event="b1" data-notes="1" cx="394.5" cy="99" r="9" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <g class="ds-badge" data-in="3" data-note="1" data-event="a2" data-relation="concurrent">
+      <circle class="ds-badge-disc" cx="243" cy="14.5" r="7.5"/>
+      <text class="ds-badge-n" x="243" y="18.5" text-anchor="middle" font-size="11" fill="Canvas">1</text>
     </g>
-    <g class="ds-badge" data-in="4" data-note="1" data-event="b1" data-relation="concurrent">
+    <g class="ds-badge" data-in="3" data-note="1" data-event="b1" data-relation="concurrent">
       <circle class="ds-badge-disc" cx="413.5" cy="80.5" r="7.5"/>
       <text class="ds-badge-n" x="413.5" y="84.5" text-anchor="middle" font-size="11" fill="Canvas">1</text>
     </g>
@@ -96,9 +91,8 @@
 <div class="ds-beats">
 <p class="ds-beat" data-in="0" data-out="1" data-event="a1"><span class="ds-beat-body"><span class="ds-lead">A1</span> on A is a local event</span></p>
 <p class="ds-beat" data-in="1" data-out="2" data-cont="" data-event="a2"><span class="ds-beat-body"><span class="ds-lead">A2</span> on A is a local event</span></p>
-<p class="ds-beat" data-in="2" data-out="3" data-cont="" data-event="a3"><span class="ds-beat-body"><span class="ds-lead">A3</span> on A is a local event</span></p>
-<p class="ds-beat" data-in="3" data-out="4" data-cont="" data-event="b1"><span class="ds-beat-body"><span class="ds-lead">B1</span> on B ticks to <code class="ds-v">1</code> having heard nothing from A</span></p>
-<p class="ds-beat" data-in="4" data-cont="" data-note="1"><span class="ds-note-n" aria-hidden="true">1</span> <span class="ds-beat-body">B1 and A3 are concurrent: B1 is later on the wall clock, but no message ever passed between A and B, so nothing orders them. B1's time <code class="ds-v">1</code> is still below A3's <code class="ds-v">3</code></span></p>
+<p class="ds-beat" data-in="2" data-out="3" data-cont="" data-event="b1"><span class="ds-beat-body"><span class="ds-lead">B1</span> on B ticks to <code class="ds-v">1</code> having heard nothing from A</span></p>
+<p class="ds-beat" data-in="3" data-cont="" data-note="1"><span class="ds-note-n" aria-hidden="true">1</span> <span class="ds-beat-body">C(B1) = <code class="ds-v">1</code> and C(A2) = <code class="ds-v">2</code>, so C(B1) &lt; C(A2). Yet B1 <code class="ds-v"><span class="ds-sym">↛</span></code> A2: no message ever passed between A and B, so nothing orders them.</span></p>
 </div>
 <div class="ds-state">
 <table aria-label="What each lane holds at this step">
@@ -108,15 +102,14 @@
 <th scope="row">A</th>
 <td><span class="ds-cells">
 <span class="ds-cell" data-in="0" data-out="1" data-event="a1"><code class="ds-v"><span class="ds-lamport ds-changed">1</span></code></span>
-<span class="ds-cell" data-in="1" data-out="2" data-cont="" data-event="a2"><code class="ds-v"><span class="ds-lamport ds-changed">2</span></code></span>
-<span class="ds-cell" data-in="2" data-cont="" data-event="a3"><code class="ds-v"><span class="ds-lamport ds-changed">3</span></code></span>
+<span class="ds-cell" data-in="1" data-cont="" data-event="a2"><code class="ds-v"><span class="ds-lamport ds-changed">2</span></code></span>
 </span></td>
 </tr>
 <tr class="ds-state-lane" data-lane="b" data-actor="B" data-actor-n="2">
 <th scope="row">B</th>
 <td><span class="ds-cells">
-<span class="ds-cell" data-in="0" data-out="3"><code class="ds-v"><span class="ds-lamport">0</span></code></span>
-<span class="ds-cell" data-in="3" data-cont="" data-event="b1"><code class="ds-v"><span class="ds-lamport ds-changed">1</span></code></span>
+<span class="ds-cell" data-in="0" data-out="2"><code class="ds-v"><span class="ds-lamport">0</span></code></span>
+<span class="ds-cell" data-in="2" data-cont="" data-event="b1"><code class="ds-v"><span class="ds-lamport ds-changed">1</span></code></span>
 </span></td>
 </tr>
 </tbody>
@@ -126,7 +119,7 @@
 <figcaption class="ds-fig-caption">
 <p class="ds-fig-title">Lamport clocks: two processes that never speak</p>
 <ol class="ds-notes">
-<li class="ds-note" data-in="4" data-note="1" data-relation="concurrent"><span class="ds-note-n" aria-hidden="true">1</span> <span class="ds-note-body">B1 and A3 are concurrent: B1 is later on the wall clock, but no message ever passed between A and B, so nothing orders them. B1's time <code class="ds-v">1</code> is still below A3's <code class="ds-v">3</code></span></li>
+<li class="ds-note" data-in="3" data-note="1" data-relation="concurrent"><span class="ds-note-n" aria-hidden="true">1</span> <span class="ds-note-body">C(B1) = <code class="ds-v">1</code> and C(A2) = <code class="ds-v">2</code>, so C(B1) &lt; C(A2). Yet B1 <code class="ds-v"><span class="ds-sym">↛</span></code> A2: no message ever passed between A and B, so nothing orders them.</span></li>
 </ol>
 </figcaption>
 </figure>

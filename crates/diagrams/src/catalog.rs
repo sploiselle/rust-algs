@@ -480,9 +480,9 @@ fn lamport_taking_turns() -> Figure {
     }
 }
 
-/// Two processes that never exchange a message: A ticks three times and B
-/// once, last on the wall clock. No arrow joins B1 to anything A did, so
-/// nothing orders them, and B1's time sits below A3's anyway.
+/// Two processes that never exchange a message: A ticks twice and B once,
+/// last on the wall clock. C(B1) < C(A2), yet B1 ↛ A2: no arrow joins B1 to
+/// anything A did, so nothing orders them.
 ///
 /// Stepped through, each process's clock is in a panel from 0.
 fn lamport_no_messages() -> Figure {
@@ -501,16 +501,14 @@ fn lamport_no_messages() -> Figure {
     a.tick();
     let a1 = record(&mut d, la, "A1", &a);
     a.tick();
-    record(&mut d, la, "A2", &a);
-    a.tick();
-    let a3 = record(&mut d, la, "A3", &a);
+    let a2 = record(&mut d, la, "A2", &a);
     b.tick();
     let b1 = record(&mut d, lb, "B1", &b);
 
     assert_eq!(
         times.iter().map(|&(_, t)| t).collect::<Vec<_>>(),
-        [1, 2, 3, 1],
-        "A counts to three and B to one"
+        [1, 2, 1],
+        "A counts to two and B to one"
     );
     assert_clock_condition(&d, &times);
     let time = |e: EventId| times.iter().find(|(x, _)| *x == e).unwrap().1;
@@ -520,12 +518,9 @@ fn lamport_no_messages() -> Figure {
             .all(|&(e, _)| e == b1 || (!d.happened_before(e, b1) && !d.happened_before(b1, e))),
         "no event on A is ordered with B1"
     );
-    assert!(
-        d.recorded_before(a3, b1),
-        "the note says B1 is later on the wall clock"
-    );
+    assert!(d.recorded_before(a2, b1), "B1 is later on the wall clock");
     assert_eq!(time(a1), time(b1), "A1 and B1 share a time");
-    assert!(time(b1) < time(a3), "B1's time is below A3's");
+    assert!(time(b1) < time(a2), "the note says C(B1) < C(A2)");
     for (e, _) in &times {
         let key = d.events()[e.0].name.to_lowercase();
         d.pin_event(*e, &key);
@@ -540,12 +535,15 @@ fn lamport_no_messages() -> Figure {
     );
     d.callout_concurrent(
         b1,
-        a3,
+        a2,
         rich![
-            "B1 and A3 are concurrent: B1 is later on the wall clock, but no message ever passed between A and B, so nothing orders them. B1's time ",
+            "C(B1) = ",
             Span::value(time(b1).to_string()),
-            " is still below A3's ",
-            Span::value(time(a3).to_string())
+            " and C(A2) = ",
+            Span::value(time(a2).to_string()),
+            ", so C(B1) < C(A2). Yet B1 ",
+            Span::part("↛", "sym"),
+            " A2: no message ever passed between A and B, so nothing orders them."
         ],
     );
     Figure {
