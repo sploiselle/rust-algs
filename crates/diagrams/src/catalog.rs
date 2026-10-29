@@ -68,6 +68,7 @@ pub fn all() -> Vec<Figure> {
         concurrency_one_message(),
         concurrency_crossing_writes(),
         lamport_taking_turns(),
+        lamport_no_messages(),
         lamport_clock_trace(),
         vector_clock_trace(),
         clock_comparison(),
@@ -475,6 +476,80 @@ fn lamport_taking_turns() -> Figure {
     d.pin_message(m2_msg, "m2");
     Figure {
         stem: "lamport-taking-turns",
+        diagram: Diagram::SpaceTime(d),
+    }
+}
+
+/// Two processes that never exchange a message: A ticks three times and B
+/// once, last on the wall clock. No arrow joins B1 to anything A did, so
+/// nothing orders them, and B1's time sits below A3's anyway.
+///
+/// Stepped through, each process's clock is in a panel from 0.
+fn lamport_no_messages() -> Figure {
+    let mut d = SpaceTime::new("Lamport clocks: two processes that never speak");
+    let (la, lb) = (d.actor_lane("A", 'A'), d.actor_lane("B", 'B'));
+    let (mut a, mut b) = (LamportClock::new('A'), LamportClock::new('B'));
+    d.start_value(la, a.spans());
+    d.start_value(lb, b.spans());
+    let mut times: Vec<(EventId, u64)> = Vec::new();
+    let mut record = |d: &mut SpaceTime, lane, name, clock: &LamportClock<char>| {
+        let e = d.event(lane, name, clock.spans());
+        times.push((e, clock.time()));
+        e
+    };
+
+    a.tick();
+    let a1 = record(&mut d, la, "A1", &a);
+    a.tick();
+    record(&mut d, la, "A2", &a);
+    a.tick();
+    let a3 = record(&mut d, la, "A3", &a);
+    b.tick();
+    let b1 = record(&mut d, lb, "B1", &b);
+
+    assert_eq!(
+        times.iter().map(|&(_, t)| t).collect::<Vec<_>>(),
+        [1, 2, 3, 1],
+        "A counts to three and B to one"
+    );
+    assert_clock_condition(&d, &times);
+    let time = |e: EventId| times.iter().find(|(x, _)| *x == e).unwrap().1;
+    assert!(
+        times
+            .iter()
+            .all(|&(e, _)| e == b1 || (!d.happened_before(e, b1) && !d.happened_before(b1, e))),
+        "no event on A is ordered with B1"
+    );
+    assert!(
+        d.recorded_before(a3, b1),
+        "the note says B1 is later on the wall clock"
+    );
+    assert_eq!(time(a1), time(b1), "A1 and B1 share a time");
+    assert!(time(b1) < time(a3), "B1's time is below A3's");
+    for (e, _) in &times {
+        let key = d.events()[e.0].name.to_lowercase();
+        d.pin_event(*e, &key);
+    }
+    d.narrate(
+        b1,
+        rich![
+            "ticks to ",
+            Span::value(time(b1).to_string()),
+            " having heard nothing from A"
+        ],
+    );
+    d.callout_concurrent(
+        b1,
+        a3,
+        rich![
+            "B1 and A3 are concurrent: B1 is later on the wall clock, but no message ever passed between A and B, so nothing orders them. B1's time ",
+            Span::value(time(b1).to_string()),
+            " is still below A3's ",
+            Span::value(time(a3).to_string())
+        ],
+    );
+    Figure {
+        stem: "lamport-no-messages",
         diagram: Diagram::SpaceTime(d),
     }
 }

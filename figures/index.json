@@ -3,6 +3,7 @@
     { "stem": "concurrency-one-message", "kind": "space-time", "form": "steps", "title": "Concurrency: one message from A to B" },
     { "stem": "concurrency-crossing-writes", "kind": "space-time", "form": "steps", "title": "Concurrency: A and B both write x and tell each other" },
     { "stem": "lamport-taking-turns", "kind": "space-time", "form": "steps", "title": "Lamport clocks: two processes taking turns" },
+    { "stem": "lamport-no-messages", "kind": "space-time", "form": "steps", "title": "Lamport clocks: two processes that never speak" },
     { "stem": "lamport-clock-trace", "kind": "space-time", "form": "steps", "title": "Lamport clocks: three processes, two messages" },
     { "stem": "vector-clock-trace", "kind": "space-time", "form": "steps", "title": "Vector clocks: three processes, two messages" },
     { "stem": "clock-comparison", "kind": "space-time", "form": "steps", "title": "Three clocks, one trace: Lamport, hybrid logical, and vector" },
