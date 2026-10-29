@@ -131,7 +131,7 @@ fn concurrency_one_message() -> Figure {
         a1,
         b1,
         rich![
-            "A1 and B1 are concurrent: B1 is later on the wall clock, but m hasn't reached B yet, so nothing at B1 can depend on A1. Comparing them gives ",
+            "{A1} and {B1} are concurrent: {B1} is later on the wall clock, but m hasn't reached {B} yet, so nothing at {B1} can depend on {A1}. Comparing them gives ",
             Span::value(format!("{a1_b1:?}"))
         ],
     );
@@ -139,7 +139,7 @@ fn concurrency_one_message() -> Figure {
         a1,
         b2,
         rich![
-            "A1 comes before B2: B2 is B receiving the message A sent at A1. Comparing them gives ",
+            "{A1} comes before {B2}: {B2} is {B} receiving the message {A} sent at {A1}. Comparing them gives ",
             Span::value(format!("{a1_b2:?}"))
         ],
     );
@@ -198,17 +198,17 @@ fn concurrency_crossing_writes() -> Figure {
     }
     d.pin_message(x_from_a, "x-from-a");
     d.pin_message(x_from_b, "x-from-b");
-    d.narrate(a1, "writes x and sends the write to B");
+    d.narrate(a1, "writes x and sends the write to {B}");
     d.narrate(
         b1,
-        "writes x too, and sends it to A, while A's write is still on its way",
+        "writes x too, and sends it to {A}, while {A}'s write is still on its way",
     );
-    d.narrate(a2, "receives B's write, and now knows of both");
-    d.narrate(b2, "receives A's write, and now knows of both");
+    d.narrate(a2, "receives {B}'s write, and now knows of both");
+    d.narrate(b2, "receives {A}'s write, and now knows of both");
     d.callout_concurrent(
         a1,
         b1,
-        "A1 and B1 are concurrent: B wrote x later on the wall clock, but before A's write reached it, so neither write knew of the other",
+        "{A1} and {B1} are concurrent: {B} wrote x later on the wall clock, but before {A}'s write reached it, so neither write knew of the other",
     );
     d.callout(
         a2,
@@ -280,7 +280,7 @@ fn vector_clock_trace() -> Figure {
     t.d.narrate(
         *c2,
         rich![
-            "receives m2, and so learns of A's first two events though A never sent to C: ",
+            "receives m2, and so learns of {A}'s first two events though {A} never sent to {C}: ",
             v(c2_clock)
         ],
     );
@@ -377,22 +377,22 @@ fn vector_trace() -> VectorTrace {
         a3,
         b3,
         rich![
-            "A3 ",
+            "{A3} ",
             phrase(a3_b3),
-            " B3: ",
+            " {B3}: ",
             v(&a3_clock),
             " and ",
             v(&b3_clock),
-            " are incomparable, though A3 is later in real time"
+            " are incomparable, though {A3} is later in real time"
         ],
     );
     d.callout_before(
         a1,
         c2,
         rich![
-            "A1 ",
+            "{A1} ",
             phrase(a1_c2),
-            " C2: ",
+            " {C2}: ",
             v(&a1_clock),
             " < ",
             v(&c2_clock),
@@ -530,20 +530,20 @@ fn lamport_no_messages() -> Figure {
         rich![
             "ticks to ",
             Span::value(time(b1).to_string()),
-            " having heard nothing from A"
+            " having heard nothing from {A}"
         ],
     );
     d.callout_concurrent(
         b1,
         a2,
         rich![
-            "C(B1) = ",
+            "C({B1}) = ",
             Span::value(time(b1).to_string()),
-            " and C(A2) = ",
+            " and C({A2}) = ",
             Span::value(time(a2).to_string()),
-            ", so C(B1) < C(A2). Yet B1 ",
+            ", so C({B1}) < C({A2}). Yet {B1} ",
             Span::part("↛", "sym"),
-            " A2: no message ever passed between A and B, so nothing orders them."
+            " {A2}: no message ever passed between {A} and {B}, so nothing orders them."
         ],
     );
     Figure {
@@ -590,7 +590,7 @@ fn lamport_clock_trace() -> Figure {
         rich![
             "ticks to ",
             Span::value(a3_time.to_string()),
-            ", below B3's ",
+            ", below {B3}'s ",
             Span::value(b3_time.to_string()),
             ", though nothing passed between them"
         ],
@@ -674,18 +674,18 @@ fn lamport_trace() -> LamportTrace {
         a3,
         b3,
         rich![
-            "A3 is concurrent with B3, yet its time is smaller, ",
+            "{A3} is concurrent with {B3}, yet its time is smaller, ",
             Span::value(time(a3).to_string()),
             " < ",
             Span::value(time(b3).to_string()),
-            ", though A3 is later in real time: the clock orders events neither could have influenced"
+            ", though {A3} is later in real time: the clock orders events neither could have influenced"
         ],
     );
     d.callout_before(
         a1,
         c2,
         rich![
-            "A1 happened before C2, carried by m1 then m2, and its time is smaller: ",
+            "{A1} happened before {C2}, carried by m1 then m2, and its time is smaller: ",
             Span::value(time(a1).to_string()),
             " < ",
             Span::value(time(c2).to_string())
@@ -716,7 +716,7 @@ fn clock_comparison() -> Figure {
     r.d.narrate(
         r.b2,
         rich![
-            "receives m1: B's own clock reads ",
+            "receives m1: {B}'s own clock reads ",
             Span::value(r.b2_physical.to_string()),
             ", behind m1's wall time, so its HLC keeps ",
             Span::value(r.m1_hlc.wall.to_string()),
@@ -727,20 +727,20 @@ fn clock_comparison() -> Figure {
     r.d.narrate(
         r.c2,
         rich![
-            "receives m2: its vector clock takes the larger of each entry, so it now knows of A's first two events: ",
+            "receives m2: its vector clock takes the larger of each entry, so it now knows of {A}'s first two events: ",
             v(&r.c2_vector)
         ],
     );
     r.d.narrate(
         r.a3,
         rich![
-            "the last event on the wall clock, and concurrent with B3: its Lamport time ",
+            "the last event on the wall clock, and concurrent with {B3}: its Lamport time ",
             Span::value(r.a3_lamport.to_string()),
-            " is below B3's ",
+            " is below {B3}'s ",
             Span::value(r.b3_lamport.to_string()),
             ", but its HLC ",
             v(&r.a3_hlc),
-            " is above B3's ",
+            " is above {B3}'s ",
             v(&r.b3_hlc)
         ],
     );
@@ -843,11 +843,11 @@ fn clock_comparison_run() -> ComparisonRun {
         a2,
         b2,
         rich![
-            format!("B's clock runs {B_BEHIND} behind: m1 left A at "),
+            format!("{{B}}'s clock runs {B_BEHIND} behind: m1 left {{A}} at "),
             v(&m1.hlc),
-            " but arrives when B reads ",
+            " but arrives when {B} reads ",
             Span::value(b2_stamps.physical.to_string()),
-            ", so B2 keeps A's wall time and counts on: ",
+            ", so {B2} keeps {A}'s wall time and counts on: ",
             v(&b2_stamps.hlc)
         ],
     );
@@ -855,13 +855,13 @@ fn clock_comparison_run() -> ComparisonRun {
         a3,
         b3,
         rich![
-            "A3 ",
+            "{A3} ",
             phrase(a3_b3),
-            " B3, yet Lamport puts A3 first (",
+            " {B3}, yet Lamport puts {A3} first (",
             Span::value(a3_stamps.lamport.to_string()),
             " < ",
             Span::value(m2.lamport.to_string()),
-            ") and the HLC puts B3 first (",
+            ") and the HLC puts {B3} first (",
             v(&m2.hlc),
             " < ",
             v(&a3_stamps.hlc),
@@ -1013,9 +1013,9 @@ fn lamport_register_overwrite() -> Figure {
     r.d.narrate(
         r.b[0],
         rich![
-            "syncs from A and takes \"milk\", stamped ",
+            "syncs from {A} and takes \"milk\", stamped ",
             v(&r.milk_stamp),
-            "; receiving moves its clock past A's, to ",
+            "; receiving moves its clock past {A}'s, to ",
             Span::value("2")
         ],
     );
@@ -1030,11 +1030,11 @@ fn lamport_register_overwrite() -> Figure {
     r.d.narrate(
         r.sync,
         rich![
-            "syncs from B: ",
+            "syncs from {B}: ",
             v(&r.eggs_stamp),
             " beats ",
             v(&r.milk_stamp),
-            ", so \"eggs\" replaces \"milk\", as B meant it to"
+            ", so \"eggs\" replaces \"milk\", as {B} meant it to"
         ],
     );
     Figure {
@@ -1069,7 +1069,7 @@ fn lamport_register_lost_write() -> Figure {
         rich![
             "does something else: its clock reaches ",
             Span::value("2"),
-            ", where syncing from A took it in the history where B saw milk"
+            ", where syncing from {A} took it in the history where {B} saw milk"
         ],
     );
     r.d.narrate(
@@ -1077,17 +1077,17 @@ fn lamport_register_lost_write() -> Figure {
         rich![
             "writes \"eggs\", stamped ",
             v(&r.eggs_stamp),
-            ": the same stamp as when it had seen milk, though it never heard from A"
+            ": the same stamp as when it had seen milk, though it never heard from {A}"
         ],
     );
     r.d.narrate(
         r.sync,
         rich![
-            "syncs from B: ",
+            "syncs from {B}: ",
             v(&r.eggs_stamp),
             " beats ",
             v(&r.milk_stamp),
-            ", so \"eggs\" replaces \"milk\", which B never saw, and nothing records that \"milk\" was written"
+            ", so \"eggs\" replaces \"milk\", which {B} never saw, and nothing records that \"milk\" was written"
         ],
     );
     Figure {
@@ -1142,7 +1142,7 @@ fn lamport_register_histories() -> [RegisterRun; 2] {
         saw.milk,
         saw.eggs,
         rich![
-            "milk happened before eggs: B was shown milk and chose to replace it, so ",
+            "milk happened before eggs: {B} was shown milk and chose to replace it, so ",
             v(&saw.eggs_stamp),
             " winning over ",
             v(&saw.milk_stamp),
@@ -1153,7 +1153,7 @@ fn lamport_register_histories() -> [RegisterRun; 2] {
         never.milk,
         never.eggs,
         rich![
-            "milk is concurrent with eggs: B never heard from A. Yet the stamps are the same as when B saw milk, ",
+            "milk is concurrent with eggs: {B} never heard from {A}. Yet the stamps are the same as when {B} saw milk, ",
             v(&never.milk_stamp),
             " and ",
             v(&never.eggs_stamp),
@@ -1163,7 +1163,7 @@ fn lamport_register_histories() -> [RegisterRun; 2] {
     never.d.callout(
         never.eggs,
         never.sync,
-        "A drops \"milk\" for \"eggs\" and ends exactly as when B saw milk: no one chose to discard \"milk\", and nothing on either replica records it was written",
+        "{A} drops \"milk\" for \"eggs\" and ends exactly as when {B} saw milk: no one chose to discard \"milk\", and nothing on either replica records it was written",
     );
     [saw, never]
 }
@@ -1265,7 +1265,7 @@ fn mv_register_siblings() -> Figure {
         write,
         rich!["writes \"draft\", tagged with the dot ", v(&r.draft)],
     );
-    r.d.narrate(sync, "syncs from r1 and takes \"draft\"");
+    r.d.narrate(sync, "syncs from {r1} and takes \"draft\"");
     r.d.narrate(
         edit_a,
         rich![
@@ -1283,9 +1283,9 @@ fn mv_register_siblings() -> Figure {
     );
     r.d.narrate(
         sync_a,
-        "syncs from r1 and holds both writes: neither was shown the other's, so they are siblings",
+        "syncs from {r1} and holds both writes: neither was shown the other's, so they are siblings",
     );
-    r.d.narrate(sync_b, "syncs from r2 and holds the same two siblings");
+    r.d.narrate(sync_b, "syncs from {r2} and holds the same two siblings");
     r.d.narrate(
         merge,
         rich![
@@ -1295,11 +1295,11 @@ fn mv_register_siblings() -> Figure {
     );
     r.d.narrate(
         merged,
-        "syncs from r2: \"merged\" has seen both siblings, so they give way to it",
+        "syncs from {r2}: \"merged\" has seen both siblings, so they give way to it",
     );
     r.d.narrate(
         stale,
-        "syncs from the copy of r2 taken after its first sync, which still holds \"draft\"; r1 has already seen that write, so it stays gone",
+        "syncs from the copy of {r2} taken after its first sync, which still holds \"draft\"; {r1} has already seen that write, so it stays gone",
     );
     Figure {
         stem: "mv-register-siblings",
@@ -1394,7 +1394,7 @@ fn mv_register_siblings_run() -> SiblingsRun {
         e5,
         e6,
         rich![
-            "r1 and r2 agree: ",
+            "{r1} and {r2} agree: ",
             v(&a2),
             " and ",
             v(&b1),
@@ -1405,9 +1405,9 @@ fn mv_register_siblings_run() -> SiblingsRun {
         e2,
         e9,
         rich![
-            "a copy of r2 taken right after its first sync still holds ",
+            "a copy of {r2} taken right after its first sync still holds ",
             v(&draft),
-            ", but r1 has already seen that write, so \"draft\" is not resurrected"
+            ", but {r1} has already seen that write, so \"draft\" is not resurrected"
         ],
     );
     SiblingsRun {
@@ -1450,10 +1450,10 @@ fn actor_id_reuse() -> Figure {
         write,
         rich!["writes \"x\", tagged with the dot ", v(&r.dot)],
     );
-    r.d.narrate(sync, "syncs from A and takes \"x\"");
+    r.d.narrate(sync, "syncs from {A} and takes \"x\"");
     r.d.narrate(
         lost,
-        "loses its state: the disk is wiped, and the replica comes back as actor A with an empty register",
+        "loses its state: the disk is wiped, and the replica comes back as actor {A} with an empty register",
     );
     r.d.narrate(
         rewrite,
@@ -1466,7 +1466,7 @@ fn actor_id_reuse() -> Figure {
     r.d.narrate(
         sync_b,
         rich![
-            "syncs from A: it already holds ",
+            "syncs from {A}: it already holds ",
             v(&r.dot),
             ", so it takes that to be the write it has and keeps \"x\""
         ],
@@ -1474,9 +1474,9 @@ fn actor_id_reuse() -> Figure {
     r.d.narrate(
         sync_a,
         rich![
-            "syncs from B, which holds ",
+            "syncs from {B}, which holds ",
             v(&r.dot),
-            " too: A believes it already has that write, and keeps \"y\""
+            " too: {A} believes it already has that write, and keeps \"y\""
         ],
     );
     Figure {
@@ -1541,7 +1541,7 @@ fn actor_id_reuse_run() -> ReuseRun {
     d.callout(
         e5,
         e6,
-        "B keeps \"x\" and A keeps \"y\": each believes it already holds the other's write, so they never converge",
+        "{B} keeps \"x\" and {A} keeps \"y\": each believes it already holds the other's write, so they never converge",
     );
     ReuseRun {
         d,
@@ -1685,7 +1685,7 @@ fn mutex_fifo() -> Figure {
         rich![
             "leaves: drops its request ",
             v(&LamportStamp::new(1, 'A')),
-            " from its queue and sends a release to B"
+            " from its queue and sends a release to {B}"
         ],
     );
     Figure {
@@ -1721,7 +1721,7 @@ fn narrate_requests(r: &mut MutexRun) {
         rich![
             "asks for the resource: stamps its request ",
             v(&stamp(1, 'A')),
-            ", queues it, and sends it to B"
+            ", queues it, and sends it to {B}"
         ],
     );
     r.d.narrate(
@@ -1731,12 +1731,12 @@ fn narrate_requests(r: &mut MutexRun) {
             v(&stamp(1, 'B')),
             " ranks after ",
             v(&stamp(1, 'A')),
-            ", since A's id is smaller"
+            ", since {A}'s id is smaller"
         ],
     );
     r.d.narrate(
         r.a[1],
-        "queues B's request behind its own and acks it. Its request is first, and it has heard from B past it, so A enters",
+        "queues {B}'s request behind its own and acks it. Its request is first, and it has heard from {B} past it, so {A} enters",
     );
 }
 
@@ -1823,29 +1823,29 @@ fn mutex_fifo_run() -> MutexRun {
         a1,
         b2,
         rich![
-            "A's request ",
+            "{A}'s request ",
             v(&stamp(1, 'A')),
-            " reaches B before anything A sent after it, and goes ahead of B's own ",
+            " reaches {B} before anything {A} sent after it, and goes ahead of {B}'s own ",
             v(&stamp(1, 'B')),
-            " in B's queue"
+            " in {B}'s queue"
         ],
     );
     d.callout(
         a2,
         b3,
         rich![
-            "B has heard from A at ",
+            "{B} has heard from {A} at ",
             Span::value("3"),
-            ", later than its request, but A's request is first in its queue, so B waits"
+            ", later than its request, but {A}'s request is first in its queue, so {B} waits"
         ],
     );
     d.callout(
         a4,
         b4,
         rich![
-            "A releases: B drops ",
+            "{A} releases: {B} drops ",
             v(&stamp(1, 'A')),
-            " from its queue, its own request is first, and B enters"
+            " from its queue, its own request is first, and {B} enters"
         ],
     );
     MutexRun {
@@ -1870,14 +1870,14 @@ fn mutex_overtaking() -> Figure {
     // A's request first once it arrives.
     r.d.narrate(
         r.b[1],
-        "gets A's ack before A's earlier request, which is still on its way, and enters while A holds",
+        "gets {A}'s ack before {A}'s earlier request, which is still on its way, and enters while {A} holds",
     );
     r.d.narrate(
         r.b[2],
         rich![
-            "gets A's request at last: ",
+            "gets {A}'s request at last: ",
             v(&LamportStamp::new(1, 'A')),
-            " goes ahead of its own, so B no longer holds by its queue, but it is already in"
+            " goes ahead of its own, so {B} no longer holds by its queue, but it is already in"
         ],
     );
     Figure {
@@ -1953,20 +1953,20 @@ fn mutex_overtaking_run() -> MutexRun {
         a2,
         b2,
         rich![
-            "A's ack, sent after its request, arrives first: B has heard from A at ",
+            "{A}'s ack, sent after its request, arrives first: {B} has heard from {A} at ",
             Span::value("3"),
             ", later than its own request ",
             v(&stamp(1, 'B')),
-            ", decides nothing earlier from A is on the way, and enters while A holds"
+            ", decides nothing earlier from {A} is on the way, and enters while {A} holds"
         ],
     );
     d.callout(
         a1,
         b3,
         rich![
-            "A's request ",
+            "{A}'s request ",
             v(&stamp(1, 'A')),
-            " arrives at last and goes to the head of B's queue, but B is already in"
+            " arrives at last and goes to the head of {B}'s queue, but {B} is already in"
         ],
     );
     MutexRun {
@@ -2048,29 +2048,29 @@ fn mutex_crash() -> Figure {
         rich![
             "asks for the resource: stamps its request ",
             v(&mine),
-            ", queues it, and sends it to A and C"
+            ", queues it, and sends it to {A} and {C}"
         ],
     );
     d.narrate(
         crash,
-        "crashes, with B's request still on its way. Nothing sent to A is ever delivered",
+        "crashes, with {B}'s request still on its way. Nothing sent to {A} is ever delivered",
     );
-    d.narrate(acks, "queues B's request and acks it");
+    d.narrate(acks, "queues {B}'s request and acks it");
     d.narrate(
         waits,
         rich![
-            "has heard from C past ",
+            "has heard from {C} past ",
             v(&mine),
-            ", and its request is first in its queue, but it has heard nothing from A"
+            ", and its request is first in its queue, but it has heard nothing from {A}"
         ],
     );
     d.callout(
         crash,
         waits,
         rich![
-            "B's request, ",
+            "{B}'s request, ",
             v(&mine),
-            ", heads its queue, and C has answered past it. But B must hear from A past it too, and A crashed before the request reached it: B never enters"
+            ", heads its queue, and {C} has answered past it. But {B} must hear from {A} past it too, and {A} crashed before the request reached it: {B} never enters"
         ],
     );
     Figure {
@@ -2102,18 +2102,18 @@ fn bookkeeper_crash() -> Figure {
     let set = |ps: &[char]| voters(&ps.iter().copied().collect::<BTreeSet<char>>());
     r.d.narrate(
         a[0],
-        "votes to accept the user's command: reserve a seat on flight 221 for Smith. The user issued it at 1, so it's stamped 1, and it reached A at 4, before 1 + δ = 11 (δ is 10 here). A sends its vote to B and C",
+        "votes to accept the user's command: reserve a seat on flight 221 for Smith. The user issued it at 1, so it's stamped 1, and it reached {A} at 4, before 1 + δ = 11 (δ is 10 here). {A} sends its vote to {B} and {C}",
     );
     r.d.narrate(
         a[1],
-        "crashes as its vote goes out. Nothing sent to A from now on is delivered",
+        "crashes as its vote goes out. Nothing sent to {A} from now on is delivered",
     );
     r.d.narrate(
         b[0],
         rich![
             "hears of the command at 9, before 1 + 2δ = 21, and votes too. ",
             set(&['A', 'B']),
-            " is a majority graph, so the command is accepted, and the message B sends with its vote says so"
+            " is a majority graph, so the command is accepted, and the message {B} sends with its vote says so"
         ],
     );
     r.d.narrate(
@@ -2121,30 +2121,33 @@ fn bookkeeper_crash() -> Figure {
         rich![
             "votes too: ",
             set(&['A', 'C']),
-            " is another majority graph, so C's message says the command is accepted, as B's did"
+            " is another majority graph, so {C}'s message says the command is accepted, as {B}'s did"
         ],
     );
     r.d.narrate(
         b[1],
-        "learns that C voted too. The message B sent with its vote at 9 already said the command is accepted, so B sends nothing",
+        "learns that {C} voted too. The message {B} sent with its vote at 9 already said the command is accepted, so {B} sends nothing",
     );
-    r.d.narrate(c[1], "learns that B voted too, and likewise sends nothing");
+    r.d.narrate(
+        c[1],
+        "learns that {B} voted too, and likewise sends nothing",
+    );
     r.d.narrate(
         b[2],
         rich![
-            "at 21: from now on B votes for nothing stamped 1 or earlier, and its message says so just by when it was sent. B can't execute the command yet: it has heard from A only up to 4 and from C only up to 12, so for all B knows, ",
+            "at 21: from now on {B} votes for nothing stamped 1 or earlier, and its message says so just by when it was sent. {B} can't execute the command yet: it has heard from {A} only up to 4 and from {C} only up to 12, so for all {B} knows, ",
             set(&['A', 'C']),
             " accepted another command stamped 1"
         ],
     );
-    r.d.narrate(c[2], "at 21 too, and C's message says so the same way");
+    r.d.narrate(c[2], "at 21 too, and {C}'s message says so the same way");
     r.d.narrate(
         b[3],
-        "hears that C's voting closed at 21 too. Every majority graph includes B or C, so no command stamped 1 or earlier that neither voted for can be accepted. B now knows every accepted command up to 1, says so to C, and executes the one there is: Smith is booked",
+        "hears that {C}'s voting closed at 21 too. Every majority graph includes {B} or {C}, so no command stamped 1 or earlier that neither voted for can be accepted. {B} now knows every accepted command up to 1, says so to {C}, and executes the one there is: Smith is booked",
     );
     r.d.narrate(
         c[3],
-        "hears the same, books Smith too, and says so to B. The figure ends with both of those messages on their way. Neither B nor C has heard from A since the vote it sent at 4",
+        "hears the same, books Smith too, and says so to {B}. The figure ends with both of those messages on their way. Neither {B} nor {C} has heard from {A} since the vote it sent at 4",
     );
     Figure {
         stem: "bookkeeper-crash",
@@ -2289,16 +2292,16 @@ fn bookkeeper_crash_run() -> BookkeeperRun {
         a1,
         crash,
         rich![
-            "A votes for ",
+            "{A} votes for ",
             v(&command),
-            " and crashes. Its vote still reaches B and C, but everything sent to A afterwards goes nowhere"
+            " and crashes. Its vote still reaches {B} and {C}, but everything sent to {A} afterwards goes nowhere"
         ],
     );
     d.callout(
         b4,
         c4,
         rich![
-            "B and C have each heard from the other since voting closed at 21, and every majority graph includes B or C, so without A they know every accepted command up to 1: both book Smith"
+            "{B} and {C} have each heard from the other since voting closed at 21, and every majority graph includes {B} or {C}, so without {A} they know every accepted command up to 1: both book Smith"
         ],
     );
     BookkeeperRun {

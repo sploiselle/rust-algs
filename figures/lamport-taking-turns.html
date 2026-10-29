@@ -102,12 +102,12 @@
 <div class="ds-play" hidden>
 <div class="ds-play-bar"></div>
 <div class="ds-beats">
-<p class="ds-beat" data-in="0" data-out="1" data-event="a1"><span class="ds-beat-body"><span class="ds-lead">A1</span> on A is a local event</span></p>
-<p class="ds-beat" data-in="1" data-out="2" data-cont="" data-event="a2"><span class="ds-beat-body"><span class="ds-lead">A2</span> on A sends m1 <code class="ds-v">2</code> to B</span></p>
-<p class="ds-beat" data-in="2" data-out="3" data-cont="" data-event="b1"><span class="ds-beat-body"><span class="ds-lead">B1</span> on B receives a message sent at time <code class="ds-v">2</code> as its first event, so its clock takes that and adds one, reaching <code class="ds-v">3</code></span></p>
-<p class="ds-beat" data-in="3" data-out="4" data-cont="" data-event="b2"><span class="ds-beat-body"><span class="ds-lead">B2</span> on B is a local event</span></p>
-<p class="ds-beat" data-in="4" data-out="5" data-cont="" data-event="b3"><span class="ds-beat-body"><span class="ds-lead">B3</span> on B sends m2 <code class="ds-v">5</code> to A</span></p>
-<p class="ds-beat" data-in="5" data-cont="" data-event="a3"><span class="ds-beat-body"><span class="ds-lead">A3</span> on A receives a message sent at time <code class="ds-v">5</code>: its clock takes the larger of its own <code class="ds-v">2</code> and that, then adds one, reaching <code class="ds-v">6</code></span></p>
+<p class="ds-beat" data-in="0" data-out="1" data-event="a1"><span class="ds-beat-body"><span class="ds-lead ds-actor" data-actor="A" data-actor-n="1">A</span><span class="ds-lead">1</span> on <span class="ds-actor" data-actor="A" data-actor-n="1">A</span> is a local event</span></p>
+<p class="ds-beat" data-in="1" data-out="2" data-cont="" data-event="a2"><span class="ds-beat-body"><span class="ds-lead ds-actor" data-actor="A" data-actor-n="1">A</span><span class="ds-lead">2</span> on <span class="ds-actor" data-actor="A" data-actor-n="1">A</span> sends m1 <code class="ds-v">2</code> to <span class="ds-actor" data-actor="B" data-actor-n="2">B</span></span></p>
+<p class="ds-beat" data-in="2" data-out="3" data-cont="" data-event="b1"><span class="ds-beat-body"><span class="ds-lead ds-actor" data-actor="B" data-actor-n="2">B</span><span class="ds-lead">1</span> on <span class="ds-actor" data-actor="B" data-actor-n="2">B</span> receives a message sent at time <code class="ds-v">2</code> as its first event, so its clock takes that and adds one, reaching <code class="ds-v">3</code></span></p>
+<p class="ds-beat" data-in="3" data-out="4" data-cont="" data-event="b2"><span class="ds-beat-body"><span class="ds-lead ds-actor" data-actor="B" data-actor-n="2">B</span><span class="ds-lead">2</span> on <span class="ds-actor" data-actor="B" data-actor-n="2">B</span> is a local event</span></p>
+<p class="ds-beat" data-in="4" data-out="5" data-cont="" data-event="b3"><span class="ds-beat-body"><span class="ds-lead ds-actor" data-actor="B" data-actor-n="2">B</span><span class="ds-lead">3</span> on <span class="ds-actor" data-actor="B" data-actor-n="2">B</span> sends m2 <code class="ds-v">5</code> to <span class="ds-actor" data-actor="A" data-actor-n="1">A</span></span></p>
+<p class="ds-beat" data-in="5" data-cont="" data-event="a3"><span class="ds-beat-body"><span class="ds-lead ds-actor" data-actor="A" data-actor-n="1">A</span><span class="ds-lead">3</span> on <span class="ds-actor" data-actor="A" data-actor-n="1">A</span> receives a message sent at time <code class="ds-v">5</code>: its clock takes the larger of its own <code class="ds-v">2</code> and that, then adds one, reaching <code class="ds-v">6</code></span></p>
 </div>
 <div class="ds-state">
 <table aria-label="What each lane holds at this step">

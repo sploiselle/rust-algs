@@ -89,10 +89,10 @@
 <div class="ds-play" hidden>
 <div class="ds-play-bar"></div>
 <div class="ds-beats">
-<p class="ds-beat" data-in="0" data-out="1" data-event="a1"><span class="ds-beat-body"><span class="ds-lead">A1</span> on A is a local event</span></p>
-<p class="ds-beat" data-in="1" data-out="2" data-cont="" data-event="a2"><span class="ds-beat-body"><span class="ds-lead">A2</span> on A is a local event</span></p>
-<p class="ds-beat" data-in="2" data-out="3" data-cont="" data-event="b1"><span class="ds-beat-body"><span class="ds-lead">B1</span> on B ticks to <code class="ds-v">1</code> having heard nothing from A</span></p>
-<p class="ds-beat" data-in="3" data-cont="" data-note="1"><span class="ds-note-n" aria-hidden="true">1</span> <span class="ds-beat-body">C(B1) = <code class="ds-v">1</code> and C(A2) = <code class="ds-v">2</code>, so C(B1) &lt; C(A2). Yet B1 <code class="ds-v"><span class="ds-sym">↛</span></code> A2: no message ever passed between A and B, so nothing orders them.</span></p>
+<p class="ds-beat" data-in="0" data-out="1" data-event="a1"><span class="ds-beat-body"><span class="ds-lead ds-actor" data-actor="A" data-actor-n="1">A</span><span class="ds-lead">1</span> on <span class="ds-actor" data-actor="A" data-actor-n="1">A</span> is a local event</span></p>
+<p class="ds-beat" data-in="1" data-out="2" data-cont="" data-event="a2"><span class="ds-beat-body"><span class="ds-lead ds-actor" data-actor="A" data-actor-n="1">A</span><span class="ds-lead">2</span> on <span class="ds-actor" data-actor="A" data-actor-n="1">A</span> is a local event</span></p>
+<p class="ds-beat" data-in="2" data-out="3" data-cont="" data-event="b1"><span class="ds-beat-body"><span class="ds-lead ds-actor" data-actor="B" data-actor-n="2">B</span><span class="ds-lead">1</span> on <span class="ds-actor" data-actor="B" data-actor-n="2">B</span> ticks to <code class="ds-v">1</code> having heard nothing from <span class="ds-actor" data-actor="A" data-actor-n="1">A</span></span></p>
+<p class="ds-beat" data-in="3" data-cont="" data-note="1"><span class="ds-note-n" aria-hidden="true">1</span> <span class="ds-beat-body">C(<span class="ds-actor" data-actor="B" data-actor-n="2">B</span>1) = <code class="ds-v">1</code> and C(<span class="ds-actor" data-actor="A" data-actor-n="1">A</span>2) = <code class="ds-v">2</code>, so C(<span class="ds-actor" data-actor="B" data-actor-n="2">B</span>1) &lt; C(<span class="ds-actor" data-actor="A" data-actor-n="1">A</span>2). Yet <span class="ds-actor" data-actor="B" data-actor-n="2">B</span>1 <code class="ds-v"><span class="ds-sym">↛</span></code> <span class="ds-actor" data-actor="A" data-actor-n="1">A</span>2: no message ever passed between <span class="ds-actor" data-actor="A" data-actor-n="1">A</span> and <span class="ds-actor" data-actor="B" data-actor-n="2">B</span>, so nothing orders them.</span></p>
 </div>
 <div class="ds-state">
 <table aria-label="What each lane holds at this step">
@@ -119,7 +119,7 @@
 <figcaption class="ds-fig-caption">
 <p class="ds-fig-title">Lamport clocks: two processes that never speak</p>
 <ol class="ds-notes">
-<li class="ds-note" data-in="3" data-note="1" data-relation="concurrent"><span class="ds-note-n" aria-hidden="true">1</span> <span class="ds-note-body">C(B1) = <code class="ds-v">1</code> and C(A2) = <code class="ds-v">2</code>, so C(B1) &lt; C(A2). Yet B1 <code class="ds-v"><span class="ds-sym">↛</span></code> A2: no message ever passed between A and B, so nothing orders them.</span></li>
+<li class="ds-note" data-in="3" data-note="1" data-relation="concurrent"><span class="ds-note-n" aria-hidden="true">1</span> <span class="ds-note-body">C(<span class="ds-actor" data-actor="B" data-actor-n="2">B</span>1) = <code class="ds-v">1</code> and C(<span class="ds-actor" data-actor="A" data-actor-n="1">A</span>2) = <code class="ds-v">2</code>, so C(<span class="ds-actor" data-actor="B" data-actor-n="2">B</span>1) &lt; C(<span class="ds-actor" data-actor="A" data-actor-n="1">A</span>2). Yet <span class="ds-actor" data-actor="B" data-actor-n="2">B</span>1 <code class="ds-v"><span class="ds-sym">↛</span></code> <span class="ds-actor" data-actor="A" data-actor-n="1">A</span>2: no message ever passed between <span class="ds-actor" data-actor="A" data-actor-n="1">A</span> and <span class="ds-actor" data-actor="B" data-actor-n="2">B</span>, so nothing orders them.</span></li>
 </ol>
 </figcaption>
 </figure>

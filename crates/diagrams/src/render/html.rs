@@ -644,6 +644,23 @@ mod tests {
     }
 
     #[test]
+    fn a_step_through_tints_the_names_it_speaks() {
+        let mut d = SpaceTime::new("t");
+        let (a, b) = (d.actor_lane("A", 'A'), d.actor_lane("B", 'B'));
+        let a1 = d.event(a, "A1", "");
+        let b1 = d.event(b, "B1", "");
+        d.message(a1, b1, "m1");
+        d.narrate(b1, "takes m1 from {A}");
+        let html = steps_html("fig", &Diagram::SpaceTime(d));
+        for needle in [
+            r#"<span class="ds-lead ds-actor" data-actor="A" data-actor-n="1">A</span><span class="ds-lead">1</span> on <span class="ds-actor" data-actor="A" data-actor-n="1">A</span> sends m1 to <span class="ds-actor" data-actor="B" data-actor-n="2">B</span>"#,
+            r#"<span class="ds-lead ds-actor" data-actor="B" data-actor-n="2">B</span><span class="ds-lead">1</span> on <span class="ds-actor" data-actor="B" data-actor-n="2">B</span> takes m1 from <span class="ds-actor" data-actor="A" data-actor-n="1">A</span>"#,
+        ] {
+            assert!(html.contains(needle), "missing {needle:?} in:\n{html}");
+        }
+    }
+
+    #[test]
     fn a_step_through_says_what_each_step_does() {
         let mut d = SpaceTime::new("Two lanes");
         let (a, b) = (d.lane("A"), d.lane("B"));

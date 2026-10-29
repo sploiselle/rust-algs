@@ -69,6 +69,21 @@ impl Span {
     }
 }
 
+/// Text that names `actor`, for a page to tint with that actor's palette slot
+/// once a renderer tags the slot: role `actor`, `data-actor` the name.
+pub fn actor_span(text: impl Into<String>, actor: &str) -> Span {
+    Span::plain(text).also("actor").with("actor", actor)
+}
+
+/// Appends `s`, folding it into the last span when both are bare text.
+fn push_merging(out: &mut Vec<Span>, s: Span) {
+    let bare = |x: &Span| !x.value && x.roles.is_empty() && x.data.is_empty();
+    match out.last_mut() {
+        Some(last) if bare(last) && bare(&s) => last.text.push_str(&s.text),
+        _ => out.push(s),
+    }
+}
+
 /// Text as lines of [`Span`]s. A plain string converts with one line per `\n`.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Rich {
@@ -503,15 +518,108 @@ impl SpaceTime {
     /// it would generate. It continues "B2 on B …": say what the library did
     /// and show values with [`v`](crate::label::v), which a test checks are
     /// on screen at that step; any further claim needs an assert beside it in
-    /// the catalog, as a callout's does. Panics if the event is unknown, the
-    /// text empty, or the event already narrated.
+    /// the catalog, as a callout's does. A `{Name}` in the text is tinted as
+    /// that lane, event or actor (see `mark_names`). Panics if the event is
+    /// unknown, the text empty, or the event already narrated.
     pub fn narrate(&mut self, event: EventId, text: impl Into<Rich>) {
         assert!(event.0 < self.events.len(), "unknown event");
-        let text = text.into();
+        let text = self.mark_names(text.into());
         assert!(!text.is_empty(), "a narration says something");
         let e = &mut self.events[event.0];
         assert!(e.narration.is_empty(), "the event is already narrated");
         e.narration = text;
+    }
+
+    /// `text` with each `{Name}` replaced by how a note mentions that name,
+    /// so a page can tint it like its lane: see [`SpaceTime::event_mention`]
+    /// and [`SpaceTime::lane_mention`]. A bare actor's name is tinted whole.
+    /// Only plain spans are read: a value may print in braces, as a vector
+    /// clock does. Panics on a name that is no lane, event or actor of the
+    /// figure, or on a brace left open.
+    pub fn mark_names(&self, text: Rich) -> Rich {
+        Rich {
+            lines: text
+                .lines
+                .into_iter()
+                .map(|line| {
+                    let mut out: Vec<Span> = Vec::new();
+                    for s in line {
+                        let bare = !s.value && s.roles.is_empty() && s.data.is_empty();
+                        if bare && s.text.contains('{') {
+                            for part in self.mark_plain(&s.text) {
+                                push_merging(&mut out, part);
+                            }
+                        } else {
+                            push_merging(&mut out, s);
+                        }
+                    }
+                    out
+                })
+                .collect(),
+        }
+    }
+
+    fn mark_plain(&self, text: &str) -> Vec<Span> {
+        let mut out = Vec::new();
+        let mut rest = text;
+        while let Some(open) = rest.find('{') {
+            let close = rest[open..]
+                .find('}')
+                .map(|k| open + k)
+                .unwrap_or_else(|| panic!("a brace is left open in {text:?}"));
+            if open > 0 {
+                out.push(Span::plain(&rest[..open]));
+            }
+            let name = &rest[open + 1..close];
+            out.extend(self.mention(name).unwrap_or_else(|| {
+                panic!("{{{name}}} names no lane, event or actor of the figure")
+            }));
+            rest = &rest[close + 1..];
+        }
+        if !rest.is_empty() {
+            out.push(Span::plain(rest));
+        }
+        out
+    }
+
+    /// How a note mentions `name`, or `None` if nothing in the figure has it:
+    /// a lane by its name, then an event by its name, then an actor.
+    fn mention(&self, name: &str) -> Option<Vec<Span>> {
+        if let Some(i) = self.lanes.iter().position(|l| l.name == name) {
+            return Some(self.lane_mention(LaneId(i)));
+        }
+        if let Some(i) = self.events.iter().position(|e| e.name == name) {
+            return Some(self.event_mention(EventId(i)));
+        }
+        if self.actors().iter().any(|a| a == name) {
+            return Some(vec![actor_span(name, name)]);
+        }
+        None
+    }
+
+    /// A lane's name as a note mentions it: tinted as its actor, or plain
+    /// for a lane that shows none.
+    pub fn lane_mention(&self, lane: LaneId) -> Vec<Span> {
+        let l = &self.lanes[lane.0];
+        vec![match &l.actor {
+            Some(a) => actor_span(&l.name, a),
+            None => Span::plain(&l.name),
+        }]
+    }
+
+    /// An event's name as a note mentions it: the part that names its lane's
+    /// actor is tinted and the rest left plain, so `B1` on `B` tints only the
+    /// `B`, as a post's prose does. A name not led by the actor's is tinted
+    /// whole; one on a lane that shows no actor stays plain.
+    pub fn event_mention(&self, event: EventId) -> Vec<Span> {
+        let e = &self.events[event.0];
+        match &self.lanes[e.lane.0].actor {
+            Some(a) if e.name.len() > a.len() && e.name.starts_with(a.as_str()) => {
+                vec![actor_span(a, a), Span::plain(&e.name[a.len()..])]
+            }
+            Some(a) => vec![actor_span(&e.name, a)],
+            None => vec![Span::plain(&e.name)],
+        }
     }
 
     /// Give an event a key that survives changes to the scenario around it.
@@ -603,6 +711,7 @@ impl SpaceTime {
 
     fn push_callout(&mut self, a: EventId, b: EventId, text: Rich, relation: Option<Relation>) {
         self.check_events(a, b);
+        let text = self.mark_names(text);
         self.callouts.push(Callout {
             a,
             b,
@@ -987,6 +1096,70 @@ impl Diagram {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn tint(text: &str, actor: &str) -> Span {
+        Span::plain(text).also("actor").with("actor", actor)
+    }
+
+    #[test]
+    fn a_note_marks_the_names_it_puts_in_braces() {
+        let mut d = SpaceTime::new("t");
+        let (a, b, c) = (d.actor_lane("A", 'A'), d.actor_lane("r1", 'B'), d.lane("C"));
+        let a1 = d.event(a, "A1", "");
+        let b1 = d.event(b, "B1", "");
+        let c1 = d.event(c, "C1", "");
+        d.narrate(
+            b1,
+            rich![
+                "{B1} hears nothing from {A}; ",
+                Span::value("{A:1}"),
+                " stays, and {C1} on {C} is nobody's"
+            ],
+        );
+        assert_eq!(
+            d.events()[b1.0].narration.lines,
+            vec![vec![
+                tint("B", "B"),
+                Span::plain("1 hears nothing from "),
+                tint("A", "A"),
+                Span::plain("; "),
+                Span::value("{A:1}"),
+                Span::plain(" stays, and C1 on C is nobody's"),
+            ]],
+            "the letter is tinted, a value's braces are left alone, a lane without an actor stays plain"
+        );
+        d.callout_concurrent(a1, c1, "{r1} writes as {B}: {A1}");
+        assert_eq!(
+            d.callouts()[0].text.lines,
+            vec![vec![
+                tint("r1", "B"),
+                Span::plain(" writes as "),
+                tint("B", "B"),
+                Span::plain(": "),
+                tint("A", "A"),
+                Span::plain("1"),
+            ]],
+            "a lane's name tints as its actor, and a bare actor's name tints whole"
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "names no lane, event or actor")]
+    fn a_note_cannot_name_what_the_figure_lacks() {
+        let mut d = SpaceTime::new("t");
+        let a = d.actor_lane("A", 'A');
+        let a1 = d.event(a, "A1", "");
+        d.narrate(a1, "{Z} is nobody");
+    }
+
+    #[test]
+    #[should_panic(expected = "left open")]
+    fn a_note_cannot_leave_a_brace_open() {
+        let mut d = SpaceTime::new("t");
+        let a = d.actor_lane("A", 'A');
+        let a1 = d.event(a, "A1", "");
+        d.narrate(a1, "{A1 is unfinished");
+    }
 
     #[test]
     fn a_figure_is_walkable_when_it_has_more_than_one_step() {

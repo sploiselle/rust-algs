@@ -37,7 +37,9 @@ use std::fmt::Write as _;
 
 use super::Render;
 use super::steps::{At, timed};
-use crate::model::{Claim, DotLine, EventId, Message, Note, Relation, Rich, SpaceTime, Span, rich};
+use crate::model::{
+    Claim, DotLine, EventId, LaneId, Message, Note, Relation, Rich, SpaceTime, Span,
+};
 
 pub struct Svg;
 
@@ -1223,15 +1225,29 @@ fn lanes_sentence(d: &SpaceTime) -> String {
 /// An event's name (role `lead`; its key if it has no name) and lane: "B2 on B".
 pub(crate) fn subject(d: &SpaceTime, id: EventId) -> Rich {
     let e = &d.events()[id.0];
-    let name = if e.name.is_empty() {
-        d.event_key(id)
+    let mut lead = if e.name.is_empty() {
+        vec![Span::plain(d.event_key(id))]
     } else {
-        e.name.clone()
+        d.event_mention(id)
     };
-    rich![
-        Span::plain(name).also("lead"),
-        format!(" on {}", lane_name(d, id))
-    ]
+    let actors = d.actors();
+    for s in &mut lead {
+        s.roles.insert(0, "lead");
+        tag_slot(s, &actors);
+    }
+    Rich { lines: vec![lead] }
+        .then(" on ")
+        .then(lane_mention(d, d.lane_of(id)))
+}
+
+/// A lane's name as a sentence mentions it, tinted as its actor and tagged
+/// with the actor's slot, since a sentence is built after [`with_actor_slots`]
+/// has run.
+fn lane_mention(d: &SpaceTime, lane: LaneId) -> Rich {
+    let actors = d.actors();
+    let mut spans = d.lane_mention(lane);
+    spans.iter_mut().for_each(|s| tag_slot(s, &actors));
+    Rich { lines: vec![spans] }
 }
 
 /// What happened at an event, for a description of the finished figure, as
@@ -1261,12 +1277,14 @@ pub(crate) fn step_sentence(d: &SpaceTime, id: EventId) -> Rich {
     let received = d.messages().iter().filter(|m| m.to == id).map(|m| {
         Rich::from("receives ")
             .then(message_name(m))
-            .then(format!(" from {}", lane_name(d, m.from)))
+            .then(" from ")
+            .then(lane_mention(d, d.lane_of(m.from)))
     });
     let sent = d.messages().iter().filter(|m| m.from == id).map(|m| {
         Rich::from("sends ")
             .then(message_name(m))
-            .then(format!(" to {}", lane_name(d, m.to)))
+            .then(" to ")
+            .then(lane_mention(d, d.lane_of(m.to)))
     });
     let did: Vec<Rich> = received.chain(sent).collect();
     let s = subject(d, id);
