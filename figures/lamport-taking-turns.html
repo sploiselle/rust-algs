@@ -1,0 +1,140 @@
+<figure class="ds-fig" data-figure="lamport-taking-turns" data-kind="space-time" data-steps="5" data-steps-v="1">
+<div class="ds-fig-canvas">
+<svg xmlns="http://www.w3.org/2000/svg" class="ds-figure" data-figure="lamport-taking-turns" data-kind="space-time" role="img" viewBox="0 0 449 144" width="449" height="144" style="--ds-w: 449" fill="currentColor" font-family="system-ui, sans-serif">
+  <title>Lamport clocks: two processes taking turns</title>
+  <desc>Timelines for A, B. A1 on A: L 1. A2 on A: L 2. B1 on B, receiving m1 2 from A2 on A: L 3. B2 on B: L 4. B3 on B: L 5. A3 on A, receiving m2 5 from B3 on B: L 6.</desc>
+  <style>
+    @layer ds-figure {
+      .ds-figure { max-width: 100%; height: auto; font-family: var(--ds-font-sans, system-ui, -apple-system, "Segoe UI", sans-serif); }
+      .ds-figure:root { color-scheme: light dark; color: CanvasText; }
+      .ds-figure text { fill: var(--ds-ink, currentColor); }
+      .ds-figure :is(.ds-event-value, .ds-row-value, .ds-v) { font-family: var(--ds-font-mono, ui-monospace, "SF Mono", Menlo, Consolas, monospace); }
+      .ds-figure .ds-sym { font-family: var(--ds-font-sym, system-ui, sans-serif); }
+      .ds-figure .ds-lane-line { stroke: var(--ds-lane-line, var(--ds-rule, var(--ds-ink, currentColor))); stroke-opacity: var(--ds-lane-opacity, .5); stroke-width: var(--ds-lane-width, 1); }
+      .ds-figure .ds-lane-head { fill: var(--ds-lane-line, var(--ds-rule, var(--ds-ink, currentColor))); fill-opacity: var(--ds-lane-opacity, .5); }
+      .ds-figure [data-actor-n="1"] { --ds-actor: var(--ds-actor-1); }
+      .ds-figure [data-actor-n="2"] { --ds-actor: var(--ds-actor-2); }
+      .ds-figure [data-actor-n="3"] { --ds-actor: var(--ds-actor-3); }
+      .ds-figure [data-actor-n="4"] { --ds-actor: var(--ds-actor-4); }
+      .ds-figure [data-actor-n="5"] { --ds-actor: var(--ds-actor-5); }
+      .ds-figure [data-actor-n="6"] { --ds-actor: var(--ds-actor-6); }
+      .ds-figure [data-actor-n="7"] { --ds-actor: var(--ds-actor-7); }
+      .ds-figure [data-actor-n="8"] { --ds-actor: var(--ds-actor-8); }
+      .ds-figure .ds-actor { fill: var(--ds-actor); }
+      .ds-figure .ds-lane-name { fill: var(--ds-lane-name, var(--ds-actor, var(--ds-ink, currentColor))); font-weight: 600; }
+      .ds-figure .ds-row-name { fill: var(--ds-lane-name, var(--ds-ink, currentColor)); font-weight: 600; }
+      .ds-figure .ds-event-dot { fill: var(--ds-event-dot, var(--ds-ink, currentColor)); }
+      .ds-figure .ds-event-crash { stroke: var(--ds-crash, var(--ds-event-dot, var(--ds-ink, currentColor))); stroke-width: 2; }
+      .ds-figure .ds-event-name { fill: var(--ds-event-name, var(--ds-muted, var(--ds-ink, currentColor))); }
+      .ds-figure .ds-field { fill: var(--ds-field, var(--ds-muted, var(--ds-ink, currentColor))); }
+      .ds-figure :is(.ds-event-value, .ds-row-value) { fill: var(--ds-value, var(--ds-ink, currentColor)); }
+      .ds-figure .ds-message-line { fill: none; stroke: var(--ds-message-line, var(--ds-ink, currentColor)); stroke-width: var(--ds-message-width, 1.5); }
+      .ds-figure .ds-message-head { fill: var(--ds-message-line, var(--ds-ink, currentColor)); }
+      .ds-figure .ds-message-label { fill: var(--ds-message-label, var(--ds-muted, var(--ds-ink, currentColor))); }
+      .ds-figure .ds-ring { fill: none; stroke: var(--ds-accent, var(--ds-ink, currentColor)); stroke-width: var(--ds-ring-width, 1.5); stroke-dasharray: var(--ds-ring-dash, none); }
+      .ds-figure .ds-badge-disc { fill: var(--ds-accent, var(--ds-ink, currentColor)); }
+      .ds-figure .ds-badge-n { fill: var(--ds-on-accent, Canvas); font-weight: 700; }
+      .ds-figure .ds-caption { fill: var(--ds-caption, var(--ds-ink, currentColor)); }
+      .ds-figure :is(.ds-counter, .ds-legend) { fill: var(--ds-muted, var(--ds-ink, currentColor)); }
+      .ds-figure :is(.ds-dot, .ds-claim) { fill: var(--ds-dot, var(--ds-ink, currentColor)); }
+      .ds-figure .ds-dot.ds-gap { fill: none; stroke: var(--ds-gap, var(--ds-ink, currentColor)); stroke-width: 1.5; stroke-dasharray: 3 2; }
+      .ds-figure .ds-wrong { fill: var(--ds-wrong, var(--ds-accent, var(--ds-ink, currentColor))); font-weight: 700; }
+    }
+  </style>
+  <g class="ds-lanes">
+    <g class="ds-lane" data-lane="a" data-actor="A" data-actor-n="1">
+      <line class="ds-lane-line" x1="28" y1="33" x2="441" y2="33" stroke="currentColor" stroke-opacity=".5"/>
+      <polygon class="ds-lane-head" points="441,29 449,33 441,37" fill-opacity=".5"/>
+      <text class="ds-lane-name" x="18" y="38" text-anchor="end" font-size="14">A</text>
+    </g>
+    <g class="ds-lane" data-lane="b" data-actor="B" data-actor-n="2">
+      <line class="ds-lane-line" x1="28" y1="99" x2="441" y2="99" stroke="currentColor" stroke-opacity=".5"/>
+      <polygon class="ds-lane-head" points="441,95 449,99 441,103" fill-opacity=".5"/>
+      <text class="ds-lane-name" x="18" y="104" text-anchor="end" font-size="14">B</text>
+    </g>
+  </g>
+  <g class="ds-messages">
+    <g class="ds-message" data-message="m1" data-from="a2" data-to="b1">
+      <line class="ds-message-line" data-in="2" style="--ds-len: 73.7; --ds-grow: 73.7" x1="130.7" y1="37.7" x2="185" y2="87.5" stroke="currentColor" stroke-width="1.5"/>
+      <polygon class="ds-message-head" data-in="2" style="--ds-dx: -54.3; --ds-dy: -49.8" points="191.6,93.6 182.6,90.1 187.3,84.9"/>
+      <text class="ds-message-label" data-in="2" x="168.3" y="58.6" text-anchor="start" font-size="12">m1 <tspan class="ds-v" font-family="ui-monospace, Menlo, Consolas, monospace">2</tspan></text>
+    </g>
+    <g class="ds-message" data-message="m2" data-from="b3" data-to="a3">
+      <line class="ds-message-line" data-in="5" style="--ds-len: 73.7; --ds-grow: 73.7" x1="346.7" y1="94.3" x2="401" y2="44.5" stroke="currentColor" stroke-width="1.5"/>
+      <polygon class="ds-message-head" data-in="5" style="--ds-dx: -54.3; --ds-dy: 49.8" points="407.6,38.4 403.3,47.1 398.6,41.9"/>
+      <text class="ds-message-label" data-in="5" x="370.7" y="58.6" text-anchor="end" font-size="12">m2 <tspan class="ds-v" font-family="ui-monospace, Menlo, Consolas, monospace">5</tspan></text>
+    </g>
+  </g>
+  <g class="ds-events">
+    <g class="ds-event" data-event="a1" data-lane="a" data-actor="A" data-actor-n="1">
+      <circle class="ds-event-dot" cx="53.5" cy="33" r="5"/>
+      <text class="ds-event-name" x="53.5" y="17.8" text-anchor="middle" font-size="13">A1</text>
+      <text class="ds-event-value" x="53.5" y="54.8" text-anchor="middle" font-size="13" font-family="ui-monospace, Menlo, Consolas, monospace"><tspan class="ds-field">L </tspan><tspan class="ds-lamport">1</tspan></text>
+    </g>
+    <g class="ds-event" data-in="1" data-event="a2" data-lane="a" data-actor="A" data-actor-n="1">
+      <circle class="ds-event-dot" cx="125.5" cy="33" r="5"/>
+      <text class="ds-event-name" x="125.5" y="17.8" text-anchor="middle" font-size="13">A2</text>
+      <text class="ds-event-value" x="129.5" y="54.8" text-anchor="end" font-size="13" font-family="ui-monospace, Menlo, Consolas, monospace"><tspan class="ds-field">L </tspan><tspan class="ds-lamport">2</tspan></text>
+    </g>
+    <g class="ds-event" data-in="2" data-event="b1" data-lane="b" data-actor="B" data-actor-n="2">
+      <circle class="ds-event-dot" cx="197.5" cy="99" r="5"/>
+      <text class="ds-event-name" x="193.5" y="83.8" text-anchor="start" font-size="13">B1</text>
+      <text class="ds-event-value" x="197.5" y="120.8" text-anchor="middle" font-size="13" font-family="ui-monospace, Menlo, Consolas, monospace"><tspan class="ds-field">L </tspan><tspan class="ds-lamport">3</tspan></text>
+    </g>
+    <g class="ds-event" data-in="3" data-event="b2" data-lane="b" data-actor="B" data-actor-n="2">
+      <circle class="ds-event-dot" cx="269.5" cy="99" r="5"/>
+      <text class="ds-event-name" x="269.5" y="83.8" text-anchor="middle" font-size="13">B2</text>
+      <text class="ds-event-value" x="269.5" y="120.8" text-anchor="middle" font-size="13" font-family="ui-monospace, Menlo, Consolas, monospace"><tspan class="ds-field">L </tspan><tspan class="ds-lamport">4</tspan></text>
+    </g>
+    <g class="ds-event" data-in="4" data-event="b3" data-lane="b" data-actor="B" data-actor-n="2">
+      <circle class="ds-event-dot" cx="341.5" cy="99" r="5"/>
+      <text class="ds-event-name" x="345.5" y="83.8" text-anchor="end" font-size="13">B3</text>
+      <text class="ds-event-value" x="341.5" y="120.8" text-anchor="middle" font-size="13" font-family="ui-monospace, Menlo, Consolas, monospace"><tspan class="ds-field">L </tspan><tspan class="ds-lamport">5</tspan></text>
+    </g>
+    <g class="ds-event" data-in="5" data-event="a3" data-lane="a" data-actor="A" data-actor-n="1">
+      <circle class="ds-event-dot" cx="413.5" cy="33" r="5"/>
+      <text class="ds-event-name" x="413.5" y="17.8" text-anchor="middle" font-size="13">A3</text>
+      <text class="ds-event-value" x="409.5" y="54.8" text-anchor="start" font-size="13" font-family="ui-monospace, Menlo, Consolas, monospace"><tspan class="ds-field">L </tspan><tspan class="ds-lamport">6</tspan></text>
+    </g>
+  </g>
+</svg>
+</div>
+<div class="ds-play" hidden>
+<div class="ds-play-bar"></div>
+<div class="ds-beats">
+<p class="ds-beat" data-in="0" data-out="1" data-event="a1"><span class="ds-beat-body"><span class="ds-lead ds-actor" data-actor="A" data-actor-n="1">A</span><span class="ds-lead">1</span> on <span class="ds-actor" data-actor="A" data-actor-n="1">A</span> is a local event</span></p>
+<p class="ds-beat" data-in="1" data-out="2" data-cont="" data-event="a2"><span class="ds-beat-body"><span class="ds-lead ds-actor" data-actor="A" data-actor-n="1">A</span><span class="ds-lead">2</span> on <span class="ds-actor" data-actor="A" data-actor-n="1">A</span> sends m1 <code class="ds-v">2</code> to <span class="ds-actor" data-actor="B" data-actor-n="2">B</span></span></p>
+<p class="ds-beat" data-in="2" data-out="3" data-cont="" data-event="b1"><span class="ds-beat-body"><span class="ds-lead ds-actor" data-actor="B" data-actor-n="2">B</span><span class="ds-lead">1</span> on <span class="ds-actor" data-actor="B" data-actor-n="2">B</span> receives a message sent at time <code class="ds-v">2</code> as its first event, so its clock takes that and adds one, reaching <code class="ds-v">3</code></span></p>
+<p class="ds-beat" data-in="3" data-out="4" data-cont="" data-event="b2"><span class="ds-beat-body"><span class="ds-lead ds-actor" data-actor="B" data-actor-n="2">B</span><span class="ds-lead">2</span> on <span class="ds-actor" data-actor="B" data-actor-n="2">B</span> is a local event</span></p>
+<p class="ds-beat" data-in="4" data-out="5" data-cont="" data-event="b3"><span class="ds-beat-body"><span class="ds-lead ds-actor" data-actor="B" data-actor-n="2">B</span><span class="ds-lead">3</span> on <span class="ds-actor" data-actor="B" data-actor-n="2">B</span> sends m2 <code class="ds-v">5</code> to <span class="ds-actor" data-actor="A" data-actor-n="1">A</span></span></p>
+<p class="ds-beat" data-in="5" data-cont="" data-event="a3"><span class="ds-beat-body"><span class="ds-lead ds-actor" data-actor="A" data-actor-n="1">A</span><span class="ds-lead">3</span> on <span class="ds-actor" data-actor="A" data-actor-n="1">A</span> receives a message sent at time <code class="ds-v">5</code>: its clock takes the larger of its own <code class="ds-v">2</code> and that, then adds one, reaching <code class="ds-v">6</code></span></p>
+</div>
+<div class="ds-state">
+<table aria-label="What each lane holds at this step">
+<thead><tr><td></td><th scope="col">L</th></tr></thead>
+<tbody>
+<tr class="ds-state-lane" data-lane="a" data-actor="A" data-actor-n="1">
+<th scope="row">A</th>
+<td><span class="ds-cells">
+<span class="ds-cell" data-in="0" data-out="1" data-event="a1"><code class="ds-v"><span class="ds-lamport ds-changed">1</span></code></span>
+<span class="ds-cell" data-in="1" data-out="5" data-cont="" data-event="a2"><code class="ds-v"><span class="ds-lamport ds-changed">2</span></code></span>
+<span class="ds-cell" data-in="5" data-cont="" data-event="a3"><code class="ds-v"><span class="ds-lamport ds-changed">6</span></code></span>
+</span></td>
+</tr>
+<tr class="ds-state-lane" data-lane="b" data-actor="B" data-actor-n="2">
+<th scope="row">B</th>
+<td><span class="ds-cells">
+<span class="ds-cell" data-in="0" data-out="2"><code class="ds-v"><span class="ds-lamport">0</span></code></span>
+<span class="ds-cell" data-in="2" data-out="3" data-cont="" data-event="b1"><code class="ds-v"><span class="ds-lamport ds-changed">3</span></code></span>
+<span class="ds-cell" data-in="3" data-out="4" data-cont="" data-event="b2"><code class="ds-v"><span class="ds-lamport ds-changed">4</span></code></span>
+<span class="ds-cell" data-in="4" data-cont="" data-event="b3"><code class="ds-v"><span class="ds-lamport ds-changed">5</span></code></span>
+</span></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<figcaption class="ds-fig-caption">
+<p class="ds-fig-title">Lamport clocks: two processes taking turns</p>
+</figcaption>
+</figure>

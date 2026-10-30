@@ -1,0 +1,9 @@
+[package]
+name = "diagrams"
+version = "0.1.0"
+description = "Figures rendered from the dist-sys reference implementations"
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+dist-sys = { path = "../dist-sys" }
