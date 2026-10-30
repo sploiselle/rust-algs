@@ -2,7 +2,7 @@
 //! `static` holding a type with interior mutability. `MonotonicCounter::new` is
 //! `const` and `next` takes `&self`, so no `static mut`, `unsafe` or lock.
 
-use dist_sys::counter::MonotonicCounter;
+use algs::counter::MonotonicCounter;
 use std::thread;
 
 static IDS: MonotonicCounter = MonotonicCounter::new();

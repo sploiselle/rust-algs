@@ -7,15 +7,15 @@
 //! message it received, because of `logical`.
 //!
 //! ```bash
-//! cargo run --release -p dist-sys --example hlc_system_clock
+//! cargo run --release --example hlc_system_clock
 //! ```
 //!
 //! The numbers depend on the platform's clock resolution. On macOS the wall
 //! clock moves in whole microseconds, so most stamps in a tight loop share a
 //! `wall` with the one before.
 
-use dist_sys::clock::Timestamp;
-use dist_sys::clock::hybrid::{Hlc, PhysicalClock, SystemClock};
+use algs::clock::Timestamp;
+use algs::clock::hybrid::{Hlc, PhysicalClock, SystemClock};
 use std::time::{Duration, Instant};
 
 const RUN: Duration = Duration::from_secs(1);

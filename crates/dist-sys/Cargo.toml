@@ -1,6 +1,0 @@
-[package]
-name = "dist-sys"
-version = "0.1.0"
-description = "Reference implementations of distributed-systems building blocks"
-edition.workspace = true
-publish.workspace = true

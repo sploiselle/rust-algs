@@ -1,5 +1,5 @@
 //! Figures for the write-ups, rendered from the reference implementations in
-//! `dist-sys` so that a picture can never disagree with the code.
+//! `algs` so that a picture can never disagree with the code.
 //!
 //! - [`model`]: what a figure *is*. Plain data (lanes, events, messages) that
 //!   knows nothing about clocks or registers.

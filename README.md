@@ -6,10 +6,7 @@ the idea it implements, and its tests check the claims the explanation makes.
 ## Layout
 
 ```text
-crates/algs/              random algorithms, one module each
-  src/merkle.rs           Merkle trees over a directory
-  src/bin/                command-line front ends
-crates/dist-sys/          distributed-systems building blocks
+crates/algs/              the library
   src/clock/              tracking causality
     lamport.rs            Lamport clocks
     vector.rs             vector clocks
@@ -26,8 +23,9 @@ crates/dist-sys/          distributed-systems building blocks
     airline.rs            Lamport's airline reservation example
   src/broadcast/          delivering broadcasts in causal order
     cbcast.rs             causal broadcast
+  src/merkle.rs           Merkle trees over a directory, for finding what changed
   examples/               programs to run against the library
-crates/diagrams/          figures drawn from the libraries (SVG, HTML and Mermaid)
+crates/diagrams/          figures drawn from the library (SVG, HTML and Mermaid)
 figures/                  the rendered figures, committed
 ```
 
@@ -41,37 +39,31 @@ cargo test
 cargo doc --open
 ```
 
-The rendered module docs are the write-ups.
+The rendered module docs are the write-ups. Each program in `examples/` runs
+with `cargo run --example <name>`:
 
 ```bash
-cargo run --release -p dist-sys --example hlc_system_clock
+cargo run --release --example hlc_system_clock
 ```
 
 That runs the hybrid logical clock against this machine's real clock and
 reports how often it needs its logical counter.
 
-## Algorithms
-
-| Algorithm | Library | Binary |
-| --- | --- | --- |
-| Merkle trees over a directory, for finding which files changed between snapshots or across restarts | [`merkle`](crates/algs/src/merkle.rs) | [`merkle`](crates/algs/src/bin/merkle.rs) |
-
-Run a binary with `cargo run --bin <name>`:
-
-```sh
-cargo run --release --bin merkle -- <dir> <index-file>
+```bash
+cargo run --release --example merkle -- <dir> <index-file>
 ```
 
-`merkle` prints what changed under `<dir>` since the last run (`+` added, `-`
+That prints what changed under `<dir>` since the last run (`+` added, `-`
 removed, `~` modified), then saves the current tree to `<index-file>` for next
 time.
 
-### Adding an algorithm
+## Adding an algorithm
 
-1. Write the implementation and its tests in `crates/algs/src/<name>.rs`.
-2. Export it from `crates/algs/src/lib.rs` with `pub mod <name>;`.
-3. For a command-line front end, add `crates/algs/src/bin/<name>.rs`. Cargo
-   builds it automatically as the `<name>` binary.
+1. Write the implementation and its tests in `crates/algs/src/<name>.rs`, or
+   under `crates/algs/src/<name>/` for a family, like `clock/`.
+2. Export it from `crates/algs/src/lib.rs` with `pub mod <name>;`, and add it
+   to the list in that file's docs.
+3. For a program to run against it, add `crates/algs/examples/<name>.rs`.
 
 ## Figures
 

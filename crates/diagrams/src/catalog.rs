@@ -11,15 +11,15 @@ use std::cmp::Ordering;
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
-use dist_sys::broadcast::{self, Cbcast};
-use dist_sys::clock::hybrid::ManualClock;
-use dist_sys::clock::{
+use algs::broadcast::{self, Cbcast};
+use algs::clock::hybrid::ManualClock;
+use algs::clock::{
     CausalContext, Causality, Dot, Hlc, LamportClock, LamportStamp, Timestamp, VectorClock,
 };
-use dist_sys::coordination::{Kind, LamportMutex, Message};
-use dist_sys::crdt::{LamportRegister, MvRegister};
-use dist_sys::state_machine::airline::{Airline, Command, Response};
-use dist_sys::state_machine::{self, Bookkeeper, Config, Stamped};
+use algs::coordination::{Kind, LamportMutex, Message};
+use algs::crdt::{LamportRegister, MvRegister};
+use algs::state_machine::airline::{Airline, Command, Response};
+use algs::state_machine::{self, Bookkeeper, Config, Stamped};
 
 use crate::label::{Label, bookkeeper, fields, phrase, sorted_entries, split_fields, v, voters};
 use crate::model::{Claim, Diagram, DotLine, EventId, LaneId, Rich, SpaceTime, Span, rich};

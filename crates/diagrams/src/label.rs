@@ -8,14 +8,14 @@
 use std::collections::BTreeSet;
 use std::fmt::{Debug, Display};
 
-use dist_sys::broadcast::Cbcast;
-use dist_sys::clock::{
+use algs::broadcast::Cbcast;
+use algs::clock::{
     CausalContext, Causality, Dot, LamportClock, LamportStamp, Timestamp, VectorClock,
 };
-use dist_sys::coordination::LamportMutex;
-use dist_sys::crdt::{LamportRegister, MvRegister};
-use dist_sys::state_machine::airline::Command;
-use dist_sys::state_machine::{Bookkeeper, Stamped, UserMachine};
+use algs::coordination::LamportMutex;
+use algs::crdt::{LamportRegister, MvRegister};
+use algs::state_machine::airline::Command;
+use algs::state_machine::{Bookkeeper, Stamped, UserMachine};
 
 use crate::model::{Rich, Span};
 
@@ -534,8 +534,8 @@ pub fn sorted_entries<A: Ord + Clone, V: Clone>(r: &MvRegister<A, V>) -> Vec<(&D
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dist_sys::state_machine::Config;
-    use dist_sys::state_machine::airline::Airline;
+    use algs::state_machine::Config;
+    use algs::state_machine::airline::Airline;
 
     #[test]
     fn split_fields_inverts_fields() {
