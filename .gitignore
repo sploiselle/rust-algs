@@ -1,2 +1,4 @@
 /target
 .DS_Store
+# Written by `cargo run -p diagrams`; generated, so not committed.
+/figures

@@ -3,9 +3,9 @@
 //! Each function drives the real library API step by step, records the value
 //! after every step as that event's annotation, and asserts the claims the
 //! picture makes, pinned to the literal values the text relies on. [`all`]
-//! runs in both the binary and the staleness test, so if the library ever
-//! changes under a figure the assert fails loudly instead of a wrong picture
-//! being drawn.
+//! runs in both the binary and the tests, so if the library ever changes
+//! under a figure the assert fails loudly instead of a wrong picture being
+//! drawn.
 
 use std::cmp::Ordering;
 use std::collections::BTreeSet;

@@ -26,7 +26,7 @@ crates/algs/              the library
   src/merkle.rs           Merkle trees over a directory, for finding what changed
   examples/               programs to run against the library
 crates/diagrams/          figures drawn from the library (SVG, HTML and Mermaid)
-figures/                  the rendered figures, committed
+figures/                  the rendered figures, generated and not committed
 ```
 
 ## Working with it
@@ -67,20 +67,21 @@ time.
 
 ## Figures
 
-The files in `figures/` are drawn by `crates/diagrams` from the reference
-implementations. Each figure drives the real API, records every step, and
-asserts the claims the picture makes, so every clock and register value in a
-picture comes from running the code.
+`crates/diagrams` draws figures from the reference implementations. Each
+figure drives the real API, records every step, and asserts the claims the
+picture makes, so every clock and register value in a picture comes from
+running the code.
 
 ```bash
 cargo run -p diagrams
 ```
 
 That writes every figure into `figures/` (pass a directory to write somewhere
-else). `cargo test` fails if a committed figure is stale or no figure produces
-it any more. A figure with more than one step is a step-through, which writes
-a single `<stem>.html` (see below). A figure with a single step has nothing to
-walk through, so it is finished, and is written three ways:
+else). The files are generated, so they aren't committed: a page that shows
+figures, such as the blog, runs this to make its own. A figure with more than
+one step is a step-through, which writes a single `<stem>.html` (see below). A
+figure with a single step has nothing to walk through, so it is finished, and
+is written three ways:
 
 - `<stem>.html` is what a page should inline: a `<figure>` holding the SVG and
   a `<figcaption>` with the figure's title and its numbered notes as HTML, so

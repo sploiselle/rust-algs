@@ -31,7 +31,7 @@
 //! arrow still crosses is moved to the other side of its lane, and failing
 //! that the events are pushed apart until the arrow clears. Message labels and
 //! note badges are placed last, in the nearest free spot. The test
-//! `committed_figures_have_no_collisions` checks the whole catalog.
+//! `catalog_figures_have_no_collisions` checks the whole catalog.
 
 use std::fmt::Write as _;
 
@@ -2052,7 +2052,7 @@ mod tests {
     }
 
     #[test]
-    fn committed_figures_have_no_collisions() {
+    fn catalog_figures_have_no_collisions() {
         for figure in crate::catalog::all() {
             if let Diagram::SpaceTime(d) = &figure.diagram {
                 assert_clear(figure.stem, d);

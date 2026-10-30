@@ -1,2 +1,0 @@
-# The committed figures are compared byte for byte by `cargo test`.
-figures/** text eol=lf

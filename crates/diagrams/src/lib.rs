@@ -10,7 +10,8 @@
 //!   and Mermaid for a finished figure, and HTML for a step-through.
 //!
 //! `cargo run -p diagrams` writes every figure into the workspace's `figures/`
-//! directory; the test in `tests/figures.rs` fails if those files are stale.
+//! directory, which is generated and not committed; a page that shows figures
+//! renders them itself.
 
 use std::path::PathBuf;
 
@@ -31,7 +32,7 @@ pub fn figures_dir() -> PathBuf {
 
 /// Every file the binary writes, as `(file name, contents)`: each finished
 /// figure times each backend that renders it, each step-through's HTML, plus
-/// `index.json`. The staleness test compares against exactly this list, so
+/// `index.json`. The tests in `tests/figures.rs` check exactly this list, so
 /// the two can't drift apart.
 pub fn outputs() -> Vec<(String, String)> {
     let figures = catalog::all();

@@ -1,6 +1,6 @@
 //! Write every figure to disk: `cargo run -p diagrams [OUT_DIR]`. The default
 //! output directory is the workspace's `figures/`. Files no figure produces
-//! any more are left alone; `cargo test` reports them as stray.
+//! any more are left alone.
 
 use std::env;
 use std::fs;
