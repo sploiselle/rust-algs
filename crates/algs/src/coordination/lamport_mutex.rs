@@ -47,10 +47,16 @@
 //!
 //! - **FIFO channels.** If a later message overtakes a request, its receiver
 //!   decides nothing earlier is on the way, and two processes enter together
-//!   (`overtaking_breaks_mutual_exclusion` builds that execution).
+//!   (`overtaking_breaks_mutual_exclusion` builds that execution, and
+//!   `overtaking_needs_four_steps_to_break_mutual_exclusion` shows nothing
+//!   shorter does it).
 //! - **No message loss, and no crashes.** A process enters only after hearing
 //!   from *every* other process, so one that crashes or goes quiet blocks
-//!   everyone, forever. The algorithm tolerates no failures at all. Lamport's
+//!   everyone, forever (`one_crash_leaves_a_request_waiting_forever`). A lost
+//!   request can do worse: once a later message from its sender arrives, it's
+//!   as if that message had overtaken the request, and two processes can
+//!   enter together (`a_lost_request_lets_two_processes_hold_at_once`). The
+//!   algorithm tolerates no failures at all. Lamport's
 //!   [reliable state machine](crate::state_machine::bookkeeper) replaces
 //!   hearing from everyone with votes from some, and deadlines, so it
 //!   survives crashes and lines that stop, for a while or for good. What it
@@ -241,7 +247,9 @@ impl<P: Ord + Clone> LamportMutex<P> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_util::Rng;
+    use crate::clock::VectorClock;
+    use crate::test_util::{Execution, check, shortest_failure};
+    use proptest::strategy::Strategy;
     use std::collections::VecDeque;
 
     /// The message in `msgs` addressed to `to`.
@@ -325,92 +333,453 @@ mod tests {
         assert!(!b.holds());
     }
 
-    /// The algorithm's claims, on random executions over FIFO channels with
-    /// arbitrary interleaving and delay:
-    /// - at most one process holds the resource at any moment, and a holder
-    ///   keeps it until it releases;
-    /// - grants happen in stamp order;
-    /// - with every holder eventually releasing, every request is granted;
-    /// - each entry costs `3(N − 1)` messages.
+    /// Rule 5 compares stamps, so a tie on time goes by id. Here it goes
+    /// against the sender: B's second request and A's second release are both
+    /// at time 10, A's id is lower, so the release isn't stamped later than the
+    /// request, and B waits for A's acknowledgement, which is. Waiting isn't
+    /// needed for safety, since A has no request outstanding and anything it
+    /// sends later is stamped past 10, so this pins the rule as stated.
+    /// `overtaking_breaks_mutual_exclusion` has the other half: A enters on
+    /// B's request, made at the same time by a higher id.
     #[test]
-    fn random_executions_are_exclusive_ordered_and_live() {
-        const PROCS: usize = 4;
-        for seed in 1..=300u64 {
-            let mut rng = Rng(seed.wrapping_mul(0x9E37_79B9_7F4A_7C15));
-            let mut procs: Vec<LamportMutex<usize>> =
-                (0..PROCS).map(|p| LamportMutex::new(p, 0..PROCS)).collect();
-            // channels[from][to], each delivered in order
-            let mut channels: Vec<Vec<VecDeque<Message<usize>>>> =
-                vec![vec![VecDeque::new(); PROCS]; PROCS];
-            let mut sent = 0;
-            let mut requests = 0;
-            let mut grants: Vec<LamportStamp<usize>> = Vec::new();
-            let mut holding: Option<usize> = None;
+    fn a_tie_on_time_with_a_lower_id_is_not_heard_past() {
+        let mut a = LamportMutex::new('A', ['A', 'B']);
+        let mut b = LamportMutex::new('B', ['A', 'B']);
+        let req_a1 = a.request().pop().unwrap(); // (1, A)
+        let ack_b1 = b.receive(req_a1).unwrap(); // (3, B)
+        let req_b1 = b.request().pop().unwrap(); // (4, B)
+        a.receive(ack_b1);
+        assert!(a.holds());
+        let rel_a1 = a.release().pop().unwrap(); // (5, A)
+        let req_a2 = a.request().pop().unwrap(); // (6, A)
+        b.receive(rel_a1);
+        assert!(b.holds());
+        let rel_b1 = b.release().pop().unwrap(); // (7, B)
+        let ack_b2 = b.receive(req_a2).unwrap(); // (9, B)
+        let req_b2 = b.request().pop().unwrap(); // (10, B)
+        let ack_a1 = a.receive(req_b1).unwrap(); // (8, A)
+        b.receive(ack_a1);
+        a.receive(rel_b1);
+        assert!(a.holds());
+        let rel_a2 = a.release().pop().unwrap();
+        assert_eq!(rel_a2.stamp, stamp(10, 'A'));
+        assert_eq!(req_b2.stamp, stamp(10, 'B'));
 
-            let mut send = |channels: &mut Vec<Vec<VecDeque<Message<usize>>>>,
-                            msgs: Vec<Message<usize>>| {
-                for m in msgs {
-                    sent += 1;
-                    channels[*m.stamp.process()][m.to].push_back(m);
-                }
+        b.receive(rel_a2);
+        assert_eq!(b.heard().collect::<Vec<_>>(), [(&'A', 10)]);
+        assert!(!b.holds()); // (10, A) is earlier than (10, B)
+        a.receive(ack_b2);
+        b.receive(a.receive(req_b2).unwrap());
+        assert!(b.holds());
+    }
+
+    /// What can happen next in an execution.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    enum Step {
+        /// Process `p` asks for the resource, unless it already has.
+        Request(usize),
+        /// Whoever holds the resource gives it up.
+        Release,
+        /// The oldest message on its way from `from` to `to` arrives.
+        Deliver { from: usize, to: usize },
+        /// If messages can overtake, the newest message on its way from `from`
+        /// to `to` arrives ahead of the others.
+        Overtake { from: usize, to: usize },
+        /// If messages can be lost, the oldest from `from` to `to` is.
+        Lose { from: usize, to: usize },
+        /// If processes can crash, `p` stops for good.
+        Crash(usize),
+    }
+
+    /// An assumption from "What it needs", dropped.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    enum Fault {
+        Overtaking,
+        Loss,
+        Crashes,
+    }
+
+    /// Steps among `n` processes over FIFO channels: a quarter are requests,
+    /// an eighth releases, and the rest deliveries.
+    ///
+    /// They're decoded from numbers rather than chosen with `prop_oneof!`,
+    /// which is several times slower in debug builds. Each number shrinks
+    /// toward 0, so a step shrinks toward a request by process 0.
+    fn steps(n: usize) -> impl Strategy<Value = Step> {
+        (0..8, 0..n, 0..n).prop_map(|(kind, p, to)| match kind {
+            0 | 1 => Step::Request(p),
+            2 => Step::Release,
+            _ => Step::Deliver { from: p, to },
+        })
+    }
+
+    /// Every step among `n` processes with `fault` allowed, in the order the
+    /// shortest failing schedules are picked in.
+    fn every_step(n: usize, fault: Fault) -> Vec<Step> {
+        let channels = || {
+            (0..n)
+                .flat_map(move |from| (0..n).map(move |to| (from, to)))
+                .filter(|(from, to)| from != to)
+        };
+        let mut every: Vec<Step> = (0..n).map(Step::Request).collect();
+        every.push(Step::Release);
+        every.extend(channels().map(|(from, to)| Step::Deliver { from, to }));
+        match fault {
+            Fault::Overtaking => {
+                every.extend(channels().map(|(from, to)| Step::Overtake { from, to }))
+            }
+            Fault::Loss => every.extend(channels().map(|(from, to)| Step::Lose { from, to })),
+            Fault::Crashes => every.extend((0..n).map(Step::Crash)),
+        }
+        every
+    }
+
+    /// A message on its way, with the vector clock of its send.
+    type InFlight = (Message<usize>, VectorClock<usize>);
+
+    /// `n` processes and the channels between them, with what the checks
+    /// compare the processes against, recorded as things happen rather than
+    /// read off the processes.
+    struct Processes {
+        procs: Vec<LamportMutex<usize>>,
+        /// `channels[from][to]`, oldest first.
+        channels: Vec<Vec<VecDeque<InFlight>>>,
+        fault: Option<Fault>,
+        crashed: Vec<bool>,
+        holder: Option<usize>,
+        /// The last request granted.
+        granted: Option<LamportStamp<usize>>,
+        /// For each process, a vector clock, which tracks happened-before
+        /// without relying on stamps.
+        clocks: Vec<VectorClock<usize>>,
+        /// The requests not granted yet, each with the vector clock of its
+        /// making.
+        ungranted: BTreeMap<LamportStamp<usize>, VectorClock<usize>>,
+        /// For each process, the requests it knows of and hasn't received the
+        /// release of: what its queue should hold.
+        known: Vec<BTreeSet<LamportStamp<usize>>>,
+        /// For each process, the latest release it has received from each
+        /// other process.
+        released: Vec<BTreeMap<usize, LamportStamp<usize>>>,
+        /// For each process, the latest time it has received from each other
+        /// process.
+        heard: Vec<BTreeMap<usize, u64>>,
+        /// For each process, the latest stamp it has sent or received.
+        seen: Vec<Option<LamportStamp<usize>>>,
+    }
+
+    impl Processes {
+        fn new(n: usize, fault: Option<Fault>) -> Self {
+            Self {
+                procs: (0..n).map(|p| LamportMutex::new(p, 0..n)).collect(),
+                channels: vec![vec![VecDeque::new(); n]; n],
+                fault,
+                crashed: vec![false; n],
+                holder: None,
+                granted: None,
+                clocks: vec![VectorClock::new(); n],
+                ungranted: BTreeMap::new(),
+                known: vec![BTreeSet::new(); n],
+                released: vec![BTreeMap::new(); n],
+                heard: (0..n)
+                    .map(|p| (0..n).filter(|&q| q != p).map(|q| (q, 0)).collect())
+                    .collect(),
+                seen: vec![None; n],
+            }
+        }
+
+        /// The first channel with a message on it, if any.
+        fn busy_channel(&self) -> Option<(usize, usize)> {
+            let n = self.procs.len();
+            (0..n)
+                .flat_map(|from| (0..n).map(move |to| (from, to)))
+                .find(|&(from, to)| !self.channels[from][to].is_empty())
+        }
+
+        /// Check that `msgs` is one message to each other process, of `kind`
+        /// and stamped `stamp`, and send them.
+        fn broadcast(
+            &mut self,
+            from: usize,
+            stamp: LamportStamp<usize>,
+            kind: Kind,
+            mut msgs: Vec<Message<usize>>,
+        ) {
+            msgs.sort_by_key(|m| m.to);
+            let expected: Vec<_> = (0..self.procs.len())
+                .filter(|&to| to != from)
+                .map(|to| Message { to, stamp, kind })
+                .collect();
+            assert_eq!(msgs, expected, "{from}'s {kind:?}");
+            self.send(from, msgs);
+        }
+
+        /// Check that `from` stamped `msgs`, which share one stamp, later than
+        /// anything it had sent or received, so that stamps never contradict
+        /// happened-before, and put them on their channels. Nothing reaches a
+        /// crashed process.
+        fn send(&mut self, from: usize, msgs: Vec<Message<usize>>) {
+            let Some(stamp) = msgs.first().map(|m| m.stamp) else {
+                return;
             };
-
-            for step in 0.. {
-                let draining = step >= 200;
-                let nonempty: Vec<(usize, usize)> = (0..PROCS)
-                    .flat_map(|f| (0..PROCS).map(move |t| (f, t)))
-                    .filter(|&(f, t)| !channels[f][t].is_empty())
-                    .collect();
-                let idle: Vec<usize> = (0..PROCS)
-                    .filter(|&p| procs[p].pending().is_none())
-                    .collect();
-                if draining && nonempty.is_empty() && holding.is_none() {
-                    assert!(
-                        idle.len() == PROCS,
-                        "seed {seed}: deadlock with requests outstanding"
-                    );
-                    break;
-                }
-                match rng.below(4) {
-                    0 if !draining && !idle.is_empty() => {
-                        let p = idle[rng.below(idle.len())];
-                        requests += 1;
-                        let msgs = procs[p].request();
-                        send(&mut channels, msgs);
-                    }
-                    1 if holding.is_some() => {
-                        let p = holding.take().unwrap();
-                        let msgs = procs[p].release();
-                        send(&mut channels, msgs);
-                    }
-                    _ if !nonempty.is_empty() => {
-                        let (f, t) = nonempty[rng.below(nonempty.len())];
-                        let m = channels[f][t].pop_front().unwrap();
-                        let reply = procs[t].receive(m);
-                        send(&mut channels, reply.into_iter().collect());
-                    }
-                    _ => continue,
-                }
-
-                let holders: Vec<usize> = (0..PROCS).filter(|&p| procs[p].holds()).collect();
-                assert!(holders.len() <= 1, "seed {seed}: {holders:?} hold at once");
-                match (holding, holders.first()) {
-                    (Some(h), _) => assert_eq!(holders, [h], "seed {seed}: {h} lost the resource"),
-                    (None, Some(&h)) => {
-                        holding = Some(h);
-                        grants.push(*procs[h].pending().unwrap());
-                    }
-                    (None, None) => {}
+            let seen = self.seen[from];
+            assert!(
+                seen.is_none_or(|seen| stamp > seen),
+                "{from} stamped {stamp:?} after seeing {seen:?}"
+            );
+            self.seen[from] = Some(stamp);
+            let clock = self.clocks[from].send(&from);
+            for m in msgs {
+                if !self.crashed[m.to] {
+                    self.channels[from][m.to].push_back((m, clock.clone()));
                 }
             }
-
-            assert!(requests > 0);
-            assert_eq!(grants.len(), requests, "seed {seed}");
-            assert!(
-                grants.is_sorted(),
-                "seed {seed}: granted out of order: {grants:?}"
-            );
-            assert_eq!(sent, 3 * (PROCS - 1) * requests, "seed {seed}");
         }
+
+        /// Hand `msg`, sent with `clock`, from `from` to `to`, checking that a
+        /// request gets one acknowledgement, sent back, and nothing else gets
+        /// an answer.
+        fn deliver(
+            &mut self,
+            from: usize,
+            to: usize,
+            msg: Message<usize>,
+            clock: VectorClock<usize>,
+        ) {
+            let (stamp, kind) = (msg.stamp, msg.kind);
+            self.clocks[to].receive(&to, &clock);
+            let heard = self.heard[to].get_mut(&from).unwrap();
+            *heard = (*heard).max(stamp.time());
+            self.seen[to] = self.seen[to].max(Some(stamp));
+            match kind {
+                Kind::Request => {
+                    // Unless its release overtook it.
+                    if self.released[to].get(&from).is_none_or(|r| stamp > *r) {
+                        self.known[to].insert(stamp);
+                    }
+                }
+                Kind::Release => {
+                    // It ends the request its sender made before it.
+                    self.known[to].retain(|r| *r.process() != from || *r > stamp);
+                    let latest = self.released[to].entry(from).or_insert(stamp);
+                    *latest = (*latest).max(stamp);
+                }
+                Kind::Ack => {}
+            }
+            let reply = self.procs[to].receive(msg);
+            assert_eq!(
+                reply.as_ref().map(|m| (m.to, m.kind)),
+                (kind == Kind::Request).then_some((from, Kind::Ack)),
+                "{to}'s answer to {from}'s {kind:?}"
+            );
+            self.send(to, reply.into_iter().collect());
+        }
+
+        /// Check that `h`'s request can be granted now: it's stamped later
+        /// than the last request granted, and no request that happened before
+        /// it is still waiting.
+        fn grant(&mut self, h: usize) {
+            let request = *self.procs[h].pending().unwrap();
+            assert!(
+                self.granted.is_none_or(|g| g < request),
+                "{request:?} granted after {:?}",
+                self.granted
+            );
+            let made = self.ungranted.remove(&request).unwrap();
+            let before = self.ungranted.iter().find(|(_, clock)| **clock < made);
+            assert!(
+                before.is_none(),
+                "{request:?} granted while {:?}, which happened before it, waits",
+                before.map(|(r, _)| r)
+            );
+            (self.holder, self.granted) = (Some(h), Some(request));
+        }
+
+        /// The claims every step must keep.
+        fn check_claims(&mut self) {
+            let n = self.procs.len();
+            let holders: Vec<usize> = (0..n).filter(|&p| self.procs[p].holds()).collect();
+            assert!(holders.len() <= 1, "{holders:?} hold at once");
+            match (self.holder, holders.first()) {
+                (Some(h), _) => assert_eq!(holders, [h], "{h} lost the resource"),
+                (None, Some(&h)) => self.grant(h),
+                (None, None) => {}
+            }
+
+            for p in 0..n {
+                let queue: Vec<_> = self.procs[p].queue().collect();
+                let known: Vec<_> = self.known[p].iter().collect();
+                assert_eq!(queue, known, "{p}'s queue");
+                let heard: BTreeMap<_, _> = self.procs[p].heard().map(|(&q, t)| (q, t)).collect();
+                assert_eq!(heard, self.heard[p], "what {p} heard");
+            }
+
+            // With nothing in flight, nothing changes until the holder
+            // releases, so a request can be waiting only if someone holds the
+            // resource and can release it.
+            let waiting: Vec<usize> = (0..n)
+                .filter(|&p| !self.crashed[p] && self.procs[p].pending().is_some())
+                .collect();
+            let releasing = self.holder.is_some_and(|h| !self.crashed[h]);
+            assert!(
+                self.busy_channel().is_some() || waiting.is_empty() || releasing,
+                "{waiting:?} wait forever"
+            );
+        }
+    }
+
+    impl Execution for Processes {
+        type Step = Step;
+
+        fn step(&mut self, step: &Step) {
+            match *step {
+                Step::Request(p) if self.procs[p].pending().is_none() && !self.crashed[p] => {
+                    let msgs = self.procs[p].request();
+                    let mine = *self.procs[p].pending().unwrap();
+                    self.known[p].insert(mine);
+                    self.broadcast(p, mine, Kind::Request, msgs);
+                    self.ungranted.insert(mine, self.clocks[p].clone());
+                }
+                Step::Release if self.holder.is_some_and(|h| !self.crashed[h]) => {
+                    let h = self.holder.take().unwrap();
+                    let mine = *self.procs[h].pending().unwrap();
+                    let msgs = self.procs[h].release();
+                    self.known[h].remove(&mine);
+                    // A release's stamp is new, so this checks only that the
+                    // messages share it; `send` checks it's later than
+                    // anything `h` has seen.
+                    self.broadcast(h, msgs[0].stamp, Kind::Release, msgs);
+                }
+                Step::Deliver { from, to } if !self.channels[from][to].is_empty() => {
+                    let (msg, clock) = self.channels[from][to].pop_front().unwrap();
+                    self.deliver(from, to, msg, clock);
+                }
+                Step::Overtake { from, to }
+                    if self.fault == Some(Fault::Overtaking)
+                        && self.channels[from][to].len() > 1 =>
+                {
+                    let (msg, clock) = self.channels[from][to].pop_back().unwrap();
+                    self.deliver(from, to, msg, clock);
+                }
+                Step::Lose { from, to }
+                    if self.fault == Some(Fault::Loss) && !self.channels[from][to].is_empty() =>
+                {
+                    self.channels[from][to].pop_front();
+                }
+                Step::Crash(p) if self.fault == Some(Fault::Crashes) && !self.crashed[p] => {
+                    self.crashed[p] = true;
+                    for channel in &mut self.channels {
+                        channel[p].clear();
+                    }
+                }
+                _ => return,
+            }
+            self.check_claims();
+        }
+
+        /// The holder releases and messages arrive, the oldest on the first
+        /// busy channel first. Once nothing more can happen, no request is
+        /// waiting, or `check_claims`'s last claim would have failed.
+        fn drain(&self) -> Option<Step> {
+            match self.holder {
+                Some(h) if !self.crashed[h] => Some(Step::Release),
+                _ => self
+                    .busy_channel()
+                    .map(|(from, to)| Step::Deliver { from, to }),
+            }
+        }
+    }
+
+    /// The algorithm's claims, on generated executions among two to five
+    /// processes over FIFO channels, with any interleaving and delay:
+    /// - at most one process holds the resource at any moment, and a holder
+    ///   keeps it until it releases;
+    /// - every message is stamped later than everything its sender had sent
+    ///   or received, so stamps never contradict happened-before;
+    /// - grants go in stamp order, and no request is granted while one that
+    ///   happened before it waits, by vector clocks kept apart from the
+    ///   stamps;
+    /// - whenever nothing is in flight, a waiting request means someone holds
+    ///   the resource, so with every holder releasing, every request is
+    ///   granted;
+    /// - each process's queue is every outstanding request it knows of, and
+    ///   what it has heard is the latest time it received from each other
+    ///   process;
+    /// - each entry costs `3(N − 1)` messages: the request and the release go
+    ///   to every other process, and each of them acknowledges the request.
+    #[test]
+    fn random_executions_are_exclusive_ordered_and_live() {
+        for n in 2..=5 {
+            check(|| Processes::new(n, None), steps(n));
+        }
+    }
+
+    /// The shortest schedule between processes 0 and 1, A and B in the docs
+    /// below, with `fault` allowed, whose first broken claim is `claim`, and
+    /// the failure. Every schedule of up to six steps is tried.
+    fn shortest(fault: Fault, claim: &str) -> (Vec<Step>, String) {
+        let new = || Processes::new(2, Some(fault));
+        shortest_failure(new, &every_step(2, fault), 6, claim).expect("none of them broke it")
+    }
+
+    /// The execution `overtaking_breaks_mutual_exclusion` builds is the
+    /// shortest way to break mutual exclusion with messages free to overtake:
+    /// both request, A receives B's request and acknowledges it, and the
+    /// acknowledgement reaches B ahead of A's request. Nothing in three steps
+    /// does it.
+    #[test]
+    fn overtaking_needs_four_steps_to_break_mutual_exclusion() {
+        let (schedule, failure) = shortest(Fault::Overtaking, "hold at once");
+        assert_eq!(
+            schedule,
+            [
+                Step::Request(0),
+                Step::Request(1),
+                Step::Deliver { from: 1, to: 0 },
+                Step::Overtake { from: 0, to: 1 },
+            ]
+        );
+        assert_eq!(failure, "[0, 1] hold at once");
+    }
+
+    /// Losing a message can break mutual exclusion too, not only liveness.
+    /// The shortest way: both request, A receives B's request and
+    /// acknowledges it, and A's request to B is lost. The acknowledgement
+    /// reaches B, which has now heard from A past its own request, as if the
+    /// acknowledgement had overtaken A's request.
+    #[test]
+    fn a_lost_request_lets_two_processes_hold_at_once() {
+        let (schedule, failure) = shortest(Fault::Loss, "hold at once");
+        assert_eq!(
+            schedule,
+            [
+                Step::Request(0),
+                Step::Request(1),
+                Step::Deliver { from: 1, to: 0 },
+                Step::Lose { from: 0, to: 1 },
+                Step::Deliver { from: 0, to: 1 },
+            ]
+        );
+        assert_eq!(failure, "[0, 1] hold at once");
+    }
+
+    /// The no-loss assumption is needed for liveness too. Losing one request
+    /// can leave its process stuck: nothing is in flight, nobody holds the
+    /// resource, and it still waits.
+    #[test]
+    fn one_lost_message_leaves_a_request_waiting_forever() {
+        let (schedule, failure) = shortest(Fault::Loss, "wait forever");
+        assert_eq!(schedule, [Step::Request(0), Step::Lose { from: 0, to: 1 }]);
+        assert_eq!(failure, "[0] wait forever");
+    }
+
+    /// The no-crash assumption is needed. One crash can leave a request
+    /// waiting forever: the crashed process never hears it, so never
+    /// acknowledges it.
+    #[test]
+    fn one_crash_leaves_a_request_waiting_forever() {
+        let (schedule, failure) = shortest(Fault::Crashes, "wait forever");
+        assert_eq!(schedule, [Step::Request(0), Step::Crash(1)]);
+        assert_eq!(failure, "[0] wait forever");
     }
 }

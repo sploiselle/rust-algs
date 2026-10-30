@@ -16,3 +16,6 @@ thiserror = "2"
 [dev-dependencies]
 # Only used by the examples; the library returns typed errors.
 anyhow = "1.0"
+# Generates and shrinks the executions the tests check; see `test_util`.
+# `handle-panics` keeps the panics of the executions it tries quiet.
+proptest = { version = "1.12", default-features = false, features = ["std", "handle-panics"] }
