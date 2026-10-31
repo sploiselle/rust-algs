@@ -23,6 +23,12 @@ crates/algs/              the library
     airline.rs            Lamport's airline reservation example
   src/broadcast/          delivering broadcasts in causal order
     cbcast.rs             causal broadcast
+  src/join/               joining inputs on a key
+    nested_loop.rs        compare every pair, on any predicate
+    hash.rs               build a table on one input, probe it with the other
+    merge.rs              walk two sorted inputs together; sort-merge
+    multiway.rs           merge k sorted inputs with a binary heap; the binary plan it replaces
+    leapfrog.rs           intersect k sorted inputs by seeking
   src/merkle.rs           Merkle trees over a directory, for finding what changed
   examples/               programs to run against the library
 crates/diagrams/          figures drawn from the library (SVG, HTML and Mermaid)

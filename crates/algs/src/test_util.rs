@@ -11,7 +11,8 @@
 use proptest::collection::vec;
 use proptest::strategy::{Just, Strategy};
 use proptest::test_runner::{Config, RngAlgorithm, RngSeed, TestCaseError, TestError, TestRunner};
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
+use std::cmp::Ordering;
 use std::fmt::Debug;
 use std::panic::{self, AssertUnwindSafe};
 
@@ -30,6 +31,45 @@ impl Rng {
     pub fn below(&mut self, n: usize) -> usize {
         (self.next() % n as u64) as usize
     }
+}
+
+thread_local! {
+    static COMPARISONS: Cell<u64> = const { Cell::new(0) };
+}
+
+/// A key that counts its comparisons on this thread: every `==`, and every
+/// `cmp`, which `<` and the other orderings go through.
+#[derive(Clone, Copy, Debug)]
+pub struct Counted(pub u32);
+
+impl PartialEq for Counted {
+    fn eq(&self, other: &Self) -> bool {
+        COMPARISONS.with(|n| n.set(n.get() + 1));
+        self.0 == other.0
+    }
+}
+
+impl Eq for Counted {}
+
+impl PartialOrd for Counted {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Counted {
+    fn cmp(&self, other: &Self) -> Ordering {
+        COMPARISONS.with(|n| n.set(n.get() + 1));
+        self.0.cmp(&other.0)
+    }
+}
+
+/// How many comparisons [`Counted`] keys made while `f` ran, and what it
+/// returned.
+pub fn comparisons<R>(f: impl FnOnce() -> R) -> (u64, R) {
+    let before = COMPARISONS.with(Cell::get);
+    let result = f();
+    (COMPARISONS.with(Cell::get) - before, result)
 }
 
 /// An execution the tests drive one step at a time. It panics when a claim
@@ -233,7 +273,7 @@ fn run<E: Execution>(
 /// `Config::default()`, which reads the environment, but they're for
 /// rejecting cases and sizing collections without a range, which these tests
 /// don't do.
-fn config() -> Config {
+pub fn config() -> Config {
     Config {
         cases: CASES,
         rng_algorithm: RngAlgorithm::ChaCha,

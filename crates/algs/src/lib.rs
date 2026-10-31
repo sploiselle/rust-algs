@@ -22,6 +22,12 @@
 //!   [`Airline`](state_machine::airline::Airline).
 //! - [`broadcast`]: delivering broadcasts in an order that respects causality.
 //!   [`Cbcast`](broadcast::Cbcast).
+//! - [`join`]: pairing the rows of inputs whose keys are equal.
+//!   [`nested_loop_join`](join::nested_loop_join),
+//!   [`hash_join`](join::hash_join) and [`merge_join`](join::merge_join), and
+//!   joining many sorted inputs at once with
+//!   [`multiway_merge_join`](join::multiway_merge_join) or, skipping what
+//!   can't match, [`leapfrog_join`](join::leapfrog_join).
 //! - [`merkle`]: finding which paths under a directory changed between two
 //!   snapshots, skipping every subtree whose hash still matches.
 //!   [`MerkleTree`](merkle::MerkleTree).
@@ -31,6 +37,7 @@ pub mod clock;
 pub mod coordination;
 pub mod counter;
 pub mod crdt;
+pub mod join;
 pub mod merkle;
 pub mod state_machine;
 
