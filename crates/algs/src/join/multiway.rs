@@ -5,7 +5,7 @@ use std::cmp::Reverse;
 use std::collections::BinaryHeap;
 use std::collections::binary_heap::PeekMut;
 
-use super::merge::{merge_join, run_len};
+use super::merge::merge_join;
 
 /// Joins any number of inputs sorted by key: calls `emit` with every
 /// combination of one row from each input whose keys are all equal, as a slice
@@ -37,10 +37,11 @@ pub fn multiway_merge_join<K: Ord, V>(inputs: &[&[(K, V)]], mut emit: impl FnMut
             && let Reverse((head, i)) = *top
             && head == key
         {
-            let (run, after) = rest[i].split_at(run_len(rest[i]));
-            (runs[i], rest[i]) = (run, after);
+            let rows = rest[i];
+            runs[i] = rows.chunk_by(|a, b| a.0 == b.0).next().unwrap_or_default();
+            rest[i] = &rows[runs[i].len()..];
             found += 1;
-            match after.first() {
+            match rest[i].first() {
                 // Replace the top in place: one sift down, when `top` drops.
                 Some((next, _)) => *top = Reverse((next, i)),
                 None => drop(PeekMut::pop(top)),

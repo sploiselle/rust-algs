@@ -33,7 +33,8 @@ pub fn multiway_merge_join_by_scan<K: Ord, V>(
         let mut found = 0;
         for (run, rows) in runs.iter_mut().zip(rest.iter_mut()) {
             if rows[0].0 == *key {
-                (*run, *rows) = rows.split_at(run_len(rows));
+                *run = rows.chunk_by(|a, b| a.0 == b.0).next().unwrap_or_default();
+                *rows = &rows[run.len()..];
                 found += 1;
             }
         }
@@ -66,14 +67,8 @@ pub fn hash_join_grouped<K: Hash + Eq, A, B>(
     }
 }
 
-// Copies of two helpers that are `pub(super)` in `algs::join`, so the scan
-// above runs the same code as the heap merge apart from finding the smallest key.
-
-/// How many leading rows share the first row's key (0 for no rows). The same
-/// as `algs::join::merge::run_len`.
-fn run_len<K: Eq, V>(rows: &[(K, V)]) -> usize {
-    rows.iter().take_while(|row| row.0 == rows[0].0).count()
-}
+// A copy of a helper that is `pub(super)` in `algs::join`, so the scan above
+// runs the same code as the heap merge apart from finding the smallest key.
 
 /// Calls `emit` with every way to pick one row from each run, after the rows
 /// already `picked`, first run outermost. The same as

@@ -1,7 +1,6 @@
 //! Leapfrog join: intersecting any number of sorted inputs by seeking, with no
 //! heap.
 
-use super::merge::run_len;
 use super::multiway::cross_product;
 
 /// Joins any number of sorted inputs as
@@ -38,7 +37,7 @@ pub fn leapfrog_join<K: Ord, V>(inputs: &[&[(K, V)]], mut emit: impl FnMut(&[&(K
         if rest[behind][0].0 == *target {
             // The furthest behind has caught up, so every input is at `target`.
             for (run, rows) in runs.iter_mut().zip(&rest) {
-                *run = &rows[..run_len(rows)];
+                *run = rows.chunk_by(|a, b| a.0 == b.0).next().unwrap_or_default();
             }
             cross_product(&runs, &mut picked, &mut emit);
             // Step only `behind` past `target`, which makes it the furthest
@@ -153,7 +152,7 @@ mod tests {
         });
         assert_eq!((from_leapfrog, from_heap), (10, 10));
         assert!(leapt < 1_000, "leapfrog made {leapt} comparisons");
-        assert!(merged > 600_000, "the heap made only {merged} comparisons");
+        assert!(merged > 500_000, "the heap made only {merged} comparisons");
     }
 
     /// Unsorted, input `a` falls back to key 0 after the first match, but

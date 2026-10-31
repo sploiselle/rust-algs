@@ -1,6 +1,7 @@
 //! The merge join: two inputs sorted by key, walked side by side.
 
 use std::cmp::Ordering;
+use std::hint::select_unpredictable;
 
 /// Joins two inputs sorted by key, calling `emit` with every pair whose keys
 /// are equal, in key order. A key on both sides joins as the cross product of
@@ -21,29 +22,34 @@ pub fn merge_join<K: Ord, A, B>(
         right.is_sorted_by_key(|row| &row.0),
         "right input isn't sorted"
     );
-    while let (Some(l), Some(r)) = (left.first(), right.first()) {
-        match l.0.cmp(&r.0) {
-            // The smaller key matches nothing still to come on the other side.
-            Ordering::Less => left = &left[1..],
-            Ordering::Greater => right = &right[1..],
+    while let (Some((left_key, _)), Some((right_key, _))) = (left.first(), right.first()) {
+        match left_key.cmp(right_key) {
             // Pair every row of the left run with every row of the right run.
             Ordering::Equal => {
-                let (left_run, left_rest) = left.split_at(run_len(left));
-                let (right_run, right_rest) = right.split_at(run_len(right));
+                let left_run = left.chunk_by(|a, b| a.0 == b.0).next().unwrap_or_default();
+                let right_run = right.chunk_by(|a, b| a.0 == b.0).next().unwrap_or_default();
                 for l in left_run {
                     for r in right_run {
                         emit(l, r);
                     }
                 }
-                (left, right) = (left_rest, right_rest);
+                (left, right) = (&left[left_run.len()..], &right[right_run.len()..]);
+            }
+            // The smaller key matches nothing still to come on the other side,
+            // so drop it. `select_unpredictable` picks the side without a
+            // branch. A branch is faster when the side that moves next is
+            // predictable, and slower when keys interleave at random, since
+            // the CPU then mispredicts it often. Left to choose, LLVM made it
+            // a branch once the `Equal` arm used `chunk_by`.
+            order => {
+                let drop_left = order.is_lt();
+                (left, right) = (
+                    select_unpredictable(drop_left, &left[1..], left),
+                    select_unpredictable(drop_left, right, &right[1..]),
+                );
             }
         }
     }
-}
-
-/// How many leading rows share the first row's key (0 for no rows).
-pub(super) fn run_len<K: Eq, V>(rows: &[(K, V)]) -> usize {
-    rows.iter().take_while(|row| row.0 == rows[0].0).count()
 }
 
 /// Sorts both inputs by key, then merge-joins them. It takes them by value
@@ -150,13 +156,6 @@ mod tests {
                 "{made} comparisons for {emitted} pairs"
             );
         }
-    }
-
-    #[test]
-    fn run_len_counts_the_rows_sharing_the_first_key() {
-        assert_eq!(run_len::<u8, ()>(&[]), 0);
-        assert_eq!(run_len(&[(1, ()), (1, ()), (2, ()), (1, ())]), 2);
-        assert_eq!(run_len(&[(3, ()), (3, ()), (3, ())]), 3);
     }
 
     #[test]
