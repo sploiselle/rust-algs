@@ -1,6 +1,8 @@
 [workspace]
 resolver = "3"
 members = ["crates/*"]
+# cargo test/build skip crates/bench (criterion is slow to build); use --workspace
+default-members = ["crates/algs", "crates/diagrams"]
 
 [workspace.package]
 edition = "2024"

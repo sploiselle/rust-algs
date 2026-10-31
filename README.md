@@ -32,6 +32,7 @@ crates/algs/              the library
   src/merkle.rs           Merkle trees over a directory, for finding what changed
   examples/               programs to run against the library
 crates/diagrams/          figures drawn from the library (SVG, HTML and Mermaid)
+crates/bench/             timings (criterion) and memory profiles of the library
 figures/                  the rendered figures, generated and not committed
 ```
 
@@ -226,3 +227,41 @@ For example, a page might write:
 
 Restyle paint (colour, opacity, stroke), not metrics: the layout measured the
 text at its set size and weight, so a bolder or larger font can collide.
+
+## Benchmarks
+
+`crates/bench` times the joins with criterion, profiles their memory with a
+counting allocator, and turns the results into Markdown tables for a post to
+quote. Every case is checked before it's measured: its row count against a
+count made without any join, and a checksum every algorithm on the same input
+has to agree on, so a wrong join can't post a number. The memory harness also
+asserts the memory figures the post quotes, as closed forms, except the binary
+plans' peaks: those depend on where their intermediate results fall against
+the powers of two a Vec grows through, so they're reported, not asserted.
+
+The tables cite the commit they ran at, so commit first. Then, on AC power
+with other apps closed:
+
+```bash
+rm -rf target/criterion target/bench && cargo bench -p bench
+cargo run -p bench --release
+```
+
+That takes about 13 minutes on an M6, and writes the tables into
+`target/bench/tables/` (pass `--out <dir>` to write somewhere else). The report
+refuses results from a dirty tree, from runs at another commit or rustc, or
+from a run with other criterion settings, such as a smoke test's shorter
+measurement; `--allow-dirty` and `--allow-stale` override it, and every table
+written under them says so. To rerun a noisy group at the same commit, which
+the report accepts:
+
+```bash
+cargo bench -p bench --bench joins -- <group>
+```
+
+Like the figures, everything the benchmarks write is generated, so it lands
+under `target/` and is never committed.
+
+criterion is slow to build, so plain `cargo test` and `cargo build` skip this
+crate. `cargo test --workspace` and `cargo clippy --workspace --all-targets`
+cover it.
