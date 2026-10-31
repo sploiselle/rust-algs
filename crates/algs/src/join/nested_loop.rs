@@ -5,11 +5,11 @@
 /// which `on` holds. It compares every row of `left` with every row of
 /// `right`, left-major, so it calls `on` `left.len() × right.len()` times
 /// however few pairs match.
-pub fn nested_loop_join<L, R>(
-    left: &[L],
-    right: &[R],
-    on: impl Fn(&L, &R) -> bool,
-    mut emit: impl FnMut(&L, &R),
+pub fn nested_loop_join<T>(
+    left: &[T],
+    right: &[T],
+    on: impl Fn(&T, &T) -> bool,
+    mut emit: impl FnMut(&T, &T),
 ) {
     for l in left {
         for r in right {
@@ -27,11 +27,7 @@ mod tests {
 
     /// Every pair `nested_loop_join` emits for `on`, in the order it emits
     /// them.
-    fn pairs<L: Clone, R: Clone>(
-        left: &[L],
-        right: &[R],
-        on: impl Fn(&L, &R) -> bool,
-    ) -> Vec<(L, R)> {
+    fn pairs<T: Clone>(left: &[T], right: &[T], on: impl Fn(&T, &T) -> bool) -> Vec<(T, T)> {
         let mut pairs = Vec::new();
         nested_loop_join(left, right, on, |l, r| pairs.push((l.clone(), r.clone())));
         pairs
@@ -39,39 +35,29 @@ mod tests {
 
     #[test]
     fn emits_every_pair_the_condition_accepts() {
-        let customers = [(1, "ada"), (2, "grace"), (3, "edsger")];
-        let orders = [(10, 2), (11, 1), (12, 2), (13, 4)];
-        let joined = pairs(&customers, &orders, |c, o| c.0 == o.1);
+        let names = [(1, "ada"), (2, "grace"), (3, "edsger")];
+        let surnames = [(3, "dijkstra"), (1, "lovelace"), (4, "turing")];
+        let joined = pairs(&names, &surnames, |n, s| n.0 == s.0);
         assert_eq!(
             joined,
             [
-                ((1, "ada"), (11, 1)),
-                ((2, "grace"), (10, 2)),
-                ((2, "grace"), (12, 2)),
+                ((1, "ada"), (1, "lovelace")),
+                ((3, "edsger"), (3, "dijkstra")),
             ]
         );
     }
 
-    /// A band join: each event with every window it falls inside. No key
-    /// makes `start <= at < end` an equality, so `hash_join` and `merge_join`,
-    /// which pair only equal keys, can't run it.
+    /// A band join: each of one sensor's readings with every reading of the
+    /// other's taken within two seconds of it. No key makes
+    /// `|l - r| <= 2` an equality, so `hash_join` and `merge_join`, which
+    /// pair only equal keys, can't run it.
     #[test]
     fn joins_on_a_condition_no_key_can_express() {
-        let windows = [("morning", 6, 12), ("lunch", 11, 14), ("evening", 17, 22)];
-        let events = [("a", 7), ("b", 11), ("c", 15), ("d", 21)];
-        let joined = pairs(&windows, &events, |&(_, start, end), &(_, at)| {
-            start <= at && at < end
-        });
-        let names: Vec<_> = joined.iter().map(|(w, e)| (w.0, e.0)).collect();
-        assert_eq!(
-            names,
-            [
-                ("morning", "a"),
-                ("morning", "b"),
-                ("lunch", "b"),
-                ("evening", "d"),
-            ]
-        );
+        let a = [("a1", 3u32), ("a2", 10), ("a3", 20)];
+        let b = [("b1", 1), ("b2", 4), ("b3", 12), ("b4", 30)];
+        let joined = pairs(&a, &b, |l, r| l.1.abs_diff(r.1) <= 2);
+        let names: Vec<_> = joined.iter().map(|(l, r)| (l.0, r.0)).collect();
+        assert_eq!(names, [("a1", "b1"), ("a1", "b2"), ("a2", "b3")]);
     }
 
     #[test]
@@ -104,16 +90,13 @@ mod tests {
 
     #[test]
     fn emits_left_major() {
-        let joined = pairs(&[1, 2], &['a', 'b', 'c'], |_, _| true);
-        assert_eq!(
-            joined,
-            [(1, 'a'), (1, 'b'), (1, 'c'), (2, 'a'), (2, 'b'), (2, 'c')]
-        );
+        let joined = pairs(&[1, 2], &[7, 8, 9], |_, _| true);
+        assert_eq!(joined, [(1, 7), (1, 8), (1, 9), (2, 7), (2, 8), (2, 9)]);
     }
 
     #[test]
     fn an_empty_side_emits_nothing() {
-        assert!(pairs(&[] as &[u8], &[1, 2], |_, _| true).is_empty());
-        assert!(pairs(&[1, 2], &[] as &[u8], |_, _| true).is_empty());
+        assert!(pairs(&[], &[1, 2], |_, _| true).is_empty());
+        assert!(pairs(&[1, 2], &[], |_, _| true).is_empty());
     }
 }

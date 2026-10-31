@@ -3,34 +3,31 @@
 use std::collections::HashMap;
 use std::hash::{BuildHasher, Hash};
 
-/// Joins `build` and `probe` on their keys: builds a table from `build`, then
-/// looks up each row of `probe` in it, calling `emit` with every pair whose
-/// keys are equal, in probe order. A probe row's matches come in reverse
-/// `build` order.
+/// Joins `build` and `probe` on their keys: puts each row of `build` in a
+/// table under its key, then looks up each row of `probe` in it, calling
+/// `emit` with every pair whose keys are equal, in probe order.
 ///
-/// The table is two allocations for any non-empty `build`, however its keys
-/// repeat, and its memory grows with `build` alone, so build the smaller
-/// input. `hasher` is the caller's: std's `RandomState` resists keys chosen to
-/// collide; engines use faster ones.
-pub fn hash_join<K: Hash + Eq, A, B>(
-    build: &[(K, A)],
-    probe: &[(K, B)],
+/// The table is one allocation for any non-empty `build`, sized up front, and
+/// its memory grows with `build` alone, so build the smaller input. `hasher`
+/// is the caller's: std's `RandomState` resists keys chosen to collide;
+/// engines use faster ones.
+///
+/// A key `build` repeats keeps only its last row, which loses matches; debug
+/// builds panic on one.
+pub fn hash_join<K: Hash + Eq, V>(
+    build: &[(K, V)],
+    probe: &[(K, V)],
     hasher: impl BuildHasher,
-    mut emit: impl FnMut(&(K, A), &(K, B)),
+    mut emit: impl FnMut(&(K, V), &(K, V)),
 ) {
-    // Each key's last row in `build`, and for each row, the row before it with
-    // the same key: `insert` returns the index it replaces.
-    let mut last = HashMap::with_capacity_and_hasher(build.len(), hasher);
-    let mut previous = Vec::with_capacity(build.len());
-    for (i, (key, _)) in build.iter().enumerate() {
-        previous.push(last.insert(key, i));
+    let mut table = HashMap::with_capacity_and_hasher(build.len(), hasher);
+    for row in build {
+        let replaced = table.insert(&row.0, row);
+        debug_assert!(replaced.is_none(), "build input repeats a key");
     }
-    // Follow each probe row's key back through every build row that has it.
     for row in probe {
-        let mut at = last.get(&row.0).copied();
-        while let Some(i) = at {
-            emit(&build[i], row);
-            at = previous[i];
+        if let Some(built) = table.get(&row.0) {
+            emit(built, row);
         }
     }
 }
@@ -96,12 +93,14 @@ mod tests {
     }
 
     #[test]
-    fn emits_a_keys_build_rows_in_reverse_order() {
-        let build = [(1, 'a'), (1, 'b'), (2, 'z'), (1, 'c')];
-        let mut matched = Vec::new();
-        hash_join(&build, &[(1, 'x')], RandomState::new(), |b, _| {
-            matched.push(b.1)
-        });
-        assert_eq!(matched, ['c', 'b', 'a']);
+    #[cfg(debug_assertions)]
+    #[should_panic(expected = "build input repeats a key")]
+    fn refuses_a_repeated_build_key_in_debug_builds() {
+        hash_join(
+            &[(1, 'a'), (1, 'b')],
+            &[(1, 'x')],
+            RandomState::new(),
+            |_, _| {},
+        );
     }
 }

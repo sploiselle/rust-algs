@@ -10,6 +10,8 @@ use algs::join::{
 };
 use bench::Row;
 use bench::alloc::{CountingAlloc, Usage, installed, measure};
+use bench::baseline::multiway_merge_join_by_scan;
+use bench::cases::buckets;
 use foldhash::fast::FixedState;
 
 #[global_allocator]
@@ -20,9 +22,9 @@ fn block(bytes: usize) -> Vec<u8> {
     black_box(Vec::with_capacity(bytes))
 }
 
-/// `n` rows with keys `0..n / per_key`, each key on `per_key` rows in a row.
-fn rows(n: u64, per_key: u64) -> Vec<Row> {
-    (0..n).map(|i| (i / per_key, i)).collect()
+/// `n` rows with keys `0..n`, in order.
+fn rows(n: u64) -> Vec<Row> {
+    (0..n).map(|i| (i, i)).collect()
 }
 
 /// What a join of `build` and `probe` allocates.
@@ -94,7 +96,7 @@ fn a_realloc_counts_both_blocks() {
 
 #[test]
 fn nested_loop_and_merge_joins_allocate_nothing() {
-    let (left, right) = (rows(256, 1), rows(1024, 4));
+    let (left, right) = (rows(256), rows(1024));
     let nested = measure(|| {
         nested_loop_join(
             &left,
@@ -116,29 +118,36 @@ fn nested_loop_and_merge_joins_allocate_nothing() {
     assert_eq!(merge, Usage::default());
 }
 
+/// One table, `buckets(n)` buckets of a 16-byte entry and a control byte,
+/// and up to 16 control bytes past the last: at the edges of each bucket
+/// count, as at 7/8 full.
 #[test]
-fn a_hash_join_allocates_twice_for_any_nonempty_build() {
-    let probe = rows(4096, 1);
-    let unique = hash_usage(&rows(1024, 1), &probe);
-    let repeated = hash_usage(&rows(1024, 16), &probe);
-    assert_eq!(unique.allocations, 2);
-    assert_eq!(repeated.allocations, 2);
-    // The table is sized for the build's rows, not its keys.
-    assert_eq!(unique.peak_bytes, repeated.peak_bytes);
+fn a_hash_join_allocates_one_table_for_any_nonempty_build() {
+    let probe = rows(4096);
+    for n in [1, 3, 4, 7, 8, 14, 15, 28, 29, 896, 897, 1024] {
+        let usage = hash_usage(&rows(n), &probe);
+        let least = 17 * buckets(n as usize);
+        assert_eq!(usage.allocations, 1, "{n} rows");
+        assert!(
+            (least..=least + 16).contains(&usage.peak_bytes),
+            "{n} rows: {} B, not {least} B and up to 16 control bytes",
+            usage.peak_bytes
+        );
+    }
     assert_eq!(hash_usage(&[], &probe), Usage::default());
 }
 
 #[test]
 fn hash_join_memory_follows_the_build_side() {
-    let build = rows(1024, 1);
-    let once = hash_usage(&build, &rows(1024, 1));
-    let four_times = hash_usage(&build, &rows(4096, 1));
+    let build = rows(1024);
+    let once = hash_usage(&build, &rows(1024));
+    let four_times = hash_usage(&build, &rows(4096));
     assert_eq!(once.peak_bytes, four_times.peak_bytes);
 }
 
 #[test]
 fn sort_merge_allocates_exactly_its_inputs() {
-    let (left, right) = (rows(256, 1), rows(1024, 4));
+    let (left, right) = (rows(256), rows(1024));
     let (usage, ()) = measure(|| {
         sort_merge_join(left.to_vec(), right.to_vec(), |l, r| {
             black_box((l, r));
@@ -154,19 +163,27 @@ fn sort_merge_allocates_exactly_its_inputs() {
 #[test]
 fn multiway_memory_follows_k_not_rows() {
     for n in [1 << 10, 1 << 14] {
-        let rows = rows(n, 1);
+        let rows = rows(n);
         for k in [2, 3, 8] {
             let heap = multiway_usage(k, &rows, |inputs, emit| multiway_merge_join(inputs, emit));
             let leapfrog = multiway_usage(k, &rows, |inputs, emit| leapfrog_join(inputs, emit));
+            let scan = multiway_usage(k, &rows, |inputs, emit| {
+                multiway_merge_join_by_scan(inputs, emit);
+            });
             assert_eq!(
                 (heap.peak_bytes, heap.allocations),
-                (56 * k, 4),
+                (40 * k, 3),
                 "heap, k = {k}, n = {n}"
             );
             assert_eq!(
                 (leapfrog.peak_bytes, leapfrog.allocations),
-                (48 * k, 4),
+                (32 * k, 3),
                 "leapfrog, k = {k}, n = {n}"
+            );
+            assert_eq!(
+                (scan.peak_bytes, scan.allocations),
+                (24 * k, 2),
+                "scan, k = {k}, n = {n}"
             );
         }
     }

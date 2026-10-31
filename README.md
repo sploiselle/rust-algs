@@ -23,7 +23,7 @@ crates/algs/              the library
     airline.rs            Lamport's airline reservation example
   src/broadcast/          delivering broadcasts in causal order
     cbcast.rs             causal broadcast
-  src/join/               joining inputs on a key
+  src/join/               joining inputs that hold each key once
     nested_loop.rs        compare every pair, on any predicate
     hash.rs               build a table on one input, probe it with the other
     merge.rs              walk two sorted inputs together; sort-merge
@@ -247,7 +247,7 @@ rm -rf target/criterion target/bench && cargo bench -p bench
 cargo run -p bench --release
 ```
 
-That takes about 13 minutes on an M6, and writes the tables into
+That takes about 10 minutes on an M6, and writes the tables into
 `target/bench/tables/` (pass `--out <dir>` to write somewhere else). The report
 refuses results from a dirty tree, from runs at another commit or rustc, or
 from a run with other criterion settings, such as a smoke test's shorter

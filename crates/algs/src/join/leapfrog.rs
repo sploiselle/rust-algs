@@ -1,23 +1,21 @@
 //! Leapfrog join: intersecting any number of sorted inputs by seeking, with no
 //! heap.
 
-use super::multiway::cross_product;
-
 /// Joins any number of sorted inputs as
 /// [`multiway_merge_join`](super::multiway_merge_join) does, emitting the same
-/// tuples in the same order, but jumps past runs of keys some input lacks
-/// instead of reading them one at a time.
+/// tuples in the same order, but jumps past keys some input lacks instead of
+/// reading them one at a time.
 ///
 /// The input furthest behind seeks to the key of the input furthest ahead,
 /// which makes it the furthest ahead. So the inputs stay in a cycle ordered by
 /// their next keys, and finding the one furthest behind is a step around it,
 /// not a heap (Veldhuizen, *Leapfrog Triejoin*, 2014). Each input is furthest
-/// behind once every `k` steps, and moves past a key each time, so the input
-/// with the fewest keys bounds the work.
+/// behind once every `k` steps, and moves past a row each time, so the input
+/// with the fewest rows bounds the work.
 ///
 /// Unsorted inputs give wrong answers: it misses matches, and since it
 /// compares only the inputs furthest behind and furthest ahead, it can join
-/// rows whose keys differ.
+/// rows whose keys differ. Inputs that repeat a key lose matches.
 pub fn leapfrog_join<K: Ord, V>(inputs: &[&[(K, V)]], mut emit: impl FnMut(&[&(K, V)])) {
     let k = inputs.len();
     if k == 0 || inputs.iter().any(|rows| rows.is_empty()) {
@@ -29,21 +27,19 @@ pub fn leapfrog_join<K: Ord, V>(inputs: &[&[(K, V)]], mut emit: impl FnMut(&[&(K
     let mut order: Vec<usize> = (0..k).collect();
     order.sort_unstable_by_key(|&i| &rest[i][0].0);
     let mut p = 0;
-    let mut runs: Vec<&[(K, V)]> = vec![&[]; k];
     let mut picked = Vec::with_capacity(k);
     loop {
         let (behind, ahead) = (order[p], order[(p + k - 1) % k]);
         let target = &rest[ahead][0].0;
         if rest[behind][0].0 == *target {
             // The furthest behind has caught up, so every input is at `target`.
-            for (run, rows) in runs.iter_mut().zip(&rest) {
-                *run = rows.chunk_by(|a, b| a.0 == b.0).next().unwrap_or_default();
-            }
-            cross_product(&runs, &mut picked, &mut emit);
+            picked.clear();
+            picked.extend(rest.iter().map(|rows| &rows[0]));
+            emit(&picked);
             // Step only `behind` past `target`, which makes it the furthest
             // ahead, as a seek would. Stepping every input would leave the
             // cycle out of order; the others seek past `target` on their turns.
-            rest[behind] = &rest[behind][runs[behind].len()..];
+            rest[behind] = &rest[behind][1..];
         } else {
             rest[behind] = seek(rest[behind], target);
         }
@@ -79,7 +75,7 @@ mod tests {
     use crate::join::multiway_merge_join;
     use crate::join::testing::{Row, every_matching_tuple, many, tuples};
     use crate::test_util::{Counted, comparisons};
-    use proptest::collection::vec;
+    use proptest::collection::btree_set;
     use proptest::prelude::*;
 
     proptest! {
@@ -102,9 +98,8 @@ mod tests {
 
         /// Including on no rows, and for targets below and past every row.
         #[test]
-        fn seek_lands_where_partition_point_does(keys in vec(any::<u8>(), 0..300), target in any::<u8>()) {
-            let mut rows: Vec<(u8, ())> = keys.into_iter().map(|key| (key, ())).collect();
-            rows.sort_unstable();
+        fn seek_lands_where_partition_point_does(keys in btree_set(any::<u8>(), 0..300), target in any::<u8>()) {
+            let rows: Vec<(u8, ())> = keys.into_iter().map(|key| (key, ())).collect();
             let found = seek(&rows, &target);
             prop_assert_eq!(found.len(), rows.len() - rows.partition_point(|row| row.0 < target));
         }
@@ -112,7 +107,7 @@ mod tests {
 
     #[test]
     fn with_one_input_it_emits_every_row() {
-        let rows = [(1, 'a'), (1, 'b'), (4, 'c')];
+        let rows = [(1, 'a'), (2, 'b'), (4, 'c')];
         let mut emitted = Vec::new();
         leapfrog_join(&[&rows], |tuple| emitted.push(*tuple[0]));
         assert_eq!(emitted, rows);
@@ -133,7 +128,7 @@ mod tests {
 
     /// Ten keys spread through the middle input: leapfrog seeks the other two
     /// from one to the next, while the heap merges every key of both up to
-    /// the last of them. The input with the fewest keys bounds leapfrog's
+    /// the last of them. The input with the fewest rows bounds leapfrog's
     /// work, not the inputs with the most.
     #[test]
     fn skips_what_the_heap_reads() {
@@ -152,7 +147,7 @@ mod tests {
         });
         assert_eq!((from_leapfrog, from_heap), (10, 10));
         assert!(leapt < 1_000, "leapfrog made {leapt} comparisons");
-        assert!(merged > 500_000, "the heap made only {merged} comparisons");
+        assert!(merged > 250_000, "the heap made only {merged} comparisons");
     }
 
     /// Unsorted, input `a` falls back to key 0 after the first match, but

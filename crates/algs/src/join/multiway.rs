@@ -7,19 +7,19 @@ use std::collections::binary_heap::PeekMut;
 
 use super::merge::merge_join;
 
-/// Joins any number of inputs sorted by key: calls `emit` with every
-/// combination of one row from each input whose keys are all equal, as a slice
-/// whose `i`-th row comes from input `i`. Tuples come in key order, the first
-/// input outermost. With two inputs it is [`merge_join`]; with none it emits
+/// Joins any number of inputs sorted by key: for each key every input holds,
+/// in key order, calls `emit` with a slice whose `i`-th row is input `i`'s row
+/// with that key. With two inputs it is [`merge_join`]; with none it emits
 /// nothing.
 ///
 /// It is a k-way merge: a min-heap of each input's next key says which input
 /// is furthest behind in O(log k), and its working memory is O(k). Unsorted
-/// inputs lose matches.
+/// inputs lose matches. An input that repeats a key can also put its second
+/// row at that key in another input's slot, emitting a tuple that isn't a
+/// match. Debug builds panic on either, as far as the merge reads each input.
 pub fn multiway_merge_join<K: Ord, V>(inputs: &[&[(K, V)]], mut emit: impl FnMut(&[&(K, V)])) {
     let k = inputs.len();
     let mut rest = inputs.to_vec();
-    let mut runs: Vec<&[(K, V)]> = vec![&[]; k];
     let mut picked = Vec::with_capacity(k);
     // Each input's next key and the input it came from, smallest key on top.
     let mut heads = BinaryHeap::with_capacity(k);
@@ -31,54 +31,42 @@ pub fn multiway_merge_join<K: Ord, V>(inputs: &[&[(K, V)]], mut emit: impl FnMut
     // Once any input runs out, no later key is in all of them.
     while k > 0 && heads.len() == k {
         let Reverse((key, _)) = *heads.peek().unwrap();
-        // Take the run at `key` from each input whose next key it is.
-        let mut found = 0;
+        // Take the row at `key` from each input whose next key it is. Ties on
+        // the key come off the heap by input, so `picked` is in input order.
+        picked.clear();
         while let Some(mut top) = heads.peek_mut()
             && let Reverse((head, i)) = *top
             && head == key
         {
             let rows = rest[i];
-            runs[i] = rows.chunk_by(|a, b| a.0 == b.0).next().unwrap_or_default();
-            rest[i] = &rows[runs[i].len()..];
-            found += 1;
+            picked.push(&rows[0]);
+            rest[i] = &rows[1..];
             match rest[i].first() {
-                // Replace the top in place: one sift down, when `top` drops.
-                Some((next, _)) => *top = Reverse((next, i)),
+                Some((next, _)) => {
+                    debug_assert!(next > key, "input {i}'s keys don't strictly increase");
+                    // Replace the top in place: one sift down, when `top` drops.
+                    *top = Reverse((next, i));
+                }
                 None => drop(PeekMut::pop(top)),
             }
         }
         // Only a key every input has joins.
-        if found == k {
-            cross_product(&runs, &mut picked, &mut emit);
-        }
-    }
-}
-
-/// Calls `emit` with every way to pick one row from each run, after the rows
-/// already `picked`, first run outermost.
-pub(super) fn cross_product<'a, K, V>(
-    runs: &[&'a [(K, V)]],
-    picked: &mut Vec<&'a (K, V)>,
-    emit: &mut impl FnMut(&[&(K, V)]),
-) {
-    match runs.split_first() {
-        None => emit(picked),
-        Some((run, others)) => {
-            for row in *run {
-                picked.push(row);
-                cross_product(others, picked, emit);
-                picked.pop();
-            }
+        if picked.len() == k {
+            emit(&picked);
         }
     }
 }
 
 /// Joins the inputs the way a left-deep plan of binary merge joins does when
 /// it materializes each result, the last one too: the first two, then that
-/// result with the third, and so on, copying every tuple it makes and emitting
-/// only once every join is done. It emits what [`multiway_merge_join`] emits,
-/// in the same order, but how big the intermediate results get depends on the
-/// order of `inputs`.
+/// result with the third, and so on, copying every row of every tuple it
+/// makes and emitting only once every join is done. It emits what
+/// [`multiway_merge_join`] emits, in the same order, but how big the
+/// intermediate results get depends on the order of `inputs`.
+///
+/// # Panics
+///
+/// If rows are zero-sized: it finds a tuple by where its first row is.
 pub fn cascade_merge_join<K: Ord + Clone, V: Clone>(
     inputs: &[&[(K, V)]],
     mut emit: impl FnMut(&[&(K, V)]),
@@ -86,27 +74,26 @@ pub fn cascade_merge_join<K: Ord + Clone, V: Clone>(
     let Some((first, others)) = inputs.split_first() else {
         return;
     };
-    // The result so far: each tuple's key and where it starts in `tuples`.
-    let mut joined: Vec<(K, usize)> = first
-        .iter()
-        .enumerate()
-        .map(|(i, row)| (row.0.clone(), i))
-        .collect();
-    let mut tuples: Vec<(K, V)> = first.to_vec();
-    let mut width = 1;
+    // The result so far, a column per input joined: tuple `t` is row `t` of
+    // every column. Each column is in key order, so the first is the result's
+    // keys for the next merge.
+    let mut columns = vec![first.to_vec()];
     for input in others {
-        let (mut next_joined, mut next_tuples) = (Vec::new(), Vec::new());
-        merge_join(&joined, input, |(key, at), row| {
-            next_joined.push((key.clone(), next_tuples.len()));
-            next_tuples.extend_from_slice(&tuples[*at..*at + width]);
-            next_tuples.push(row.clone());
+        let mut next = vec![Vec::new(); columns.len() + 1];
+        merge_join(&columns[0], input, |l, r| {
+            // `l` is a row of the first column, so where it sits is its tuple.
+            let t = columns[0].element_offset(l).unwrap();
+            for (column, next) in columns.iter().zip(&mut next) {
+                next.push(column[t].clone());
+            }
+            next[columns.len()].push(r.clone());
         });
-        (joined, tuples, width) = (next_joined, next_tuples, width + 1);
+        columns = next;
     }
-    let mut picked = Vec::with_capacity(width);
-    for (_, at) in &joined {
+    let mut picked = Vec::with_capacity(columns.len());
+    for t in 0..columns[0].len() {
         picked.clear();
-        picked.extend(&tuples[*at..*at + width]);
+        picked.extend(columns.iter().map(|column| &column[t]));
         emit(&picked);
     }
 }
@@ -163,10 +150,11 @@ mod tests {
 
     #[test]
     fn with_one_input_it_emits_every_row() {
-        let rows = [(1, 'a'), (1, 'b'), (4, 'c')];
-        let mut emitted = Vec::new();
-        multiway_merge_join(&[&rows], |tuple| emitted.push(*tuple[0]));
-        assert_eq!(emitted, rows);
+        let rows = [(1, 'a'), (2, 'b'), (4, 'c')];
+        let (mut merged, mut cascaded) = (Vec::new(), Vec::new());
+        multiway_merge_join(&[&rows], |tuple| merged.push(*tuple[0]));
+        cascade_merge_join(&[&rows], |tuple| cascaded.push(*tuple[0]));
+        assert_eq!((merged, cascaded), (rows.to_vec(), rows.to_vec()));
     }
 
     #[test]
@@ -197,5 +185,23 @@ mod tests {
         });
         assert_eq!(emitted, 10);
         assert!(made < 200, "{made} comparisons");
+    }
+
+    /// Unchecked, input 0's second row would take input 1's slot, and the
+    /// join would emit a tuple for a key input 1 doesn't hold.
+    #[test]
+    #[cfg(debug_assertions)]
+    #[should_panic(expected = "input 0's keys don't strictly increase")]
+    fn refuses_a_repeated_key_in_debug_builds() {
+        let inputs: [&[Row]; 2] = [&[(1, 0), (1, 1)], &[(2, 16)]];
+        multiway_merge_join(&inputs, |_| {});
+    }
+
+    #[test]
+    #[cfg(debug_assertions)]
+    #[should_panic(expected = "input 1's keys don't strictly increase")]
+    fn refuses_an_unsorted_input_in_debug_builds() {
+        let inputs: [&[Row]; 2] = [&[(1, 0), (2, 1)], &[(1, 2), (0, 3)]];
+        multiway_merge_join(&inputs, |_| {});
     }
 }

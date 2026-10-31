@@ -22,7 +22,8 @@
 //!   [`Airline`](state_machine::airline::Airline).
 //! - [`broadcast`]: delivering broadcasts in an order that respects causality.
 //!   [`Cbcast`](broadcast::Cbcast).
-//! - [`join`]: pairing the rows of inputs whose keys are equal.
+//! - [`join`]: pairing the rows of inputs whose keys are equal, each input
+//!   holding each key once.
 //!   [`nested_loop_join`](join::nested_loop_join),
 //!   [`hash_join`](join::hash_join) and [`merge_join`](join::merge_join), and
 //!   joining many sorted inputs at once with

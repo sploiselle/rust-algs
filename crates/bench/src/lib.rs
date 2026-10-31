@@ -21,10 +21,9 @@
 //! A join hands each tuple to a [`Sink`]. The timed calls use a [`Tally`],
 //! which costs the same for every tuple of every join: a count, a read of
 //! each row's payload, and an XOR, kept opaque so the compiler can neither
-//! skip the reads nor hoist them out of a run's loop. The [`Checksum`] runs
-//! only in the untimed check. It costs three SplitMix64 rounds or more a
-//! tuple, and unevenly: a merge or nested loop hoists some of a run's rounds
-//! out of its inner loop, and a hash join can't.
+//! skip the reads nor hoist them out of a loop. The [`Checksum`] runs only in
+//! the untimed check: its three SplitMix64 rounds or more a tuple would add
+//! far more to every timing than the Tally's XOR.
 //!
 //! ## Output
 //!
@@ -62,7 +61,8 @@ pub mod report;
 pub mod workload;
 
 /// A row: its key, and a payload. Payloads are random, never derived from the
-/// key, so a checksum over them can tell rows with the same key apart.
+/// key, so a checksum over them can tell apart the rows of different inputs
+/// that share a key.
 pub type Row = (u64, u64);
 
 /// SplitMix64's output for state `x`: one step of the golden-ratio counter,
@@ -128,7 +128,7 @@ impl Checksum {
 /// kept. It reads every row's payload and XORs them, through
 /// [`black_box`], so each tuple costs the same small,
 /// fixed work whichever join emits it, and none of it can be skipped, hoisted
-/// out of a run or vectorized across tuples.
+/// out of a loop or vectorized across tuples.
 #[derive(Debug, Default)]
 pub struct Tally {
     pub tuples: u64,
@@ -157,9 +157,9 @@ mod tests {
     use super::*;
 
     const A1: Row = (1, 11);
-    const A2: Row = (1, 12);
+    const A2: Row = (2, 12);
     const B1: Row = (1, 21);
-    const B2: Row = (1, 22);
+    const B2: Row = (2, 22);
 
     fn pairs(pairs: &[(Row, Row)]) -> Checksum {
         let mut sum = Checksum::default();

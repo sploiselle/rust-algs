@@ -3,15 +3,13 @@
 //! Each case's check runs it once into a [`Checksum`]. The timed calls emit
 //! into a [`Tally`] instead, so each tuple's cost is the same small, fixed
 //! work for every join: a count, a read of every row's payload, and an XOR
-//! the compiler can't drop or hoist. A checksum in the timed calls would cost
-//! three SplitMix64 rounds or more a tuple, about half of a hash join's time,
-//! and a merge or nested loop would hoist some of them out of a run's loop
-//! where a hash join can't, which would skew every comparison.
+//! the compiler can't drop or hoist. A checksum in the timed calls would add
+//! three SplitMix64 rounds or more to every tuple.
 //!
 //! Every case is sampled flat, the same way: see [`cases::SAMPLES`]. A filter
-//! (`cargo bench -p bench --bench joins -- pk_fk`) narrows what criterion
+//! (`cargo bench -p bench --bench joins -- one_to_one`) narrows what criterion
 //! times, but every workload is still generated and every case still checked,
-//! which takes about 5 s. The system allocator is untouched here: counting
+//! which takes about 3 s. The system allocator is untouched here: counting
 //! would add to every allocation the timed code makes.
 
 use std::hint::black_box;

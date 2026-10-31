@@ -154,7 +154,7 @@ pub struct Memory {
     pub cases: Vec<MemoryCase>,
 }
 
-/// One case's memory profile, and the sizes its units come from.
+/// One case's memory profile, and its input's size.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct MemoryCase {
     pub group: String,
@@ -162,7 +162,6 @@ pub struct MemoryCase {
     pub param: usize,
     pub input_rows: u64,
     pub input_bytes: u64,
-    pub output_rows: u64,
     /// The [`Checksum`](crate::Checksum)'s sum, which every algorithm in the
     /// group agreed on.
     pub checksum: u64,

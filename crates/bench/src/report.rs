@@ -30,7 +30,7 @@ use std::path::{Path, PathBuf};
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 
-use crate::cases::{self, Algorithm, Case, Group, Unit};
+use crate::cases::{self, Algorithm, Case};
 use crate::record::{self, Memory, MemoryCase, Run};
 
 /// The criterion version the timings were taken with, for captions.
@@ -136,14 +136,12 @@ impl Results {
         self.memory.get(&lookup(group, algorithm, param))
     }
 
-    /// The median time per row of the group's unit, in ns.
+    /// The median time per input row, in ns.
     fn per_row(&self, group: &str, algorithm: Algorithm, param: usize) -> Option<f64> {
         let timing = self.timing(group, algorithm, param)?;
-        let profile = || self.profile(group, algorithm, param);
-        let rows = match cases::group(group).unit {
-            Unit::PerInputRow => timing.input_rows.or_else(|| Some(profile()?.input_rows))?,
-            Unit::PerOutputRow => profile()?.output_rows,
-        };
+        let rows = timing
+            .input_rows
+            .or_else(|| Some(self.profile(group, algorithm, param)?.input_rows))?;
         Some(timing.median_ns / rows as f64)
     }
 
@@ -588,7 +586,7 @@ pub enum Kind {
 /// What a grid's cells show.
 #[derive(Clone, Copy)]
 pub enum Metric {
-    /// The median time per row of the group's unit.
+    /// The median time per input row.
     Time,
     /// The peak bytes.
     Peak,
@@ -616,34 +614,29 @@ pub const TABLES: &[Table] = {
     use Algorithm::*;
     &[
         Table {
-            file: "pk_fk.md",
+            file: "one_to_one.md",
             note: None,
             kind: Kind::Grid {
-                rows: "orders",
+                rows: "rows a side",
                 metric: Metric::Time,
                 columns: &[
-                    column("pk_fk", NestedLoop, "nested loop"),
-                    column("pk_fk", Hash, "hash"),
-                    column("pk_fk", HashSorted, "hash (sorted input)"),
-                    column("pk_fk", Merge, "merge (sorted input)"),
-                    column("pk_fk", SortMerge, "sort-merge"),
+                    column("one_to_one", NestedLoop, "nested loop"),
+                    column("one_to_one", Hash, "hash"),
+                    column("one_to_one", HashSorted, "hash (sorted input)"),
+                    column("one_to_one", Merge, "merge (sorted input)"),
+                    column("one_to_one", SortMerge, "sort-merge"),
                 ],
             },
         },
         Table {
-            file: "few_customers.md",
+            file: "small_side.md",
             note: None,
             kind: Kind::Grid {
-                rows: "customers",
+                rows: "rows on the small side",
                 metric: Metric::Time,
                 columns: &[
-                    column("few_customers", NestedLoop, "nested loop"),
-                    column(
-                        "few_customers",
-                        NestedLoopSorted,
-                        "nested loop (orders sorted)",
-                    ),
-                    column("few_customers", Hash, "hash"),
+                    column("small_side", NestedLoop, "nested loop"),
+                    column("small_side", Hash, "hash"),
                 ],
             },
         },
@@ -651,28 +644,11 @@ pub const TABLES: &[Table] = {
             file: "hash_variants.md",
             note: None,
             kind: Kind::Grid {
-                rows: "orders",
-                metric: Metric::Time,
-                columns: &[
-                    column("hash_variants", Hash, "hash"),
-                    column("hash_variants", HashSipHash, "SipHash"),
-                    column("hash_variants", HashBuildLarger, "building orders"),
-                    column("hash_variants", HashGrouped, "Vec per key"),
-                ],
-            },
-        },
-        Table {
-            file: "many_to_many.md",
-            note: None,
-            kind: Kind::Grid {
                 rows: "rows a side",
                 metric: Metric::Time,
                 columns: &[
-                    column("many_to_many", Hash, "hash"),
-                    column("many_to_many", HashSorted, "hash (sorted input)"),
-                    column("many_to_many", HashGrouped, "Vec per key"),
-                    column("many_to_many", Merge, "merge (sorted input)"),
-                    column("many_to_many", SortMerge, "sort-merge"),
+                    column("hash_variants", Hash, "foldhash"),
+                    column("hash_variants", HashSipHash, "SipHash"),
                 ],
             },
         },
@@ -680,19 +656,13 @@ pub const TABLES: &[Table] = {
             file: "binary_memory.md",
             note: None,
             kind: Kind::Profile {
-                rows: "at 1M orders",
+                rows: "at 1M rows a side",
                 cases: &[
-                    (column("hash_variants", Hash, "hash"), 1 << 20),
-                    (column("hash_variants", HashSipHash, "SipHash"), 1 << 20),
+                    (column("one_to_one", Hash, "hash"), 1 << 20),
+                    (column("one_to_one", Merge, "merge (sorted input)"), 1 << 20),
+                    (column("one_to_one", SortMerge, "sort-merge"), 1 << 20),
                     (
-                        column("hash_variants", HashBuildLarger, "building orders"),
-                        1 << 20,
-                    ),
-                    (column("hash_variants", HashGrouped, "Vec per key"), 1 << 20),
-                    (column("pk_fk", Merge, "merge (sorted input)"), 1 << 20),
-                    (column("pk_fk", SortMerge, "sort-merge"), 1 << 20),
-                    (
-                        column("pk_fk", NestedLoop, "nested loop, at 64K orders"),
+                        column("one_to_one", NestedLoop, "nested loop, at 64K rows a side"),
                         1 << 16,
                     ),
                 ],
@@ -836,8 +806,8 @@ impl Table {
                     }
                 });
                 let what = format!(
-                    "Median of criterion samples, in ns per {}.{note}",
-                    per(group)
+                    "Median of criterion samples, in ns per input row, counting {}.{note}",
+                    group.workload.input_rows()
                 );
                 let caption = time_caption(results, &what, NOISY, &noisy);
                 page(self.name(), results, Source::Timings, &body, &caption)
@@ -868,14 +838,6 @@ impl Table {
                 page(self.name(), results, Source::Memory, &body, &caption)
             }
         }
-    }
-}
-
-/// What `group`'s times are divided by, spelled out for a caption.
-fn per(group: &Group) -> String {
-    match group.unit {
-        Unit::PerInputRow => format!("input row, counting {}", group.workload.input_rows()),
-        Unit::PerOutputRow => "output row, each pair emitted".to_owned(),
     }
 }
 
@@ -915,7 +877,7 @@ fn profile_cells(p: &MemoryCase) -> Vec<String> {
 
 /// Every case in long form: one table of timings and one of memory.
 fn all(results: &Results) -> String {
-    let header = ["case", "median", "±CI", "ns per row", "row"].map(str::to_owned);
+    let header = ["case", "median", "±CI", "ns per input row"].map(str::to_owned);
     let times = cases::cases().map(|case| {
         let (group, alg, param) = (case.group.name, case.algorithm, case.param);
         let cells = match results.timing(group, alg, param) {
@@ -928,9 +890,8 @@ fn all(results: &Results) -> String {
                 results
                     .per_row(group, alg, param)
                     .map_or(MISSING.to_owned(), sig3),
-                case.group.unit.row().to_owned(),
             ],
-            None => vec![MISSING.to_owned(); 4],
+            None => vec![MISSING.to_owned(); 3],
         };
         [vec![case.to_string()], cells].concat()
     });
@@ -1010,7 +971,7 @@ fn page(name: &str, results: &Results, source: Source, table: &str, caption: &st
 
 /// What the long-form timing table's numbers are.
 const ALL: &str = "Medians of criterion samples, the half-width of each one's 95% confidence \
-                   interval, and the median per row of the unit in the last column.";
+                   interval, and the median per input row, counting every input's rows.";
 
 /// What a memory table's peaks are.
 const PEAK: &str = "Peak bytes live at once during one call, as requested from the allocator \
@@ -1083,7 +1044,7 @@ pub struct Quantity {
 pub enum Measure {
     /// The median time, in ns.
     Median,
-    /// The median time per row of the group's unit, in ns.
+    /// The median time per input row, in ns.
     PerRow,
     Peak,
     Allocations,
@@ -1114,7 +1075,7 @@ impl fmt::Display for Quantity {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let measure = match self.measure {
             Measure::Median => "median".to_owned(),
-            Measure::PerRow => format!("ns per {}", cases::group(self.group).unit.row()),
+            Measure::PerRow => "ns per input row".to_owned(),
             Measure::Peak => "peak".to_owned(),
             Measure::Allocations => "allocations".to_owned(),
             Measure::InputBytes => "input bytes".to_owned(),
@@ -1133,6 +1094,8 @@ impl fmt::Display for Quantity {
 pub const FACTS: &[Fact] = {
     use Algorithm::*;
     use Measure::*;
+    const K1: usize = 1 << 10;
+    const K16: usize = 1 << 14;
     const K64: usize = 1 << 16;
     const K256: usize = 1 << 18;
     const M1: usize = 1 << 20;
@@ -1148,76 +1111,117 @@ pub const FACTS: &[Fact] = {
     }
     &[
         fact(
-            "nested_over_hash_64K",
-            ratio("pk_fk", NestedLoop, Hash, K64),
+            "nested_over_hash_1K",
+            ratio("one_to_one", NestedLoop, Hash, K1),
         ),
-        fact("hash_ns_1M", Value::Single(q("pk_fk", Hash, M1, PerRow))),
-        fact("hash_ns_4M", Value::Single(q("pk_fk", Hash, M4, PerRow))),
+        fact(
+            "nested_over_hash_64K",
+            ratio("one_to_one", NestedLoop, Hash, K64),
+        ),
+        fact(
+            "hash_ns_16K",
+            Value::Single(q("one_to_one", Hash, K16, PerRow)),
+        ),
+        fact(
+            "hash_ns_1M",
+            Value::Single(q("one_to_one", Hash, M1, PerRow)),
+        ),
+        fact(
+            "hash_ns_4M",
+            Value::Single(q("one_to_one", Hash, M4, PerRow)),
+        ),
+        fact(
+            "hash_4M_over_16K_per_row",
+            Value::Ratio(
+                q("one_to_one", Hash, M4, PerRow),
+                q("one_to_one", Hash, K16, PerRow),
+            ),
+        ),
+        fact(
+            "hash_peak_over_input_1M",
+            Value::Ratio(
+                q("one_to_one", Hash, M1, Peak),
+                q("one_to_one", Hash, M1, InputBytes),
+            ),
+        ),
+        fact(
+            "sort_merge_over_hash_16K",
+            ratio("one_to_one", SortMerge, Hash, K16),
+        ),
         fact(
             "sort_merge_over_hash_4M",
-            ratio("pk_fk", SortMerge, Hash, M4),
+            ratio("one_to_one", SortMerge, Hash, M4),
         ),
+        fact("merge_over_hash_4M", ratio("one_to_one", Merge, Hash, M4)),
         fact(
             "merge_over_hash_sorted_1M",
-            ratio("pk_fk", Merge, HashSorted, M1),
+            ratio("one_to_one", Merge, HashSorted, M1),
         ),
         fact(
             "hash_sorted_over_hash_1M",
-            ratio("pk_fk", HashSorted, Hash, M1),
+            ratio("one_to_one", HashSorted, Hash, M1),
         ),
         fact(
-            "few_m1_nested_over_hash",
-            ratio("few_customers", NestedLoop, Hash, 1),
+            "small_m1_nested_over_hash",
+            ratio("small_side", NestedLoop, Hash, 1),
         ),
         fact(
-            "few_m2_sorted_over_unsorted",
-            ratio("few_customers", NestedLoopSorted, NestedLoop, 2),
+            "hash_nested_crossover_small_m",
+            Value::Crossover {
+                group: "small_side",
+                faster: Hash,
+                slower: NestedLoop,
+            },
+        ),
+        fact(
+            "siphash_over_foldhash_16K",
+            ratio("hash_variants", HashSipHash, Hash, K16),
         ),
         fact(
             "siphash_over_foldhash_1M",
             ratio("hash_variants", HashSipHash, Hash, M1),
         ),
         fact(
-            "build_larger_over_hash_time_1M",
-            ratio("hash_variants", HashBuildLarger, Hash, M1),
+            "siphash_over_foldhash_4M",
+            ratio("hash_variants", HashSipHash, Hash, M4),
         ),
         fact(
-            "build_larger_over_hash_peak_1M",
+            "unplanned_over_planned_1M",
+            ratio("multiway_selective", CascadeUnplanned, CascadePlanned, M1),
+        ),
+        fact(
+            "unplanned_peak_over_planned_1M",
             Value::Ratio(
-                q("hash_variants", HashBuildLarger, M1, Peak),
-                q("hash_variants", Hash, M1, Peak),
+                q("multiway_selective", CascadeUnplanned, M1, Peak),
+                q("multiway_selective", CascadePlanned, M1, Peak),
             ),
         ),
         fact(
-            "grouped_allocations_1M",
-            Value::Single(q("hash_variants", HashGrouped, M1, Allocations)),
-        ),
-        fact(
-            "m2m_hash_over_hash_sorted_1M",
-            ratio("many_to_many", Hash, HashSorted, M1),
-        ),
-        fact(
-            "m2m_hash_over_grouped_1M",
-            ratio("many_to_many", Hash, HashGrouped, M1),
-        ),
-        fact(
-            "m2m_hash_over_sort_merge_1M",
-            ratio("many_to_many", Hash, SortMerge, M1),
-        ),
-        fact(
-            "unplanned_peak_over_input_256K",
+            "unplanned_peak_over_input_1M",
             Value::Ratio(
-                q("multiway_selective", CascadeUnplanned, K256, Peak),
-                q("multiway_selective", CascadeUnplanned, K256, InputBytes),
+                q("multiway_selective", CascadeUnplanned, M1, Peak),
+                q("multiway_selective", CascadeUnplanned, M1, InputBytes),
             ),
         ),
         fact(
-            "unplanned_over_heap_256K",
-            ratio("multiway_selective", CascadeUnplanned, Heap, K256),
+            "unplanned_over_heap_1M",
+            ratio("multiway_selective", CascadeUnplanned, Heap, M1),
         ),
         fact(
-            "planned_over_heap_256K",
-            ratio("multiway_selective", CascadePlanned, Heap, K256),
+            "planned_over_heap_1M",
+            ratio("multiway_selective", CascadePlanned, Heap, M1),
+        ),
+        fact(
+            "heap_scan_crossover_dense_k",
+            Value::Crossover {
+                group: "multiway_dense",
+                faster: Heap,
+                slower: Scan,
+            },
+        ),
+        fact(
+            "heap_over_scan_dense_k64",
+            ratio("multiway_dense", Heap, Scan, 64),
         ),
         fact(
             "heap_scan_crossover_sparse_k",
@@ -1230,10 +1234,6 @@ pub const FACTS: &[Fact] = {
         fact(
             "scan_over_heap_sparse_k64",
             ratio("multiway_sparse", Scan, Heap, 64),
-        ),
-        fact(
-            "heap_over_scan_dense_k64",
-            ratio("multiway_dense", Heap, Scan, 64),
         ),
         fact(
             "heap_over_leapfrog_dense_k64",
@@ -1285,7 +1285,8 @@ impl Fact {
                 let crossover = crossover(results, group, *faster, *slower);
                 let unsure = matches!(crossover, Some(Crossover::Between(..)));
                 let value = crossover.map_or_else(missing, |c| c.to_string());
-                let id = |alg: &Algorithm| format!("{group}/{}/k median", alg.name());
+                let param = cases::group(group).workload.param();
+                let id = |alg: &Algorithm| format!("{group}/{}/{param} median", alg.name());
                 ([value, id(faster), id(slower)], unsure)
             }
             Value::Drift(end, start) => {
@@ -1386,9 +1387,9 @@ fn facts(results: &Results) -> String {
         .collect();
     let what = "Each value is the numerator's measure over the denominator's, or the \
                 numerator's alone where there's no denominator. The drift is |numerator / \
-                denominator − 1|, and the crossover the smallest k from which the numerator \
-                is faster than the denominator at every larger k, or the range it lies in \
-                where their confidence intervals overlap. Times are from";
+                denominator − 1|, and a crossover the smallest parameter from which the \
+                numerator is faster than the denominator at every larger one, or the range it \
+                lies in where their confidence intervals overlap. Times are from";
     let mut caption = time_caption(results, what, UNSURE, &unsure);
     let (memory, _) = results.cited(Source::Memory);
     caption += &format!(
@@ -1582,7 +1583,6 @@ mod tests {
                 param: case.param,
                 input_rows: 1,
                 input_bytes: 16,
-                output_rows: 1,
                 checksum: 0,
                 usage: Usage::default(),
             })
@@ -1666,13 +1666,13 @@ mod tests {
                 "0.1",
                 "--measurement-time",
                 "0.2",
-                "few",
+                "small",
                 "--bench",
             ],
         );
-        let rerun = joins(3000, &["few_customers", "--bench"]);
+        let rerun = joins(3000, &["small_side", "--bench"]);
         let profiles = || Some(memory(run("memory", 900, "aaaaaaa000", false, RUSTC)));
-        let few: Vec<Case> = cases::group("few_customers").cases().take(3).collect();
+        let small: Vec<Case> = cases::group("small_side").cases().take(3).collect();
 
         let mut timings = every_timing(1500);
         assert!(
@@ -1686,19 +1686,19 @@ mod tests {
         );
 
         // The smoke run's few timings are refused, by name.
-        for case in &few {
+        for case in &small {
             timings.insert(key(case), timing(2500));
         }
         let runs = [full.clone(), smoke.clone()];
         let Err(refused) = vouch(&STRICT, &runs, timings.clone(), profiles()) else {
             panic!("a smoke run's timings passed");
         };
-        for case in &few {
+        for case in &small {
             assert!(refused.contains(&case.to_string()), "{refused}");
         }
 
         // Rerunning them with the default settings clears it.
-        for case in &few {
+        for case in &small {
             timings.insert(key(case), timing(3500));
         }
         assert!(vouch(&STRICT, &[full, smoke, rerun], timings, profiles()).is_ok());
@@ -1728,7 +1728,7 @@ mod tests {
         let mut timings = every_timing(0);
         // ±6%, past the 5% the † rule allows.
         timings.insert(
-            lookup("pk_fk", Algorithm::Hash, 1 << 22),
+            lookup("one_to_one", Algorithm::Hash, 1 << 22),
             Timing {
                 lower_ns: 940.0,
                 upper_ns: 1060.0,
@@ -1804,7 +1804,7 @@ mod tests {
         assert!(time.contains("aaaaaaa") && !time.contains("bbbbbbb"));
         assert!(memory.contains("bbbbbbb") && !memory.contains("aaaaaaa"));
         assert!(files["facts.md"].contains("memory profiles at rust-algs bbbbbbb"));
-        assert!(!files["pk_fk.md"].contains("bbbbbbb"));
+        assert!(!files["one_to_one.md"].contains("bbbbbbb"));
     }
 
     #[test]

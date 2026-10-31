@@ -109,7 +109,6 @@ fn profile(case: &Case, data: &Data, agreed: &mut Option<Checksum>) -> MemoryCas
         param: case.param,
         input_rows: data.input_rows(),
         input_bytes: data.input_bytes(),
-        output_rows: out.rows,
         checksum: out.sum,
         usage,
     }

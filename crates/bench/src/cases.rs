@@ -5,16 +5,10 @@
 //!
 //! Each workload makes one tradeoff visible:
 //!
-//! - `pk_fk` is the common case, customers and their orders. Its hash table
-//!   outgrows the cache between 1M and 4M orders.
-//! - `few_customers` is the one regime where a nested loop can win. Its
-//!   sorted-orders column is the control for branch prediction.
-//! - `hash_variants` shows the hasher, the build side and the table's layout,
-//!   in time and in memory.
-//! - `many_to_many` is bound by its output. Its sorted-input column removes
-//!   the cost of both inputs being shuffled, without splitting it between the
-//!   build and probe sides, and its Vec-per-key column changes the table's
-//!   layout.
+//! - `one_to_one` is the main case: two inputs of the same size that share
+//!   half their keys, from 1K to 4M rows a side.
+//! - `small_side` is the one regime where a nested loop can win.
+//! - `hash_variants` shows what the hasher costs.
 //! - `multiway_dense` against `multiway_sparse` shows when a heap pays against
 //!   a scan of every input's next key.
 //! - `multiway_selective` shows how much a binary plan's join order matters,
@@ -54,8 +48,8 @@ pub const MEASUREMENT: Duration = Duration::from_secs(3);
 /// same number of iterations: the report reads only the median, which flat
 /// sampling gives, and one mode for every case keeps confidence intervals
 /// comparable across reruns. A sample runs at least one iteration, so the
-/// slowest case, `hash_build_larger` at 4M (about 0.29 s a call), takes about
-/// 9 s rather than [`MEASUREMENT`].
+/// slowest case, `one_to_one/nested_loop` at 64K (about 1 s a call), takes
+/// about 30 s rather than [`MEASUREMENT`].
 pub const SAMPLES: usize = 30;
 
 /// A join, and the inputs it is given.
@@ -63,21 +57,16 @@ pub const SAMPLES: usize = 30;
 pub enum Algorithm {
     /// `nested_loop_join` on equal keys.
     NestedLoop,
-    /// The same, with the orders sorted by key, so its branch is predictable.
-    NestedLoopSorted,
-    /// `hash_join`, building the customers, with foldhash.
+    /// `hash_join`, building the left input, with foldhash.
     Hash,
-    /// The same on both inputs sorted by key. Each key's probes then arrive
-    /// together and reuse a cached table slot and chain, and the chains are
-    /// walked in address order. That removes the cost of shuffled inputs, but
-    /// doesn't say which side's order the cost belongs to.
+    /// The same on both inputs sorted by key. The table's buckets are still
+    /// read in hash order, but each probe's match sits further on in the
+    /// build input than the last one's, so the build rows the table points
+    /// into are read in address order. That removes the cost of the inputs
+    /// being in different orders, leaving the table's own.
     HashSorted,
     /// The same with std's hasher, SipHash-1-3, with fixed keys.
     HashSipHash,
-    /// `hash_join` building the orders, the larger input.
-    HashBuildLarger,
-    /// [`baseline::hash_join_grouped`], a Vec per key.
-    HashGrouped,
     /// `merge_join` on inputs sorted before timing, standing for an index.
     Merge,
     /// `sort_merge_join`, charged for copying both inputs: an operator has to
@@ -101,12 +90,9 @@ impl Algorithm {
     pub fn name(self) -> &'static str {
         match self {
             Algorithm::NestedLoop => "nested_loop",
-            Algorithm::NestedLoopSorted => "nested_loop_sorted",
             Algorithm::Hash => "hash",
             Algorithm::HashSorted => "hash_sorted",
             Algorithm::HashSipHash => "hash_siphash",
-            Algorithm::HashBuildLarger => "hash_build_larger",
-            Algorithm::HashGrouped => "hash_grouped",
             Algorithm::Merge => "merge",
             Algorithm::SortMerge => "sort_merge",
             Algorithm::Heap => "heap",
@@ -121,12 +107,9 @@ impl Algorithm {
     pub fn label(self) -> &'static str {
         match self {
             Algorithm::NestedLoop => "nested loop",
-            Algorithm::NestedLoopSorted => "nested loop (orders sorted)",
             Algorithm::Hash => "hash",
             Algorithm::HashSorted => "hash (sorted input)",
             Algorithm::HashSipHash => "hash, SipHash",
-            Algorithm::HashBuildLarger => "hash, building orders",
-            Algorithm::HashGrouped => "hash, Vec per key",
             Algorithm::Merge => "merge (sorted input)",
             Algorithm::SortMerge => "sort-merge",
             Algorithm::Heap => "heap",
@@ -137,13 +120,12 @@ impl Algorithm {
         }
     }
 
-    /// Whether it runs at `param`. The nested loop is quadratic, and past
-    /// 64K orders it would take most of the run; the unplanned cascade would
-    /// peak at about 1.1 GB (1.03 GiB) at 1M rows.
+    /// Whether it runs at `param`. The nested loop is quadratic: at 64K rows
+    /// a side it takes about 1 s a call, and past that it would take most of
+    /// the run.
     pub fn runs_at(self, param: usize) -> bool {
         match self {
-            Algorithm::NestedLoop | Algorithm::NestedLoopSorted => param <= 1 << 16,
-            Algorithm::CascadeUnplanned => param <= 1 << 18,
+            Algorithm::NestedLoop => param <= 1 << 16,
             _ => true,
         }
     }
@@ -168,24 +150,14 @@ impl Algorithm {
         let fold = FixedState::default();
         let sip = BuildHasherDefault::<DefaultHasher>::default();
         let equal = |l: &Row, r: &Row| l.0 == r.0;
-        let mut pair = |l: &Row, r: &Row| out.pair(l, r);
+        let pair = |l: &Row, r: &Row| out.pair(l, r);
         match (self, data) {
             (NestedLoop, Prepared::Binary(w)) => nested_loop_join(&w.left, &w.right, equal, pair),
-            (NestedLoopSorted, Prepared::Binary(w)) => {
-                nested_loop_join(&w.left, &w.right_sorted, equal, pair);
-            }
             (Hash, Prepared::Binary(w)) => hash_join(&w.left, &w.right, fold, pair),
             (HashSorted, Prepared::Binary(w)) => {
                 hash_join(&w.left_sorted, &w.right_sorted, fold, pair);
             }
             (HashSipHash, Prepared::Binary(w)) => hash_join(&w.left, &w.right, sip, pair),
-            // Built the other way round, so flip each pair back.
-            (HashBuildLarger, Prepared::Binary(w)) => {
-                hash_join(&w.right, &w.left, fold, |r, l| pair(l, r));
-            }
-            (HashGrouped, Prepared::Binary(w)) => {
-                baseline::hash_join_grouped(&w.left, &w.right, fold, pair);
-            }
             (Merge, Prepared::Binary(w)) => merge_join(&w.left_sorted, &w.right_sorted, pair),
             (SortMerge, Prepared::Binary(w)) => {
                 sort_merge_join(w.left.to_vec(), w.right.to_vec(), pair);
@@ -215,12 +187,10 @@ impl Algorithm {
 /// What a group's inputs are, each generated from a parameter.
 #[derive(Clone, Copy, Debug)]
 pub enum Workload {
-    /// [`workload::customers_orders`], at `n` orders.
-    CustomersOrders,
-    /// [`workload::few_customers`], at `m` customers.
-    FewCustomers,
-    /// [`workload::many_to_many`], at `n` rows a side.
-    ManyToMany,
+    /// [`workload::one_to_one`], at `n` rows a side.
+    OneToOne,
+    /// [`workload::small_side`], at `m` rows on the small side.
+    SmallSide,
     /// [`workload::dense`], at `k` inputs.
     Dense,
     /// [`workload::sparse`], at `k` inputs.
@@ -234,42 +204,30 @@ impl Workload {
     /// counts every input, not just the one a table's rows are labeled by.
     pub fn input_rows(self) -> &'static str {
         match self {
-            Workload::CustomersOrders => "customers and orders together, 9/8 of the orders",
-            Workload::FewCustomers => "customers and orders together",
-            Workload::ManyToMany => "both sides together",
+            Workload::OneToOne => "both sides together, 2n",
+            Workload::SmallSide => "both sides together, m + 65,536",
             Workload::Dense | Workload::Sparse => "every input's rows together",
             Workload::Selective => "A, B and C together, a little over 2n",
+        }
+    }
+
+    /// What its parameter is called: `n`, `m` or `k`.
+    pub fn param(self) -> &'static str {
+        match self {
+            Workload::OneToOne | Workload::Selective => "n",
+            Workload::SmallSide => "m",
+            Workload::Dense | Workload::Sparse => "k",
         }
     }
 
     /// The inputs at `param`.
     pub fn generate(self, param: usize) -> Data {
         match self {
-            Workload::CustomersOrders => Data::Binary(workload::customers_orders(param)),
-            Workload::FewCustomers => Data::Binary(workload::few_customers(param)),
-            Workload::ManyToMany => Data::Binary(workload::many_to_many(param)),
+            Workload::OneToOne => Data::Binary(workload::one_to_one(param)),
+            Workload::SmallSide => Data::Binary(workload::small_side(param)),
             Workload::Dense => Data::Multi(workload::dense(param)),
             Workload::Sparse => Data::Multi(workload::sparse(param)),
             Workload::Selective => Data::Multi(workload::selective(param)),
-        }
-    }
-}
-
-/// What a group's times are divided by in its table.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Unit {
-    PerInputRow,
-    /// For a workload whose output outnumbers its input, so the output is
-    /// the work.
-    PerOutputRow,
-}
-
-impl Unit {
-    /// What one is called in a caption, such as `input row`.
-    pub fn row(self) -> &'static str {
-        match self {
-            Unit::PerInputRow => "input row",
-            Unit::PerOutputRow => "output row",
         }
     }
 }
@@ -282,7 +240,6 @@ pub struct Group {
     pub workload: Workload,
     pub params: &'static [usize],
     pub algorithms: &'static [Algorithm],
-    pub unit: Unit,
 }
 
 /// The same timed case run first and last, so the report can tell whether the
@@ -292,73 +249,58 @@ const SENTINEL: usize = 1 << 18;
 /// The numbers of inputs the n-way groups join.
 const KS: &[usize] = &[2, 4, 8, 16, 32, 64];
 
-/// Every group, in run order: 146 cases.
+/// Every group, in run order: 106 cases.
 pub const GROUPS: &[Group] = {
     use Algorithm::*;
     use Workload::*;
     &[
         Group {
             name: "sentinel_start",
-            workload: CustomersOrders,
+            workload: OneToOne,
             params: &[SENTINEL],
             algorithms: &[Hash],
-            unit: Unit::PerInputRow,
         },
         Group {
-            name: "pk_fk",
-            workload: CustomersOrders,
+            name: "one_to_one",
+            workload: OneToOne,
             params: &SIZES,
             algorithms: &[NestedLoop, Hash, HashSorted, Merge, SortMerge],
-            unit: Unit::PerInputRow,
         },
         Group {
-            name: "few_customers",
-            workload: FewCustomers,
+            name: "small_side",
+            workload: SmallSide,
             params: &[1, 2, 4, 16, 64],
-            algorithms: &[NestedLoop, NestedLoopSorted, Hash],
-            unit: Unit::PerInputRow,
+            algorithms: &[NestedLoop, Hash],
         },
         Group {
             name: "hash_variants",
-            workload: CustomersOrders,
+            workload: OneToOne,
             params: &[1 << 14, 1 << 20, 1 << 22],
-            algorithms: &[Hash, HashSipHash, HashBuildLarger, HashGrouped],
-            unit: Unit::PerInputRow,
-        },
-        Group {
-            name: "many_to_many",
-            workload: ManyToMany,
-            params: SIZES.split_at(6).0,
-            algorithms: &[Hash, HashSorted, HashGrouped, Merge, SortMerge],
-            unit: Unit::PerOutputRow,
+            algorithms: &[Hash, HashSipHash],
         },
         Group {
             name: "multiway_dense",
             workload: Dense,
             params: KS,
             algorithms: &[Heap, Scan, Leapfrog],
-            unit: Unit::PerInputRow,
         },
         Group {
             name: "multiway_sparse",
             workload: Sparse,
             params: KS,
             algorithms: &[Heap, Scan, Leapfrog],
-            unit: Unit::PerInputRow,
         },
         Group {
             name: "multiway_selective",
             workload: Selective,
             params: &[1 << 12, 1 << 14, 1 << 16, 1 << 18, 1 << 20],
             algorithms: &[Heap, Leapfrog, CascadePlanned, CascadeUnplanned],
-            unit: Unit::PerInputRow,
         },
         Group {
             name: "sentinel_end",
-            workload: CustomersOrders,
+            workload: OneToOne,
             params: &[SENTINEL],
             algorithms: &[Hash],
-            unit: Unit::PerInputRow,
         },
     ]
 };
@@ -513,21 +455,9 @@ pub enum Prepared<'w> {
     },
 }
 
-/// Bytes per build row in the hash join's chain, an `Option<usize>`.
-const CHAIN_ENTRY: usize = size_of::<Option<usize>>();
-
-/// Bytes per bucket in the hash join's table: a `(&key, row)` entry, and
+/// Bytes per bucket in the hash join's table: a `(&key, &row)` entry, and
 /// hashbrown's control byte.
-const BUCKET: usize = size_of::<(&u64, usize)>() + 1;
-
-/// Bytes per bucket in the Vec-per-key table: a `(&key, Vec)` entry, and the
-/// control byte.
-const GROUPED_BUCKET: usize = size_of::<(&u64, Vec<&Row>)>() + 1;
-
-/// Bytes of a key's Vec in the Vec-per-key table when it holds one row: its
-/// first push makes room for 4 references, std's least capacity for 8-byte
-/// elements.
-const GROUPED_ROW: usize = 4 * size_of::<&Row>();
+const BUCKET: usize = size_of::<(&u64, &Row)>() + 1;
 
 /// Control bytes hashbrown adds past the last bucket, one per lane of its
 /// group: 8 on aarch64, 16 on x86, so a claim allows up to 16.
@@ -558,32 +488,22 @@ pub enum Claim {
         peak_bytes: usize,
         allocations: usize,
     },
-    /// A hash table with room for `rows`, `bucket` bytes a bucket, beside
-    /// `per_row` bytes for each row, in `allocations` allocations. Its peak is
-    /// exact but for the control bytes past the last bucket, up to
-    /// 16.
-    Table {
-        rows: usize,
-        bucket: usize,
-        per_row: usize,
-        allocations: usize,
-    },
+    /// The hash join's table with room for `rows`, in one allocation:
+    /// [`buckets`] of them, each a `(&key, &row)` entry and a control byte.
+    /// Its peak is exact but for the control bytes past the last bucket, up
+    /// to 16.
+    Table { rows: usize },
 }
 
 impl Claim {
     /// A table's claim; an empty build allocates nothing.
-    fn table(rows: usize, bucket: usize, per_row: usize, allocations: usize) -> Self {
+    fn table(rows: usize) -> Self {
         match rows {
             0 => Claim::Exact {
                 peak_bytes: 0,
                 allocations: 0,
             },
-            _ => Claim::Table {
-                rows,
-                bucket,
-                per_row,
-                allocations,
-            },
+            _ => Claim::Table { rows },
         }
     }
 
@@ -591,13 +511,8 @@ impl Claim {
     fn peak(self) -> (usize, usize) {
         match self {
             Claim::Exact { peak_bytes, .. } => (peak_bytes, peak_bytes),
-            Claim::Table {
-                rows,
-                bucket,
-                per_row,
-                ..
-            } => {
-                let least = per_row * rows + bucket * buckets(rows);
+            Claim::Table { rows } => {
+                let least = BUCKET * buckets(rows);
                 (least, least + GROUP_WIDTH)
             }
         }
@@ -605,7 +520,8 @@ impl Claim {
 
     fn allocations(self) -> usize {
         match self {
-            Claim::Exact { allocations, .. } | Claim::Table { allocations, .. } => allocations,
+            Claim::Exact { allocations, .. } => allocations,
+            Claim::Table { .. } => 1,
         }
     }
 
@@ -635,47 +551,34 @@ impl fmt::Display for Claim {
 }
 
 /// What the post says `alg`'s memory is on `data`: none for the
-/// [`REPORTED_ONLY`] algorithms, or for a Vec per key when keys repeat.
+/// [`REPORTED_ONLY`] algorithms.
 pub fn memory_claim(alg: Algorithm, data: &Data) -> Option<Claim> {
     use Algorithm::*;
-    // An n-way join holds a slice of each input in `rest` and in `runs`, and
-    // a reference to a row of each in `picked`.
-    let per_input = 2 * size_of::<&[Row]>() + size_of::<&Row>();
+    // An n-way join holds a slice of each input in `rest`, and a reference to
+    // a row of each in `picked`. No input here is empty; leapfrog allocates
+    // nothing when one is.
+    let per_input = size_of::<&[Row]>() + size_of::<&Row>();
     let exact = |peak_bytes, allocations| {
         Some(Claim::Exact {
             peak_bytes,
             allocations,
         })
     };
-    let hash_join = |build| Some(Claim::table(build, BUCKET, CHAIN_ENTRY, 2));
     match (alg, data) {
-        (NestedLoop | NestedLoopSorted | Merge, _) => exact(0, 0),
-        (Hash | HashSorted | HashSipHash, Data::Binary(w)) => hash_join(w.left.len()),
-        (HashBuildLarger, Data::Binary(w)) => hash_join(w.right.len()),
-        // The table, then one Vec per key: one allocation a row when no key
-        // repeats.
-        (HashGrouped, Data::Binary(w)) if unique(&w.left_sorted) => {
-            let build = w.left.len();
-            Some(Claim::table(build, GROUPED_BUCKET, GROUPED_ROW, 1 + build))
-        }
+        (NestedLoop | Merge, _) => exact(0, 0),
+        (Hash | HashSorted | HashSipHash, Data::Binary(w)) => Some(Claim::table(w.left.len())),
         // The two copies, sorted in place. Both inputs here are non-empty.
         (SortMerge, Data::Binary(w)) => exact(size_of::<Row>() * (w.left.len() + w.right.len()), 2),
-        // Plus the heap of (next key, input): 56 B an input.
+        // Plus the heap of (next key, input): 40 B an input.
         (Heap, Data::Multi(w)) => {
-            exact(w.inputs.len() * (per_input + size_of::<(&u64, usize)>()), 4)
+            exact(w.inputs.len() * (per_input + size_of::<(&u64, usize)>()), 3)
         }
-        // Plus the inputs' order in the cycle: 48 B an input. No input here is
-        // empty; leapfrog allocates nothing when one is.
-        (Leapfrog, Data::Multi(w)) => exact(w.inputs.len() * (per_input + size_of::<usize>()), 4),
-        // 40 B an input.
-        (Scan, Data::Multi(w)) => exact(w.inputs.len() * per_input, 3),
+        // Plus the inputs' order in the cycle: 32 B an input.
+        (Leapfrog, Data::Multi(w)) => exact(w.inputs.len() * (per_input + size_of::<usize>()), 3),
+        // 24 B an input.
+        (Scan, Data::Multi(w)) => exact(w.inputs.len() * per_input, 2),
         _ => None,
     }
-}
-
-/// Whether no two of `sorted`'s rows share a key.
-fn unique(sorted: &[Row]) -> bool {
-    sorted.windows(2).all(|pair| pair[0].0 != pair[1].0)
 }
 
 #[cfg(test)]
@@ -763,24 +666,23 @@ mod tests {
     #[test]
     fn ids_are_unique() {
         let ids: Vec<String> = cases().map(|case| case.to_string()).collect();
-        assert_eq!(ids.len(), 146);
+        assert_eq!(ids.len(), 106);
         assert_eq!(ids.iter().collect::<HashSet<_>>().len(), ids.len());
     }
 
     #[test]
     fn the_caps_hold() {
         for case in cases() {
-            match case.algorithm {
-                Algorithm::NestedLoop | Algorithm::NestedLoopSorted => {
-                    assert!(case.param <= 1 << 16, "{case}");
-                }
-                Algorithm::CascadeUnplanned => assert!(case.param <= 1 << 18, "{case}"),
-                _ => {}
+            if case.algorithm == Algorithm::NestedLoop {
+                assert!(case.param <= 1 << 16, "{case}");
             }
         }
-        let pk_fk = group("pk_fk")
+        let nested = group("one_to_one")
             .cases()
             .filter(|case| case.algorithm == Algorithm::NestedLoop);
-        assert_eq!(pk_fk.map(|case| case.param).max(), Some(1 << 16));
+        assert_eq!(nested.map(|case| case.param).max(), Some(1 << 16));
+        // Both binary plans run at every size.
+        let selective = group("multiway_selective");
+        assert_eq!(selective.cases().count(), 4 * selective.params.len());
     }
 }
