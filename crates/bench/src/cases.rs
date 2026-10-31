@@ -14,7 +14,17 @@
 //! - `multiway_selective` shows how much a binary plan's join order matters,
 //!   and what skipping saves.
 //!
-//! Every case is checked with [`verify`] before it is timed or measured.
+//! A timed case rotates through [`instances`](Workload::instances) of its
+//! input: the same workload at the same parameter from different seeds, with
+//! the same row counts, holding at least [`ROTATION_ROWS`] rows before one
+//! repeats, so the branch predictor learns little of any one. A case whose
+//! input holds that many rows has one instance. [`ROTATION_ROWS`] says what
+//! the rotation leaves in cache, and why it does little for leapfrog on the
+//! selective workload. The memory harness profiles each case's first instance
+//! alone.
+//!
+//! Every instance is checked with [`verify`] before it is timed, and the first
+//! before it is measured.
 
 use std::fmt;
 use std::hash::{BuildHasherDefault, DefaultHasher};
@@ -51,6 +61,36 @@ pub const MEASUREMENT: Duration = Duration::from_secs(3);
 /// slowest case, `one_to_one/nested_loop` at 64K (about 1 s a call), takes
 /// about 30 s rather than [`MEASUREMENT`].
 pub const SAMPLES: usize = 30;
+
+/// The fewest input rows a timed case's instances hold before one repeats.
+/// On one input, a branchy join's comparisons come out the same way every
+/// call, and the branch predictor learns them: `merge` runs about 3.5× faster
+/// on one input of 2^17 rows (64K a side) than on eight in turn, about 1.2×
+/// faster on one of 2^19, and about 1.06× on one of 2^20.
+///
+/// A join that reads every row reads 16 MiB of them a cycle, which fits in
+/// the M6's 20 MiB L2 cache, so below 2^20 input rows its rows come from L2,
+/// not memory. Rotating takes away what the predictor learns, and at 1K and
+/// 4K rows a side, where a call reads no more than the 128 KiB L1 holds,
+/// reuse from L1. The instances hold more than a cycle reads: a binary
+/// workload keeps every row twice, as generated and sorted, so a small binary
+/// case's hold about 32 MiB, where one instance at 1K rows a side holds
+/// 64 KiB; the selective workload's hold about 16 MiB.
+///
+/// Leapfrog reads about 0.5% of the selective workload's rows, so a cycle
+/// reads only 5K to 12K of them, on about 1 MiB of cache lines or less, which
+/// stay in cache however many instances they're spread over. Reading them
+/// from memory took about 12× as long at 1M rows in A and B, where it took
+/// 48 instances, 1.5 GiB; at 4K, 64K and 256K, 1 to 4 GiB of instances
+/// weren't enough for leapfrog's time to stop rising.
+pub const ROTATION_ROWS: u64 = 1 << 20;
+
+/// How many instances a timed case rotates through when each holds `rows`
+/// input rows: enough to hold [`ROTATION_ROWS`] in one cycle, and one if a
+/// single instance does.
+pub fn rotation(rows: u64) -> usize {
+    ROTATION_ROWS.div_ceil(rows).max(1) as usize
+}
 
 /// A join, and the inputs it is given.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -220,15 +260,42 @@ impl Workload {
         }
     }
 
-    /// The inputs at `param`.
-    pub fn generate(self, param: usize) -> Data {
+    /// Instance `instance` of the inputs at `param`.
+    pub fn generate(self, param: usize, instance: usize) -> Data {
         match self {
-            Workload::OneToOne => Data::Binary(workload::one_to_one(param)),
-            Workload::SmallSide => Data::Binary(workload::small_side(param)),
-            Workload::Dense => Data::Multi(workload::dense(param)),
-            Workload::Sparse => Data::Multi(workload::sparse(param)),
-            Workload::Selective => Data::Multi(workload::selective(param)),
+            Workload::OneToOne => Data::Binary(workload::one_to_one(param, instance)),
+            Workload::SmallSide => Data::Binary(workload::small_side(param, instance)),
+            Workload::Dense => Data::Multi(workload::dense(param, instance)),
+            Workload::Sparse => Data::Multi(workload::sparse(param, instance)),
+            Workload::Selective => Data::Multi(workload::selective(param, instance)),
         }
+    }
+
+    /// The instances a timed case at `param` rotates through: as many as
+    /// [`rotation`] says, the first being `generate(param, 0)`.
+    ///
+    /// # Panics
+    ///
+    /// If an instance's inputs have other row counts than the first's, or
+    /// join to another count: every call has to do the same work over the
+    /// same rows, which the throughput and the per-row times assume.
+    /// [`workload::sparse`] draws its inputs' sizes, but holds at least
+    /// [`ROTATION_ROWS`] rows, so it has one instance.
+    pub fn instances(self, param: usize) -> Vec<Data> {
+        let first = self.generate(param, 0);
+        let count = rotation(first.input_rows());
+        let mut all = Vec::with_capacity(count);
+        all.push(first);
+        for instance in 1..count {
+            let data = self.generate(param, instance);
+            assert_eq!(
+                data.shape(),
+                all[0].shape(),
+                "{self:?} at {param}: instance {instance}'s row counts differ from instance 0's"
+            );
+            all.push(data);
+        }
+        all
     }
 }
 
@@ -418,6 +485,15 @@ impl Data {
         }
     }
 
+    /// Each input's rows, and how many tuples they join to.
+    fn shape(&self) -> (Vec<usize>, u64) {
+        let rows = match self {
+            Data::Binary(w) => vec![w.left.len(), w.right.len()],
+            Data::Multi(w) => w.inputs.iter().map(Vec::len).collect(),
+        };
+        (rows, self.expected())
+    }
+
     /// Makes the inputs ready to join.
     pub fn prepare(&self) -> Prepared<'_> {
         match self {
@@ -591,7 +667,7 @@ mod tests {
     fn every_algorithm_agrees_at_each_groups_smallest_param() {
         for group in GROUPS {
             let param = *group.params.iter().min().unwrap();
-            let data = group.workload.generate(param);
+            let data = group.workload.generate(param, 0);
             let prepared = data.prepare();
             let mut agreed = None;
             for case in group.cases_at(param) {
@@ -652,7 +728,7 @@ mod tests {
         }
 
         for ((name, param), algorithms) in quoted {
-            let data = group(name).workload.generate(param);
+            let data = group(name).workload.generate(param, 0);
             for alg in algorithms {
                 assert!(
                     memory_claim(alg, &data).is_some() || REPORTED_ONLY.contains(&alg),
@@ -661,6 +737,22 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn a_cycle_holds_at_least_rotation_rows() {
+        for group in GROUPS {
+            let param = *group.params.iter().min().unwrap();
+            // Asserts that every instance has the first's row counts.
+            let instances = group.workload.instances(param);
+            let cycle = instances[0].input_rows() * instances.len() as u64;
+            assert!(cycle >= ROTATION_ROWS, "{}", group.name);
+        }
+        // And no more instances than that takes.
+        assert_eq!(rotation(2 << 10), 512);
+        assert_eq!(rotation((1 << 16) + 4), 16);
+        assert_eq!(rotation(1 << 20), 1);
+        assert_eq!(rotation(2 << 20), 1);
     }
 
     #[test]

@@ -3,6 +3,10 @@
 //! `target/bench/memory.json`. The binary plans' peaks have no claim: they are
 //! reported, not asserted.
 //!
+//! Each case is profiled on its workload's first instance alone. The timed
+//! calls rotate through several, but every instance has the same row counts
+//! and joins to the same number of tuples, which is all the claims read.
+//!
 //! Each case runs twice: hashers have fixed seeds and the program is single
 //! threaded, so allocation is deterministic, and the two must agree exactly.
 //! The first argument not starting with `-` filters cases by id; cargo passes
@@ -43,7 +47,7 @@ fn main() {
             if chosen.is_empty() {
                 continue;
             }
-            let data = group.workload.generate(param);
+            let data = group.workload.generate(param, 0);
             let mut agreed = None;
             for case in chosen {
                 profiles.push(profile(&case, &data, &mut agreed));

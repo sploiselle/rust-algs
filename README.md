@@ -239,6 +239,19 @@ asserts the memory figures the post quotes, as closed forms, except the binary
 plans' peaks: those depend on where their intermediate results fall against
 the powers of two a Vec grows through, so they're reported, not asserted.
 
+A join called over and over on one input runs faster than on fresh input,
+because the branch predictor learns its comparisons. So a timed case rotates
+through instances of its input, the same workload at the same size from other
+seeds, with the same row counts, holding at least 2^20 rows before one
+repeats. That still leaves the rows in cache: a join that reads every row
+reads 16 MiB a cycle, which fits in the M6's 20 MiB L2, though at the
+smallest binary sizes the instances hold about 32 MiB, as generated and
+sorted. Leapfrog reads only about 0.5% of `multiway_selective`'s rows, 5K to
+12K a cycle, so its times there are on rows in cache: at 1M rows in each
+large input, reading them from memory took about 12× as long. Every instance
+is checked before it's timed; the memory harness profiles each case's first
+instance alone.
+
 The tables cite the commit they ran at, so commit first. Then, on AC power
 with other apps closed:
 

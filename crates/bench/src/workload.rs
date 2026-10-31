@@ -1,9 +1,14 @@
 //! The inputs the joins run on.
 //!
-//! Every workload is seeded from its name, so filtering, reordering or adding
-//! cases never changes another case's rows, and a sorted copy holds exactly
-//! the rows of the input it was sorted from. Every payload is a fresh draw
-//! from the workload's generator, so none repeats.
+//! Every workload is seeded from its name and an instance number, so
+//! filtering, reordering or adding cases never changes another case's rows,
+//! and a sorted copy holds exactly the rows of the input it was sorted from.
+//! Instances of a workload differ only in their seeds: other rows, in the same
+//! counts but for how [`sparse`] splits its rows between inputs. See
+//! [`cases::ROTATION_ROWS`]. Every payload is a fresh draw from the workload's
+//! generator, so none repeats.
+//!
+//! [`cases::ROTATION_ROWS`]: crate::cases::ROTATION_ROWS
 
 use crate::{Row, mix};
 
@@ -38,6 +43,15 @@ impl Rng {
     /// A number in `0..n`, by scaling rather than `%`, which needs no division.
     pub fn below(&mut self, n: u64) -> u64 {
         ((u128::from(self.next_u64()) * u128::from(n)) >> 64) as u64
+    }
+
+    /// The generator for instance `instance` of the workload called `name`.
+    /// Instance 0's seed is the name alone.
+    fn instance(name: &str, instance: usize) -> Self {
+        match instance {
+            0 => Self::seeded(name),
+            _ => Self::seeded(&format!("{name}#{instance}")),
+        }
     }
 
     /// Puts `xs` in a uniformly random order (Fisher–Yates).
@@ -94,8 +108,8 @@ impl Multi {
 /// Two inputs of `n` rows that share half their keys: `n / 2` keys in both,
 /// and `n / 2` more in each alone, from `0..3n / 2`, each input shuffled. A
 /// shared key joins to one pair, so they join to `n / 2` pairs.
-pub fn one_to_one(n: usize) -> Binary {
-    let mut rng = Rng::seeded(&format!("one_to_one/{n}"));
+pub fn one_to_one(n: usize, instance: usize) -> Binary {
+    let mut rng = Rng::instance(&format!("one_to_one/{n}"), instance);
     let (mut left, mut right) = two_sides(&mut rng, n, n / 2);
     rng.shuffle(&mut left);
     rng.shuffle(&mut right);
@@ -107,8 +121,8 @@ pub fn one_to_one(n: usize) -> Binary {
 /// `m` rows against 65,536, each of the `m` keys one of the 65,536, both
 /// sides shuffled: so few rows on one side that a nested loop compares each
 /// row of the other only `m` times, where a hash join looks each one up once.
-pub fn small_side(m: usize) -> Binary {
-    let mut rng = Rng::seeded(&format!("small_side/{m}"));
+pub fn small_side(m: usize, instance: usize) -> Binary {
+    let mut rng = Rng::instance(&format!("small_side/{m}"), instance);
     let mut keys: Vec<u64> = (0..LARGE_SIDE as u64).collect();
     rng.shuffle(&mut keys);
     let small = with_payloads(&mut rng, keys[..m].to_vec());
@@ -120,8 +134,8 @@ pub fn small_side(m: usize) -> Binary {
 
 /// `k` inputs that each hold every key in `0..2^20 / k` once: every key is in
 /// every input, so every key joins.
-pub fn dense(k: usize) -> Multi {
-    let mut rng = Rng::seeded(&format!("dense/{k}"));
+pub fn dense(k: usize, instance: usize) -> Multi {
+    let mut rng = Rng::instance(&format!("dense/{k}"), instance);
     let keys = (MULTIWAY_ROWS / k) as u64;
     let inputs = (0..k)
         .map(|_| with_payloads(&mut rng, (0..keys).collect()))
@@ -131,9 +145,10 @@ pub fn dense(k: usize) -> Multi {
 
 /// `k` inputs that share only every 1,024th key in `0..2^20`. Each of the
 /// rest is in one input, drawn uniformly, so the inputs interleave and only
-/// 1,024 keys join.
-pub fn sparse(k: usize) -> Multi {
-    let mut rng = Rng::seeded(&format!("sparse/{k}"));
+/// 1,024 keys join. Each input's size is drawn too, so instances differ in
+/// how the rows split between inputs, but not in how many there are in all.
+pub fn sparse(k: usize, instance: usize) -> Multi {
+    let mut rng = Rng::instance(&format!("sparse/{k}"), instance);
     let mut inputs = vec![Vec::new(); k];
     for key in 0..MULTIWAY_ROWS as u64 {
         if key % 1024 == 0 {
@@ -156,8 +171,8 @@ pub fn sparse(k: usize) -> Multi {
 /// Every size is exact rather than drawn, so where A⋈B falls against the
 /// powers of two a binary plan's Vecs grow through, halfway from `n / 2` to
 /// `n`, doesn't change from one `n` to the next.
-pub fn selective(n: usize) -> Multi {
-    let mut rng = Rng::seeded(&format!("selective/{n}"));
+pub fn selective(n: usize, instance: usize) -> Multi {
+    let mut rng = Rng::instance(&format!("selective/{n}"), instance);
     let (a, b) = two_sides(&mut rng, n, 3 * n / 4);
     // A's keys start with the shared ones, in a random order.
     let c = sorted(with_payloads(&mut rng, a[..n / 4096].to_vec()));
@@ -237,7 +252,7 @@ mod tests {
     #[test]
     fn one_to_one_shares_half_its_keys() {
         let n = 1 << 12;
-        let w = one_to_one(n);
+        let w = one_to_one(n, 0);
         assert!(unique(&w.left) && unique(&w.right));
         assert_eq!((w.left.len(), w.right.len()), (n, n));
         let both = shared(&[w.left.clone(), w.right.clone()]);
@@ -255,7 +270,7 @@ mod tests {
     #[test]
     fn small_side_matches_every_key_once() {
         for m in [1, 2, 4, 16, 64] {
-            let w = small_side(m);
+            let w = small_side(m, 0);
             assert!(unique(&w.left) && unique(&w.right));
             assert_eq!((w.left.len(), w.right.len()), (m, LARGE_SIDE));
             assert!(keys(&w.left).is_subset(&keys(&w.right)));
@@ -265,13 +280,26 @@ mod tests {
 
     #[test]
     fn the_same_name_gives_the_same_rows() {
-        assert_eq!(one_to_one(1 << 10), one_to_one(1 << 10));
-        assert_eq!(sparse(4), sparse(4));
+        assert_eq!(one_to_one(1 << 10, 0), one_to_one(1 << 10, 0));
+        assert_eq!(sparse(4, 3), sparse(4, 3));
+    }
+
+    #[test]
+    fn instances_hold_other_rows() {
+        let (a, b) = (one_to_one(1 << 10, 0), one_to_one(1 << 10, 1));
+        assert_ne!(a.left, b.left);
+        assert_ne!(a.right, b.right);
+        let (a, b) = (small_side(4, 0), small_side(4, 1));
+        assert_ne!(a.left, b.left);
+        assert_ne!(a.right, b.right);
+        assert_ne!(dense(4, 0), dense(4, 1));
+        assert_ne!(sparse(4, 0), sparse(4, 1));
+        assert_ne!(selective(1 << 12, 0), selective(1 << 12, 1));
     }
 
     #[test]
     fn sorted_and_unsorted_hold_the_same_rows() {
-        for w in [one_to_one(1 << 12), small_side(64)] {
+        for w in [one_to_one(1 << 12, 0), small_side(64, 0)] {
             let (mut left, mut left_sorted) = (w.left.clone(), w.left_sorted.clone());
             left.sort_unstable();
             left_sorted.sort_unstable();
@@ -285,7 +313,7 @@ mod tests {
 
     #[test]
     fn payloads_never_repeat() {
-        for w in [one_to_one(1 << 16), small_side(64)] {
+        for w in [one_to_one(1 << 16, 0), small_side(64, 0)] {
             let payloads: HashSet<u64> = w.left.iter().chain(&w.right).map(|row| row.1).collect();
             assert_eq!(payloads.len(), w.left.len() + w.right.len());
         }
@@ -293,7 +321,7 @@ mod tests {
 
     #[test]
     fn dense_inputs_share_every_key() {
-        let w = dense(4);
+        let w = dense(4, 0);
         let all: BTreeSet<u64> = (0..MULTIWAY_ROWS as u64 / 4).collect();
         assert!(
             w.inputs
@@ -305,7 +333,7 @@ mod tests {
 
     #[test]
     fn sparse_inputs_share_only_every_1024th_key() {
-        let w = sparse(4);
+        let w = sparse(4, 0);
         assert!(w.inputs.iter().all(|rows| unique(rows)));
         let every_1024th: BTreeSet<u64> = (0..MULTIWAY_ROWS as u64).step_by(1024).collect();
         assert_eq!(shared(&w.inputs), every_1024th);
@@ -318,7 +346,7 @@ mod tests {
     #[test]
     fn selective_joins_far_more_two_at_a_time_than_all_three() {
         let n = 1 << 16;
-        let w = selective(n);
+        let w = selective(n, 0);
         assert!(w.inputs.iter().all(|rows| unique(rows)));
         let lens: Vec<usize> = w.inputs.iter().map(Vec::len).collect();
         assert_eq!(lens, [n, n, n / 4096]);

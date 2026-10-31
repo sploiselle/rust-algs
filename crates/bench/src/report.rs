@@ -30,7 +30,8 @@ use std::path::{Path, PathBuf};
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 
-use crate::cases::{self, Algorithm, Case};
+use crate::Row;
+use crate::cases::{self, Algorithm, Case, Workload};
 use crate::record::{self, Memory, MemoryCase, Run};
 
 /// The criterion version the timings were taken with, for captions.
@@ -143,6 +144,14 @@ impl Results {
             .input_rows
             .or_else(|| Some(self.profile(group, algorithm, param)?.input_rows))?;
         Some(timing.median_ns / rows as f64)
+    }
+
+    /// Whether a case's timed calls rotated through instances of its input,
+    /// by the input rows criterion was given.
+    fn rotated(&self, group: &str, algorithm: Algorithm, param: usize) -> bool {
+        self.timing(group, algorithm, param)
+            .and_then(|timing| timing.input_rows)
+            .is_some_and(|rows| cases::rotation(rows) > 1)
     }
 
     fn quantity(&self, q: &Quantity) -> Option<f64> {
@@ -809,7 +818,12 @@ impl Table {
                     "Median of criterion samples, in ns per input row, counting {}.{note}",
                     group.workload.input_rows()
                 );
-                let caption = time_caption(results, &what, NOISY, &noisy);
+                let cells = columns.iter().flat_map(|c| {
+                    let params = cases::group(c.group).params;
+                    params.iter().map(|&param| (c.group, c.algorithm, param))
+                });
+                let reads = reads(results, cells);
+                let caption = time_caption(results, &what, &reads, NOISY, &noisy);
                 page(self.name(), results, Source::Timings, &body, &caption)
             }
             Kind::Grid {
@@ -895,7 +909,8 @@ fn all(results: &Results) -> String {
         };
         [vec![case.to_string()], cells].concat()
     });
-    let caption = time_caption(results, ALL, NOISY, &[]);
+    let cells = cases::cases().map(|case| (case.group.name, case.algorithm, case.param));
+    let caption = time_caption(results, ALL, &reads(results, cells), NOISY, &[]);
     let time = page(
         "all",
         results,
@@ -983,12 +998,61 @@ const PER_INPUT: &str = "× input is the peak over the inputs' bytes.";
 /// What † marks in a timing table.
 const NOISY: &str = "a 95% confidence interval wider than ±5% of the median";
 
+/// What leapfrog's times on the selective workload leave out: see
+/// [`cases::ROTATION_ROWS`].
+const LEAPFROG_SELECTIVE: &str = "On the selective workload, leapfrog reads about 0.5% of \
+     the input rows, so a timed cycle read only 5K to 12K rows, which stayed in cache. At 1M, \
+     cycling through 48 instances, enough that it read its rows from memory, made each call \
+     take about 12× as long.";
+
+/// How the timed calls of a table that cites `cells`, as (group, algorithm,
+/// parameter), read their inputs: whether any rotated through instances, and
+/// how little leapfrog reads of the selective workload's, if it cites that.
+fn reads<'a>(
+    results: &Results,
+    cells: impl IntoIterator<Item = (&'a str, Algorithm, usize)>,
+) -> String {
+    let (mut rotated, mut skips) = (false, false);
+    for (group, algorithm, param) in cells {
+        rotated |= results.rotated(group, algorithm, param);
+        skips |= algorithm == Algorithm::Leapfrog
+            && matches!(cases::group(group).workload, Workload::Selective);
+    }
+    let rows = param_label(cases::ROTATION_ROWS as usize);
+    let mut reads = if rotated {
+        format!(
+            "Below {rows} input rows, the timed calls cycled through instances of the inputs, \
+             generated from other seeds, that held at least {rows} rows before one repeated, \
+             too many for the branch predictor to learn much of. A join that reads every row \
+             reads {} MiB a cycle, which fits in the M6's 20 MiB L2 cache, so its rows came \
+             from cache, not memory.",
+            cases::ROTATION_ROWS * size_of::<Row>() as u64 / (1 << 20)
+        )
+    } else {
+        format!(
+            "Every case here held at least {rows} input rows, so each timed call joined the \
+             same inputs."
+        )
+    };
+    if skips {
+        reads = format!("{reads} {LEAPFROG_SELECTIVE}");
+    }
+    reads
+}
+
 /// The line under a timing table: `what` its numbers are, where they came
-/// from, and which cells are `marked` †, which means `dagger`.
-fn time_caption(results: &Results, what: &str, dagger: &str, marked: &[String]) -> String {
+/// from, how the timed calls `reads` their inputs, and which cells are
+/// `marked` †, which means `dagger`.
+fn time_caption(
+    results: &Results,
+    what: &str,
+    reads: &str,
+    dagger: &str,
+    marked: &[String],
+) -> String {
     let run = &results.run;
     let mut caption = format!(
-        "{what} {}, macOS {}, {}, {CRITERION}, rust-algs {}.",
+        "{what} {}, macOS {}, {}, {CRITERION}, rust-algs {}. {reads}",
         run.cpu,
         run.os,
         rustc(&run.rustc),
@@ -1258,6 +1322,29 @@ pub const FACTS: &[Fact] = {
 };
 
 impl Fact {
+    /// The cases whose timings it reads, as (group, algorithm, parameter).
+    fn timed(&self) -> Vec<(&'static str, Algorithm, usize)> {
+        let quantities = match &self.value {
+            Value::Ratio(a, b) | Value::Drift(a, b) => vec![a, b],
+            Value::Single(a) => vec![a],
+            Value::Crossover {
+                group,
+                faster,
+                slower,
+            } => {
+                let params = cases::group(group).params.iter();
+                return params
+                    .flat_map(|&param| [(*group, *faster, param), (*group, *slower, param)])
+                    .collect();
+            }
+        };
+        quantities
+            .into_iter()
+            .filter(|q| matches!(q.measure, Measure::Median | Measure::PerRow))
+            .map(|q| (q.group, q.algorithm, q.param))
+            .collect()
+    }
+
     /// Its value, its numerator and its denominator, as table cells, and
     /// whether the value is unsure: it reads a noisy timing, or it's a
     /// crossover the confidence intervals don't settle.
@@ -1390,7 +1477,8 @@ fn facts(results: &Results) -> String {
                 denominator − 1|, and a crossover the smallest parameter from which the \
                 numerator is faster than the denominator at every larger one, or the range it \
                 lies in where their confidence intervals overlap. Times are from";
-    let mut caption = time_caption(results, what, UNSURE, &unsure);
+    let reads = reads(results, FACTS.iter().flat_map(Fact::timed));
+    let mut caption = time_caption(results, what, &reads, UNSURE, &unsure);
     let (memory, _) = results.cited(Source::Memory);
     caption += &format!(
         " Peaks, allocations and input bytes are from the memory profiles at rust-algs {}.",
@@ -1839,6 +1927,32 @@ mod tests {
             moment(1_792_972_800_000 + 3_723_000),
             "2026-10-26 01:02:03 UTC"
         );
+    }
+
+    #[test]
+    fn a_timing_caption_says_whether_its_cases_rotated() {
+        // The n-way workloads hold at least 2^20 rows, as criterion is told;
+        // every other case here holds 1,000.
+        let mut timings = every_timing(0);
+        for case in cases::cases() {
+            if matches!(case.group.workload, Workload::Dense | Workload::Sparse) {
+                timings.get_mut(&key(&case)).unwrap().input_rows = Some(cases::ROTATION_ROWS);
+            }
+        }
+        let files: HashMap<String, String> = render(&results(timings)).into_iter().collect();
+        let rotated = |file: &str| files[file].contains("cycled through instances");
+        let same = |file: &str| files[file].contains("each timed call joined the same inputs");
+        for file in ["one_to_one.md", "selective.md", "all.md", "facts.md"] {
+            assert!(rotated(file) && !same(file), "{file}");
+        }
+        for file in ["heap_vs_scan.md", "leapfrog.md"] {
+            assert!(same(file) && !rotated(file), "{file}");
+        }
+        let skips = |file: &str| files[file].contains(LEAPFROG_SELECTIVE);
+        for file in ["leapfrog_selective.md", "all.md", "facts.md"] {
+            assert!(skips(file), "{file}");
+        }
+        assert!(!skips("selective.md") && !skips("leapfrog.md"));
     }
 
     #[test]

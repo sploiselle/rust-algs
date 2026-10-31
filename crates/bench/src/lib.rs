@@ -25,6 +25,11 @@
 //! the untimed check: its three SplitMix64 rounds or more a tuple would add
 //! far more to every timing than the Tally's XOR.
 //!
+//! The timed calls cycle through instances of each case's input, holding at
+//! least [`ROTATION_ROWS`](cases::ROTATION_ROWS) rows before one repeats, so
+//! the branch predictor learns little of any one. Their rows still come from
+//! cache: a cycle reads 16 MiB, which fits in the M6's L2.
+//!
 //! ## Output
 //!
 //! Everything lands under `target/`, so nothing generated gets committed:
