@@ -54,7 +54,7 @@
 //! *is* a Lamport clock.
 
 /// A Lamport clock: one process's counter, and the process it stamps events
-/// for. Processes are ordered (`P: Ord`) because its stamps are.
+/// for. `P` must be `Ord`: it breaks ties between stamps at the same time.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LamportClock<P: Ord> {
     time: u64,

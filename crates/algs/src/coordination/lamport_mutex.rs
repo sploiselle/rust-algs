@@ -97,7 +97,7 @@ pub struct Message<P: Ord> {
 }
 
 /// One process's side of Lamport's mutual exclusion, among processes named by
-/// `P`, which are ordered because the request queue is.
+/// `P`, which must be `Ord` so requests with equal times sort by process.
 #[derive(Debug, Clone)]
 pub struct LamportMutex<P: Ord> {
     /// Stamps this process's requests, acks and releases, and names this
