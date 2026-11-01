@@ -2541,7 +2541,7 @@ fn assert_clock_condition(d: &SpaceTime, times: &[(EventId, u64)]) {
 }
 
 /// The message in a broadcast addressed to `to`.
-fn to<P: PartialEq + Clone>(msgs: &[Message<P>], to: P) -> Message<P> {
+fn to<P: Ord + Clone>(msgs: &[Message<P>], to: P) -> Message<P> {
     msgs.iter()
         .find(|m| m.to == to)
         .cloned()
@@ -2549,13 +2549,13 @@ fn to<P: PartialEq + Clone>(msgs: &[Message<P>], to: P) -> Message<P> {
 }
 
 /// The one message a two-process broadcast sends.
-fn only<P>(mut msgs: Vec<Message<P>>) -> Message<P> {
+fn only<P: Ord>(mut msgs: Vec<Message<P>>) -> Message<P> {
     assert_eq!(msgs.len(), 1, "one other process, one message");
     msgs.pop().unwrap()
 }
 
 /// `req 1`, `ack 3`: what a message says and its stamp.
-fn message_label<P>(m: &Message<P>) -> Rich {
+fn message_label<P: Ord>(m: &Message<P>) -> Rich {
     let kind = match m.kind {
         Kind::Request => "req ",
         Kind::Ack => "ack ",

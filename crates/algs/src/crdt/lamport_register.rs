@@ -51,7 +51,7 @@ use crate::clock::{LamportClock, LamportStamp};
 
 /// A last-writer-wins register at one replica `A`, holding values `V`.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct LamportRegister<A, V> {
+pub struct LamportRegister<A: Ord, V> {
     /// Advanced by every write, sync and [`tick`](Self::tick), and names this
     /// replica.
     clock: LamportClock<A>,

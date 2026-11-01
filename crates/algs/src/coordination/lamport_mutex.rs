@@ -89,7 +89,7 @@ pub enum Kind {
 
 /// A message from one process to another.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Message<P> {
+pub struct Message<P: Ord> {
     pub to: P,
     /// The stamp of the send, whose process is the sender.
     pub stamp: LamportStamp<P>,
@@ -97,9 +97,9 @@ pub struct Message<P> {
 }
 
 /// One process's side of Lamport's mutual exclusion, among processes named by
-/// `P`.
+/// `P`, which are ordered because the request queue is.
 #[derive(Debug, Clone)]
-pub struct LamportMutex<P> {
+pub struct LamportMutex<P: Ord> {
     /// Stamps this process's requests, acks and releases, and names this
     /// process.
     clock: LamportClock<P>,

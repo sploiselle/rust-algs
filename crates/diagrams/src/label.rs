@@ -235,7 +235,7 @@ impl<A: Ord + Clone + Display, V: Clone + Debug> Label for LamportRegister<A, V>
 
 /// `L 3`: the clock's time (role `lamport`), named as in the other Lamport
 /// values, so a trace of bare clocks reads like the mutex and register figures.
-impl<P: Clone> Label for LamportClock<P> {
+impl<P: Ord + Clone> Label for LamportClock<P> {
     fn label(&self) -> String {
         self.spans().plain()
     }
@@ -270,7 +270,7 @@ impl Label for Timestamp {
 /// actor's name, all inside a `stamp` and keyed by it (`data-stamp="1,A"`), so a
 /// page can pick out one request wherever it appears, and a step-through can
 /// tell a request joining a queue from the ones already there.
-impl<P: Display> Label for LamportStamp<P> {
+impl<P: Ord + Display> Label for LamportStamp<P> {
     fn label(&self) -> String {
         self.spans().plain()
     }
