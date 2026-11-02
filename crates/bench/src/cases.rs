@@ -189,10 +189,9 @@ impl Algorithm {
         use Algorithm::*;
         let fold = FixedState::default();
         let sip = BuildHasherDefault::<DefaultHasher>::default();
-        let equal = |l: &Row, r: &Row| l.0 == r.0;
         let pair = |l: &Row, r: &Row| out.pair(l, r);
         match (self, data) {
-            (NestedLoop, Prepared::Binary(w)) => nested_loop_join(&w.left, &w.right, equal, pair),
+            (NestedLoop, Prepared::Binary(w)) => nested_loop_join(&w.left, &w.right, pair),
             (Hash, Prepared::Binary(w)) => hash_join(&w.left, &w.right, fold, pair),
             (HashSorted, Prepared::Binary(w)) => {
                 hash_join(&w.left_sorted, &w.right_sorted, fold, pair);

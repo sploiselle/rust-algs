@@ -8,8 +8,7 @@
 //!
 //! - A [nested loop join](nested_loop_join) compares every row of one input
 //!   with every row of the other. It's the definition of a join, run
-//!   literally, and the only one of the three that takes any condition, not
-//!   just equal keys.
+//!   literally.
 //! - A [hash join](hash_join) builds a hash table on one input's keys, then
 //!   looks up each row of the other in it.
 //! - A [merge join](merge_join) walks two inputs sorted by key side by side.
@@ -28,8 +27,7 @@
 //!
 //! ## Rows and output
 //!
-//! Rows are `(key, value)` pairs, the same type in every input, except in the
-//! nested loop join, which takes anything its condition can compare. A key
+//! Rows are `(key, value)` pairs, the same type in every input. A key
 //! every input holds joins to one pair, or to one tuple of a row from each
 //! input, so a join on equal keys emits no more tuples than its smallest
 //! input has rows. Every join but the cascade hands each match to `emit` as it
@@ -44,7 +42,7 @@
 //!
 //! | join | work | working memory | needs |
 //! |---|---|---|---|
-//! | [`nested_loop_join`] | `n·m` calls of the condition | none | nothing |
+//! | [`nested_loop_join`] | `n·m` key comparisons | none | keys that compare equal |
 //! | [`hash_join`] | `n` inserts, `m` lookups | a table of the build side's `n` rows | keys that hash |
 //! | [`merge_join`] | at most `n + m` comparisons | none | both inputs sorted |
 //! | [`sort_merge_join`] | `O(n log n + m log m)` | the inputs, owned | keys that order |
@@ -129,7 +127,7 @@ pub(crate) mod testing {
     /// The pairs a nested loop join on equal keys finds, sorted: the oracle
     /// for the two-input joins.
     pub fn loop_pairs(left: &[Row], right: &[Row]) -> Vec<(Row, Row)> {
-        pairs(|emit| nested_loop_join(left, right, |l, r| l.0 == r.0, emit))
+        pairs(|emit| nested_loop_join(left, right, emit))
     }
 
     /// The tuples a join of sorted `inputs` must emit, in the order it must

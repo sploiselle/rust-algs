@@ -98,14 +98,9 @@ fn a_realloc_counts_both_blocks() {
 fn nested_loop_and_merge_joins_allocate_nothing() {
     let (left, right) = (rows(256), rows(1024));
     let nested = measure(|| {
-        nested_loop_join(
-            &left,
-            &right,
-            |l, r| l.0 == r.0,
-            |l, r| {
-                black_box((l, r));
-            },
-        )
+        nested_loop_join(&left, &right, |l, r| {
+            black_box((l, r));
+        })
     })
     .0;
     let merge = measure(|| {

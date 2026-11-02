@@ -24,7 +24,7 @@ crates/algs/              the library
   src/broadcast/          delivering broadcasts in causal order
     cbcast.rs             causal broadcast
   src/join/               joining inputs that hold each key once
-    nested_loop.rs        compare every pair, on any predicate
+    nested_loop.rs        compare every pair of keys
     hash.rs               build a table on one input, probe it with the other
     merge.rs              walk two sorted inputs together; sort-merge
     multiway.rs           merge k sorted inputs with a binary heap; the binary plan it replaces
