@@ -1001,9 +1001,7 @@ const NOISY: &str = "a 95% confidence interval wider than ±5% of the median";
 /// What leapfrog's times on the selective workload leave out: see
 /// [`cases::ROTATION_ROWS`].
 const LEAPFROG_SELECTIVE: &str = "On the selective workload, leapfrog reads about 0.5% of \
-     the input rows, so a timed cycle read only 5K to 12K rows, which stayed in cache. At 1M, \
-     cycling through 48 instances, enough that it read its rows from memory, made each call \
-     take about 12× as long.";
+     the input rows, so a timed cycle read only 5K to 12K rows, which stayed in cache.";
 
 /// How the timed calls of a table that cites `cells`, as (group, algorithm,
 /// parameter), read their inputs: whether any rotated through instances, and
@@ -1024,8 +1022,7 @@ fn reads<'a>(
             "Below {rows} input rows, the timed calls cycled through instances of the inputs, \
              generated from other seeds, that held at least {rows} rows before one repeated, \
              too many for the branch predictor to learn much of. A join that reads every row \
-             reads {} MiB a cycle, which fits in the M6's 20 MiB L2 cache, so its rows came \
-             from cache, not memory.",
+             reads {} MiB a cycle, so a cache that holds that much served its rows.",
             cases::ROTATION_ROWS * size_of::<Row>() as u64 / (1 << 20)
         )
     } else {

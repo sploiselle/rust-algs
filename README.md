@@ -243,14 +243,12 @@ A join called over and over on one input runs faster than on fresh input,
 because the branch predictor learns its comparisons. So a timed case rotates
 through instances of its input, the same workload at the same size from other
 seeds, with the same row counts, holding at least 2^20 rows before one
-repeats. That still leaves the rows in cache: a join that reads every row
-reads 16 MiB a cycle, which fits in the M6's 20 MiB L2, though at the
-smallest binary sizes the instances hold about 32 MiB, as generated and
-sorted. Leapfrog reads only about 0.5% of `multiway_selective`'s rows, 5K to
-12K a cycle, so its times there are on rows in cache: at 1M rows in each
-large input, reading them from memory took about 12× as long. Every instance
-is checked before it's timed; the memory harness profiles each case's first
-instance alone.
+repeats. That can still leave the rows in cache: a join that reads every row
+reads 16 MiB a cycle, though at the smallest binary sizes the instances hold
+about 32 MiB, as generated and sorted. Leapfrog reads only about 0.5% of
+`multiway_selective`'s rows, 5K to 12K a cycle, so its times there are on rows
+in cache. Every instance is checked before it's timed; the memory harness
+profiles each case's first instance alone.
 
 The tables cite the commit they ran at, so commit first. Then, on AC power
 with other apps closed:
@@ -260,7 +258,7 @@ rm -rf target/criterion target/bench && cargo bench -p bench
 cargo run -p bench --release
 ```
 
-That takes about 10 minutes on an M6, and writes the tables into
+That takes several minutes, and writes the tables into
 `target/bench/tables/` (pass `--out <dir>` to write somewhere else). The report
 refuses results from a dirty tree, from runs at another commit or rustc, or
 from a run with other criterion settings, such as a smoke test's shorter

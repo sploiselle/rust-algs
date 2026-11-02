@@ -23,10 +23,7 @@ pub fn merge_join<K: Ord, V>(
     );
     while let (Some(l), Some(r)) = (left.first(), right.first()) {
         // The smaller key matches nothing still to come on the other side, so
-        // drop it. As three arms the step compiles to a branch. On an M6 that
-        // ran 2-5x faster than a branch-free step (`select_unpredictable`, or
-        // offsets from the order) when the side that moves next is
-        // predictable, and at most 1.6x slower when keys interleave at random.
+        // drop it.
         match l.0.cmp(&r.0) {
             Ordering::Less => left = &left[1..],
             Ordering::Greater => right = &right[1..],

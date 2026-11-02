@@ -57,32 +57,26 @@ pub const MEASUREMENT: Duration = Duration::from_secs(3);
 /// Samples per case. Every case is sampled flat, each sample running the
 /// same number of iterations: the report reads only the median, which flat
 /// sampling gives, and one mode for every case keeps confidence intervals
-/// comparable across reruns. A sample runs at least one iteration, so the
-/// slowest case, `one_to_one/nested_loop` at 64K (about 1 s a call), takes
-/// about 30 s rather than [`MEASUREMENT`].
+/// comparable across reruns. A sample runs at least one iteration, so a case
+/// whose call takes longer than [`MEASUREMENT`] over this many samples takes
+/// this many calls instead.
 pub const SAMPLES: usize = 30;
 
 /// The fewest input rows a timed case's instances hold before one repeats.
 /// On one input, a branchy join's comparisons come out the same way every
-/// call, and the branch predictor learns them: `merge` runs about 3.5× faster
-/// on one input of 2^17 rows (64K a side) than on eight in turn, about 1.2×
-/// faster on one of 2^19, and about 1.06× on one of 2^20.
+/// call, and the branch predictor learns them, so a join timed over and over
+/// on one input runs faster than it would on fresh input.
 ///
-/// A join that reads every row reads 16 MiB of them a cycle, which fits in
-/// the M6's 20 MiB L2 cache, so below 2^20 input rows its rows come from L2,
-/// not memory. Rotating takes away what the predictor learns, and at 1K and
-/// 4K rows a side, where a call reads no more than the 128 KiB L1 holds,
-/// reuse from L1. The instances hold more than a cycle reads: a binary
-/// workload keeps every row twice, as generated and sorted, so a small binary
-/// case's hold about 32 MiB, where one instance at 1K rows a side holds
-/// 64 KiB; the selective workload's hold about 16 MiB.
+/// Rotating takes away what the predictor learns, and reuse from a cache too
+/// small to hold a cycle, but not from one that holds it: a join that reads
+/// every row reads 16 MiB of them a cycle. The instances hold more than a
+/// cycle reads: a binary workload keeps every row twice, as generated and
+/// sorted, so a small binary case's hold about 32 MiB, where one instance at
+/// 1K rows a side holds 64 KiB; the selective workload's hold about 16 MiB.
 ///
 /// Leapfrog reads about 0.5% of the selective workload's rows, so a cycle
 /// reads only 5K to 12K of them, on about 1 MiB of cache lines or less, which
-/// stay in cache however many instances they're spread over. Reading them
-/// from memory took about 12× as long at 1M rows in A and B, where it took
-/// 48 instances, 1.5 GiB; at 4K, 64K and 256K, 1 to 4 GiB of instances
-/// weren't enough for leapfrog's time to stop rising.
+/// stay in cache however many instances they're spread over.
 pub const ROTATION_ROWS: u64 = 1 << 20;
 
 /// How many instances a timed case rotates through when each holds `rows`

@@ -27,8 +27,8 @@
 //!
 //! The timed calls cycle through instances of each case's input, holding at
 //! least [`ROTATION_ROWS`](cases::ROTATION_ROWS) rows before one repeats, so
-//! the branch predictor learns little of any one. Their rows still come from
-//! cache: a cycle reads 16 MiB, which fits in the M6's L2.
+//! the branch predictor learns little of any one. A cache that holds the
+//! 16 MiB a cycle reads still serves their rows.
 //!
 //! ## Output
 //!
