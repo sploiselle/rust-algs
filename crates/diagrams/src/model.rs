@@ -1116,8 +1116,7 @@ pub struct HeapTree {
     pub new: Option<usize>,
 }
 
-/// Something one track does on the way to the target, by row. `now` marks the
-/// one this step adds, in a figure that adds them one at a time.
+/// Something one track does on the way to the target, by row.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Mark {
     /// A gallop probe: a hop from row `from` to row `to`, whose key is below
@@ -1127,7 +1126,6 @@ pub enum Mark {
         from: usize,
         to: usize,
         below: bool,
-        now: bool,
     },
     /// The rows a binary search covers, `start..end`.
     Stride {
@@ -1140,9 +1138,8 @@ pub enum Mark {
         track: usize,
         row: usize,
         below: bool,
-        now: bool,
     },
-    /// A whole seek, from row `from` to the row it lands on.
+    /// A move from row `from` to row `to`, drawn as an arrow.
     Jump {
         track: usize,
         from: usize,
@@ -1167,16 +1164,6 @@ impl Mark {
             Mark::Stride { start, end, .. } => vec![start, end - 1],
             Mark::Probe { row, .. } => vec![row],
         }
-    }
-
-    /// The same mark whether or not this step adds it, so a page sees one mark
-    /// that changes rather than two.
-    pub fn settled(self) -> Mark {
-        let mut m = self;
-        if let Mark::Hop { now, .. } | Mark::Probe { now, .. } = &mut m {
-            *now = false;
-        }
-        m
     }
 }
 

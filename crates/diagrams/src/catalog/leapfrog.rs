@@ -5,8 +5,8 @@
 //! compared with which, how, and what came out, along with each tuple it
 //! emits. Each turn is rebuilt from that log (who was furthest behind, the
 //! target, every probe of the seek and where it landed), checked against what
-//! the code says it does, and drawn three ways: a turn per step, a seek in
-//! two steps (its gallop, then its search), and a comparison per step.
+//! the code says it does, and drawn a seek in two steps: its gallop, then its
+//! search.
 
 use algs::join::{leapfrog_join, multiway_merge_join};
 
@@ -57,8 +57,6 @@ impl Turn {
 struct Seek {
     /// Each `rows[bound] < target` while galloping, and whether it was.
     gallop: Vec<(usize, bool)>,
-    /// The bound the gallop stopped at.
-    bound: usize,
     /// `rows[start..end]`, which the binary search covers.
     start: usize,
     end: usize,
@@ -72,8 +70,6 @@ struct Seek {
 struct Run {
     names: Vec<&'static str>,
     inputs: Vec<Vec<u64>>,
-    /// The inputs by first key: the code's `order`.
-    order: Vec<usize>,
     turns: Vec<Turn>,
     joined: Vec<u64>,
 }
@@ -226,7 +222,6 @@ fn rebuild(names: Vec<&'static str>, inputs: Vec<Vec<u64>>) -> Run {
     Run {
         names,
         inputs,
-        order,
         turns,
         joined,
     }
@@ -271,7 +266,6 @@ fn split(probes: Vec<(usize, bool)>, len: usize, landed: usize) -> Seek {
     );
     Seek {
         gallop,
-        bound,
         start,
         end,
         search,
@@ -380,52 +374,6 @@ fn joined_by(run: &Run, n: usize) -> Vec<u64> {
     run.joined[..emitted].to_vec()
 }
 
-/// A turn per step: each seek drawn as one jump.
-pub(super) fn leapfrog_turns() -> Figure {
-    let run = leapfrog_run();
-    let mut d = tracks(
-        &run,
-        "Each turn, the input furthest behind seeks to the key furthest ahead",
-    );
-    d.frame(bare(vec![0; run.input_count()], &[], start(&run)));
-    for (n, t) in run.turns.iter().enumerate() {
-        let joined = joined_by(&run, n);
-        let frame = match &t.seek {
-            Some(s) => TracksFrame {
-                cursors: on(t.after()),
-                target: Some((t.target, false)),
-                marks: vec![Mark::Jump {
-                    track: t.behind,
-                    from: t.from(),
-                    to: t.from() + s.landed,
-                }],
-                joined,
-                heap: None,
-                panel: Vec::new(),
-                narration: who(&run, t)
-                    .then(run.name(t.behind))
-                    .then(" seeks to it, past ")
-                    .then(rows(s.landed))
-                    .then("."),
-            },
-            None => TracksFrame {
-                cursors: on(t.after()),
-                target: Some((t.target, true)),
-                marks: Vec::new(),
-                joined,
-                heap: None,
-                panel: Vec::new(),
-                narration: emits(&run, t),
-            },
-        };
-        d.frame(frame);
-    }
-    Figure {
-        stem: "leapfrog-turns",
-        diagram: Diagram::Tracks(d),
-    }
-}
-
 fn rows(n: usize) -> String {
     if n == 1 {
         "1 row".to_string()
@@ -435,31 +383,26 @@ fn rows(n: usize) -> String {
 }
 
 /// A gallop's probes as hops, each from the one before it, so the hops double.
-fn hops(t: &Turn, s: &Seek, now: Option<usize>) -> Vec<Mark> {
+fn hops(t: &Turn, s: &Seek) -> Vec<Mark> {
     s.gallop
         .iter()
         .enumerate()
-        .take(now.map_or(s.gallop.len(), |n| n + 1))
         .map(|(j, &(offset, below))| Mark::Hop {
             track: t.behind,
             from: t.from() + if j == 0 { 0 } else { s.gallop[j - 1].0 },
             to: t.from() + offset,
             below,
-            now: now == Some(j),
         })
         .collect()
 }
 
-fn probes(t: &Turn, s: &Seek, now: Option<usize>) -> Vec<Mark> {
+fn probes(t: &Turn, s: &Seek) -> Vec<Mark> {
     s.search
         .iter()
-        .enumerate()
-        .take(now.map_or(s.search.len(), |n| n + 1))
-        .map(|(j, &(offset, below))| Mark::Probe {
+        .map(|&(offset, below)| Mark::Probe {
             track: t.behind,
             row: t.from() + offset,
             below,
-            now: now == Some(j),
         })
         .collect()
 }
@@ -527,14 +470,14 @@ pub(super) fn leapfrog_seeks() -> Figure {
         d.frame(TracksFrame {
             cursors: on(t.cursors.clone()),
             target: Some((t.target, false)),
-            marks: hops(t, s, None),
+            marks: hops(t, s),
             joined: joined.clone(),
             heap: None,
             panel: Vec::new(),
             narration: who(&run, t).then(gallop_said(&run, t, s)),
         });
         let mut marks = vec![stride(t, s)];
-        marks.extend(probes(t, s, None));
+        marks.extend(probes(t, s));
         d.frame(TracksFrame {
             cursors: on(t.after()),
             target: Some((t.target, false)),
@@ -547,188 +490,6 @@ pub(super) fn leapfrog_seeks() -> Figure {
     }
     Figure {
         stem: "leapfrog-seeks",
-        diagram: Diagram::Tracks(d),
-    }
-}
-
-/// The code's own state, as the panel under the tracks shows it.
-struct Panel<'a> {
-    run: &'a Run,
-}
-
-impl Panel<'_> {
-    fn input(&self, i: usize) -> Span {
-        Span::value(self.run.names[i])
-            .also("actor")
-            .with("actor", self.run.names[i])
-    }
-
-    /// `order = [A, B, C], p = 0`, and who that makes furthest behind and ahead.
-    fn turn(&self, t: Option<&Turn>) -> Rich {
-        let mut r = rich![val("order = [")];
-        for (j, &i) in self.run.order.iter().enumerate() {
-            if j > 0 {
-                r = r.then(val(", "));
-            }
-            r = r.then(self.input(i));
-        }
-        r = r.then(val("]"));
-        if let Some(t) = t {
-            r = r
-                .then(val(format!(", p = {}, behind = ", t.p)))
-                .then(self.input(t.behind))
-                .then(val(", ahead = "))
-                .then(self.input(t.ahead))
-                .then(val(format!(", target = {}", t.target)));
-        }
-        r
-    }
-
-    fn seek(&self, s: &Seek, searching: bool) -> Rich {
-        let mut r = rich![val(format!("bound = {}", s.bound))];
-        if searching {
-            r = r.then(val(format!(", search rows[{}..{}]", s.start, s.end)));
-        }
-        r
-    }
-}
-
-fn is(b: bool) -> &'static str {
-    if b { "true" } else { "false" }
-}
-
-/// A comparison per step, with the code's variables under the tracks.
-pub(super) fn leapfrog_comparisons() -> Figure {
-    let run = leapfrog_run();
-    let panel = Panel { run: &run };
-    let mut d = tracks(&run, "Every comparison leapfrog join makes");
-    let mut first = bare(vec![0; run.input_count()], &[], start(&run));
-    first.panel = vec![panel.turn(None)];
-    d.frame(first);
-    for (n, t) in run.turns.iter().enumerate() {
-        let before = joined_by(&run, n.saturating_sub(1));
-        let before = if n == 0 { Vec::new() } else { before };
-        let head = run.key(t.behind, t.from());
-        let equal = t.seek.is_none();
-        let compared = rich![
-            val("rest[behind][0].0 == *target: "),
-            val(format!("{head} == {} is {}", t.target, is(equal)))
-        ];
-        d.frame(TracksFrame {
-            cursors: on(t.cursors.clone()),
-            target: Some((t.target, equal)),
-            marks: Vec::new(),
-            joined: before.clone(),
-            heap: None,
-            panel: vec![panel.turn(Some(t)), compared],
-            narration: who(&run, t).then(if equal {
-                "Its key equals the target, so every input is on it."
-            } else {
-                "Its key isn't the target, so it seeks."
-            }),
-        });
-        let Some(s) = &t.seek else {
-            d.frame(TracksFrame {
-                cursors: on(t.after()),
-                target: Some((t.target, true)),
-                marks: Vec::new(),
-                joined: joined_by(&run, n),
-                heap: None,
-                panel: vec![panel.turn(Some(t))],
-                narration: emits(&run, t),
-            });
-            continue;
-        };
-        let lt = |offset: usize, below: bool| {
-            rich![
-                val(format!("rows[{offset}].0 < *target: ")),
-                val(format!(
-                    "{} < {} is {}",
-                    run.key(t.behind, t.from() + offset),
-                    t.target,
-                    is(below)
-                ))
-            ]
-        };
-        for (j, &(offset, below)) in s.gallop.iter().enumerate() {
-            let key = val(run.key(t.behind, t.from() + offset));
-            d.frame(TracksFrame {
-                cursors: on(t.cursors.clone()),
-                target: Some((t.target, false)),
-                marks: hops(t, s, Some(j)),
-                joined: before.clone(),
-                heap: None,
-                panel: vec![
-                    panel.turn(Some(t)),
-                    rich![val(format!("bound = {offset}"))],
-                    lt(offset, below),
-                ],
-                narration: if below {
-                    rich![
-                        format!("Gallop: {offset} rows on, "),
-                        key,
-                        " is below ",
-                        val(t.target),
-                        ", so it doubles."
-                    ]
-                } else {
-                    rich![
-                        format!("Gallop: {offset} rows on, "),
-                        key,
-                        " isn't below ",
-                        val(t.target),
-                        format!(", so the target is in rows {} to {offset}.", offset / 2)
-                    ]
-                },
-            });
-        }
-        let gallop = hops(t, s, None);
-        for (j, &(offset, below)) in s.search.iter().enumerate() {
-            let mut marks = gallop.clone();
-            marks.push(stride(t, s));
-            marks.extend(probes(t, s, Some(j)));
-            d.frame(TracksFrame {
-                cursors: on(t.cursors.clone()),
-                target: Some((t.target, false)),
-                marks,
-                joined: before.clone(),
-                heap: None,
-                panel: vec![panel.turn(Some(t)), panel.seek(s, true), lt(offset, below)],
-                narration: rich![
-                    format!("Search: {offset} rows on, "),
-                    val(run.key(t.behind, t.from() + offset)),
-                    if below { " is below " } else { " isn't below " },
-                    val(t.target),
-                    "."
-                ],
-            });
-        }
-        let mut marks = gallop;
-        marks.push(stride(t, s));
-        marks.extend(probes(t, s, None));
-        d.frame(TracksFrame {
-            cursors: on(t.after()),
-            target: Some((t.target, false)),
-            marks,
-            joined: before,
-            heap: None,
-            panel: vec![
-                panel.turn(Some(t)),
-                panel.seek(s, true),
-                rich![val(format!("first = {}", s.landed))],
-            ],
-            narration: rich![
-                run.name(t.behind),
-                " lands ",
-                rows(s.landed),
-                " on, at ",
-                val(run.key(t.behind, t.from() + s.landed)),
-                "."
-            ],
-        });
-    }
-    Figure {
-        stem: "leapfrog-comparisons",
         diagram: Diagram::Tracks(d),
     }
 }

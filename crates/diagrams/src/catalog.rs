@@ -92,9 +92,7 @@ pub fn all() -> Vec<Figure> {
         binary::hash(),
         merges::merge_join_steps(),
         merges::heap_merge(),
-        leapfrog::leapfrog_turns(),
         leapfrog::leapfrog_seeks(),
-        leapfrog::leapfrog_comparisons(),
     ];
     for f in &mut figures {
         if let (Form::Steps, Diagram::SpaceTime(d)) = (f.form(), &mut f.diagram) {

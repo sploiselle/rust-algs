@@ -33,7 +33,6 @@ pub(super) const STYLE: &[&str] = &[
     ".ds-figure .ds-key, .ds-figure .ds-out-key { font-family: var(--ds-font-mono, ui-monospace, Menlo, Consolas, monospace); }",
     ".ds-figure :is(.ds-hop, .ds-jump, .ds-stride) { fill: none; stroke: var(--ds-actor, var(--ds-ink, currentColor)); stroke-width: 1.25; }",
     ".ds-figure .ds-hop.ds-over { stroke-dasharray: 3 2; }",
-    ".ds-figure :is(.ds-hop, .ds-probe).ds-now { stroke-width: 2.25; }",
     ".ds-figure .ds-jump-head { fill: var(--ds-actor, var(--ds-ink, currentColor)); }",
     ".ds-figure .ds-probe { fill: var(--ds-actor, var(--ds-ink, currentColor)); stroke: var(--ds-actor, var(--ds-ink, currentColor)); stroke-width: 1.25; }",
     ".ds-figure .ds-probe.ds-over { fill: none; }",
@@ -227,8 +226,8 @@ pub(crate) fn tracks_svg(stem: &str, d: &Tracks, at: At) -> String {
         let mut marks: Vec<Mark> = Vec::new();
         for f in d.all_frames() {
             for m in f.marks.iter().filter(|m| m.track() == t) {
-                if !marks.contains(&m.settled()) {
-                    marks.push(m.settled());
+                if !marks.contains(m) {
+                    marks.push(*m);
                 }
             }
         }
@@ -237,7 +236,7 @@ pub(crate) fn tracks_svg(stem: &str, d: &Tracks, at: At) -> String {
                 d.frame_at(s)
                     .marks
                     .iter()
-                    .find(|n| n.settled() == m)
+                    .find(|&&n| n == m)
                     .map(|n| mark(*n, y, cell_w, cx))
             }));
         }
@@ -386,19 +385,13 @@ pub(super) fn cell(state: &str, attrs: &str, x: f64, y: f64, w: f64, label: &str
 
 /// One mark on the track whose cells sit at `y`, `cx` placing its rows.
 fn mark(m: Mark, y: f64, cell_w: f64, cx: impl Fn(usize) -> f64) -> String {
-    let now = |now: bool| if now { " ds-now" } else { "" };
     match m {
         Mark::Hop {
-            from,
-            to,
-            below,
-            now: n,
-            ..
+            from, to, below, ..
         } => {
             let over = if below { "" } else { " ds-over" };
             format!(
-                "    <path class=\"ds-hop{over}{}\" data-from=\"{from}\" data-to=\"{to}\" d=\"{}\" fill=\"none\" stroke=\"currentColor\"/>\n",
-                now(n),
+                "    <path class=\"ds-hop{over}\" data-from=\"{from}\" data-to=\"{to}\" d=\"{}\" fill=\"none\" stroke=\"currentColor\"/>\n",
                 arc(cx(from), cx(to), y - 2.0, to - from)
             )
         }
@@ -438,13 +431,10 @@ fn mark(m: Mark, y: f64, cell_w: f64, cx: impl Fn(usize) -> f64) -> String {
                 num(x1)
             )
         }
-        Mark::Probe {
-            row, below, now: n, ..
-        } => {
+        Mark::Probe { row, below, .. } => {
             let over = if below { "" } else { " ds-over" };
             format!(
-                "    <circle class=\"ds-probe{over}{}\" data-row=\"{row}\" cx=\"{}\" cy=\"{}\" r=\"3\"/>\n",
-                now(n),
+                "    <circle class=\"ds-probe{over}\" data-row=\"{row}\" cx=\"{}\" cy=\"{}\" r=\"3\"/>\n",
                 num(cx(row)),
                 num(y + CELL_H + 14.0)
             )
