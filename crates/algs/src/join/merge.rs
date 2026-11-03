@@ -23,10 +23,9 @@ pub fn merge_join<K: Ord, V>(
     let mut rights = right.iter();
     let Some(mut l) = lefts.next() else { return };
     let Some(mut r) = rights.next() else { return };
-    // The smaller key matches nothing still to come on the other side, so the
-    // join moves past it. Each side gets its own loop that keeps moving while
-    // that side is behind, so a comparison feeds its branch directly, with no
-    // `Ordering` in between, and a long run on one side stays in its loop.
+    // The smaller key can't match anything still to come on the other side,
+    // so each side loops past its keys while they're smaller: the comparison
+    // feeds its branch directly, and a run on one side stays in one loop.
     loop {
         while l.0 < r.0 {
             let Some(next) = lefts.next() else { return };
