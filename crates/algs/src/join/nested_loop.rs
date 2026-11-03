@@ -2,9 +2,8 @@
 //! other.
 
 /// Joins `left` and `right` on their keys: calls `emit` with every pair whose
-/// keys are equal. It compares every row of `left` with every row of `right`,
-/// left-major, so it compares `left.len() × right.len()` pairs of keys however
-/// few match.
+/// keys are equal. For each row of `left` it compares every row of `right`, so
+/// it makes `left.len() × right.len()` key comparisons however few match.
 pub fn nested_loop_join<K: Eq, V>(
     left: &[(K, V)],
     right: &[(K, V)],

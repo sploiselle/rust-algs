@@ -9,8 +9,8 @@ use std::cmp::Ordering;
 /// Unsorted inputs, and inputs that repeat a key, lose matches; debug builds
 /// panic on them.
 pub fn merge_join<K: Ord, V>(
-    mut left: &[(K, V)],
-    mut right: &[(K, V)],
+    left: &[(K, V)],
+    right: &[(K, V)],
     mut emit: impl FnMut(&(K, V), &(K, V)),
 ) {
     debug_assert!(
@@ -21,15 +21,20 @@ pub fn merge_join<K: Ord, V>(
         right.is_sorted_by(|a, b| a.0 < b.0),
         "right input's keys don't strictly increase"
     );
-    while let (Some(l), Some(r)) = (left.first(), right.first()) {
+    let mut i = 0;
+    let mut j = 0;
+    while i < left.len() && j < right.len() {
+        let l = &left[i];
+        let r = &right[j];
         // The smaller key matches nothing still to come on the other side, so
-        // drop it.
+        // move past it.
         match l.0.cmp(&r.0) {
-            Ordering::Less => left = &left[1..],
-            Ordering::Greater => right = &right[1..],
+            Ordering::Less => i += 1,
+            Ordering::Greater => j += 1,
             Ordering::Equal => {
                 emit(l, r);
-                (left, right) = (&left[1..], &right[1..]);
+                i += 1;
+                j += 1;
             }
         }
     }
@@ -60,14 +65,16 @@ mod tests {
 
         #[test]
         fn agrees_with_a_nested_loop_join((left, right) in two()) {
-            let (left, right) = (sorted(left), sorted(right));
+            let left = sorted(left);
+            let right = sorted(right);
             let joined = pairs(|emit| merge_join(&left, &right, emit));
             prop_assert_eq!(joined, loop_pairs(&left, &right));
         }
 
         #[test]
         fn emits_each_key_once_in_key_order((left, right) in two()) {
-            let (left, right) = (sorted(left), sorted(right));
+            let left = sorted(left);
+            let right = sorted(right);
             let mut keys = Vec::new();
             merge_join(&left, &right, |l, _| keys.push(l.0));
             prop_assert!(keys.is_sorted_by(|a, b| a < b));

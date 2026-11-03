@@ -7,13 +7,13 @@ use std::hash::{BuildHasher, Hash};
 /// table under its key, then looks up each row of `probe` in it, calling
 /// `emit` with every pair whose keys are equal, in probe order.
 ///
-/// The table is one allocation for any non-empty `build`, sized up front, and
-/// its memory grows with `build` alone, so build the smaller input. `hasher`
-/// is the caller's: std's `RandomState` resists keys chosen to collide;
-/// engines use faster ones.
+/// The table is sized for `build` up front, so it allocates once, and its
+/// memory grows with `build` alone: build from the smaller input. The caller
+/// picks the hasher. std's `RandomState` keys its hash with a random seed, so
+/// no one can choose keys that collide; engines trade that for a faster hash.
 ///
-/// A key `build` repeats keeps only its last row, which loses matches; debug
-/// builds panic on one.
+/// If `build` repeats a key, the table keeps only the last row with it, and
+/// that key's other matches are lost; debug builds panic instead.
 pub fn hash_join<K: Hash + Eq, V>(
     build: &[(K, V)],
     probe: &[(K, V)],
@@ -60,7 +60,7 @@ mod tests {
             prop_assert_eq!(joined, loop_pairs(&build, &probe));
         }
 
-        /// Which side it builds changes the order of the pairs and the
+        /// Which side it builds from changes the order of the pairs and the
         /// memory it takes, not which pairs it finds.
         #[test]
         fn agrees_whichever_side_it_builds((left, right) in two()) {
@@ -71,8 +71,8 @@ mod tests {
             prop_assert_eq!(built_left, built_right);
         }
 
-        /// A bad hash costs time, never matches: the table still compares
-        /// keys for equality.
+        /// A bad hash costs time, not matches: the table still compares keys
+        /// for equality.
         #[test]
         fn agrees_when_every_key_hashes_alike((build, probe) in two()) {
             let collide = BuildHasherDefault::<Collide>::default();

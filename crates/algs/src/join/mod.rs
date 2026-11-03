@@ -13,10 +13,10 @@
 //!   looks up each row of the other in it.
 //! - A [merge join](merge_join) walks two inputs sorted by key side by side.
 //!   Whichever next key is smaller can't match anything still to come on the
-//!   other side, so it moves past it. [`sort_merge_join`] sorts its inputs
-//!   first.
+//!   other side, so the join moves past it. [`sort_merge_join`] sorts its
+//!   inputs first.
 //!
-//! The merge works on any number of sorted inputs that share a key.
+//! The merge extends to any number of sorted inputs joined on one key.
 //! [`multiway_merge_join`] keeps each input's next key in a binary heap, whose
 //! top is the input furthest behind, and joins them all in one pass, with no
 //! intermediate results. [`cascade_merge_join`] joins them two at a time
@@ -27,18 +27,18 @@
 //!
 //! ## Rows and output
 //!
-//! Rows are `(key, value)` pairs, the same type in every input. A key
-//! every input holds joins to one pair, or to one tuple of a row from each
-//! input, so a join on equal keys emits no more tuples than its smallest
-//! input has rows. Every join but the cascade hands each match to `emit` as it
-//! finds it, the way a push-based engine hands rows to the next operator, so
-//! the memory it uses is its own and not the size of its output. A caller that
-//! wants to keep the matches copies them out.
+//! Rows are `(key, value)` pairs, the same type in every input. A key every
+//! input holds joins to one pair of rows, or, with more inputs, one tuple of a
+//! row from each, so a join emits no more tuples than its smallest input has
+//! rows. Every join but the cascade hands each match to `emit` as it finds it,
+//! the way a push-based engine hands rows to the next operator, so its memory
+//! doesn't grow with its output. A caller that wants to keep the matches
+//! copies them out.
 //!
 //! ## Costs
 //!
-//! For inputs of `n` and `m` rows, or `k` inputs of `N` rows in all, the
-//! fewest rows of any of them `u`:
+//! For two inputs of `n` and `m` rows, or `k` inputs of `N` rows in all whose
+//! smallest has `u` rows:
 //!
 //! | join | work | working memory | needs |
 //! |---|---|---|---|
@@ -89,9 +89,9 @@ pub(crate) mod testing {
         btree_map(0..keys, any::<u8>(), 0..=16).prop_map(|rows| rows.into_iter().collect())
     }
 
-    /// Two inputs, shuffled. Drawing keys from one to sixteen values ranges
-    /// them from sharing nearly every key to sharing few, and empty inputs are
-    /// common.
+    /// Two inputs, shuffled. Their keys come from a pool of one to sixteen
+    /// values, so the inputs range from sharing nearly every key to sharing
+    /// few, and empty inputs are common.
     pub fn two() -> impl Strategy<Value = (Vec<Row>, Vec<Row>)> {
         (1u8..=16)
             .prop_flat_map(|keys| (relation(keys).prop_shuffle(), relation(keys).prop_shuffle()))

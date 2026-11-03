@@ -16,7 +16,7 @@ use super::merge::merge_join;
 /// is furthest behind in O(log k), and its working memory is O(k). Unsorted
 /// inputs lose matches. An input that repeats a key can also put its second
 /// row at that key in another input's slot, emitting a tuple that isn't a
-/// match. Debug builds panic on either, as far as the merge reads each input.
+/// match. Debug builds panic on either, in the rows the merge reads.
 pub fn multiway_merge_join<K: Ord, V>(inputs: &[&[(K, V)]], mut emit: impl FnMut(&[&(K, V)])) {
     let k = inputs.len();
     let mut rest = inputs.to_vec();
@@ -117,7 +117,8 @@ mod tests {
 
         #[test]
         fn with_two_inputs_it_is_a_merge_join((left, right) in two()) {
-            let (left, right) = (sorted(left), sorted(right));
+            let left = sorted(left);
+            let right = sorted(right);
             let joined = tuples(|emit| multiway_merge_join(&[&left, &right], emit));
             let merged = tuples(|emit| merge_join(&left, &right, |l, r| emit(&[l, r])));
             prop_assert_eq!(joined, merged);
@@ -151,10 +152,12 @@ mod tests {
     #[test]
     fn with_one_input_it_emits_every_row() {
         let rows = [(1, 'a'), (2, 'b'), (4, 'c')];
-        let (mut merged, mut cascaded) = (Vec::new(), Vec::new());
+        let mut merged = Vec::new();
+        let mut cascaded = Vec::new();
         multiway_merge_join(&[&rows], |tuple| merged.push(*tuple[0]));
         cascade_merge_join(&[&rows], |tuple| cascaded.push(*tuple[0]));
-        assert_eq!((merged, cascaded), (rows.to_vec(), rows.to_vec()));
+        assert_eq!(merged, rows);
+        assert_eq!(cascaded, rows);
     }
 
     #[test]

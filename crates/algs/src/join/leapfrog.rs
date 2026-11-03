@@ -29,7 +29,8 @@ pub fn leapfrog_join<K: Ord, V>(inputs: &[&[(K, V)]], mut emit: impl FnMut(&[&(K
     let mut p = 0;
     let mut picked = Vec::with_capacity(k);
     loop {
-        let (behind, ahead) = (order[p], order[(p + k - 1) % k]);
+        let behind = order[p];
+        let ahead = order[(p + k - 1) % k];
         let target = &rest[ahead][0].0;
         if rest[behind][0].0 == *target {
             // The furthest behind has caught up, so every input is at `target`.
@@ -60,9 +61,9 @@ fn seek<'a, K: Ord, V>(rows: &'a [(K, V)], target: &K) -> &'a [(K, V)] {
         bound *= 2;
     }
     // So the first row at or past `target` is in `rows[bound / 2..=bound]`.
-    // The gallop found `rows[bound]`, if there is one, isn't below `target`,
-    // so the search leaves it out: if every row it searches is below, the
-    // answer is `bound`.
+    // The gallop found that `rows[bound]`, if there is one, isn't below
+    // `target`, so the search leaves it out: if every row it searches is
+    // below, the answer is `bound`.
     let start = bound / 2;
     let end = rows.len().min(bound);
     let first = start + rows[start..end].partition_point(|row| row.0 < *target);
@@ -145,7 +146,8 @@ mod tests {
             multiway_merge_join(&inputs, |_| emitted += 1);
             emitted
         });
-        assert_eq!((from_leapfrog, from_heap), (10, 10));
+        assert_eq!(from_leapfrog, 10);
+        assert_eq!(from_heap, 10);
         assert!(leapt < 1_000, "leapfrog made {leapt} comparisons");
         assert!(merged > 250_000, "the heap made only {merged} comparisons");
     }
