@@ -2,8 +2,6 @@
 //! walked at once with a heap. Each runs unchanged on [`logged`] keys and is
 //! drawn on tracks.
 
-use std::cmp::Ordering;
-
 use algs::join::{merge_join, multiway_merge_join};
 
 use super::Figure;
@@ -69,38 +67,45 @@ pub(super) fn merge_join_steps() -> Figure {
     let mut cursors = [0usize, 0];
     let mut joined = Vec::new();
     let mut compared = 0;
-    // Debug builds check the inputs are sorted first, with `<`: only the
-    // step's `cmp` and the emits are the merge.
-    let mut steps = log
-        .iter()
-        .filter(|e| matches!(e, Logged::Cmp { .. } | Logged::Emit(_)))
-        .peekable();
-    while let Some(e) = steps.next() {
-        let &Logged::Cmp { a: l, b: r, ord } = e else {
-            panic!("a step starts with a comparison, not {e:?}");
+    let mut moved_past = 0;
+    let mut entries = log.iter().peekable();
+    while let Some(e) = entries.next() {
+        // Debug builds first check each input is sorted, comparing rows
+        // within it; the merge only ever compares the two heads.
+        let (a, b, holds) = match *e {
+            Logged::Lt { a, b, .. } if a.input == b.input => continue,
+            Logged::Lt { a, b, below } => (a, b, below),
+            Logged::Eq { a, b, equal } => (a, b, equal),
+            _ => panic!("the merge compares and emits, not {e:?}"),
         };
         compared += 1;
         let head = |input| At {
             input,
             row: cursors[input],
         };
-        assert_eq!(l, head(0), "the step compares the heads");
-        assert_eq!(r, head(1), "the step compares the heads");
-        let lk = inputs[0][l.row];
-        let rk = inputs[1][r.row];
-        let moved: Vec<usize> = match ord {
-            Ordering::Less => vec![0],
-            Ordering::Greater => vec![1],
-            Ordering::Equal => {
-                assert_eq!(
-                    steps.next(),
-                    Some(&Logged::Emit(vec![l, r])),
-                    "equal keys join"
-                );
-                joined.push(lk);
-                vec![0, 1]
-            }
+        assert_eq!(a, head(a.input), "it compares the heads");
+        assert_eq!(b, head(b.input), "it compares the heads");
+        if !holds {
+            // A run on one side ends, or two heads don't match: nothing moves.
+            continue;
+        }
+        let equal = matches!(e, Logged::Eq { .. });
+        let lk = inputs[0][cursors[0]];
+        let rk = inputs[1][cursors[1]];
+        let moved: Vec<usize> = if equal {
+            let l = head(0);
+            let r = head(1);
+            assert_eq!(
+                entries.next(),
+                Some(&Logged::Emit(vec![l, r])),
+                "equal keys join"
+            );
+            joined.push(lk);
+            vec![0, 1]
+        } else {
+            vec![a.input]
         };
+        moved_past += moved.len();
         let marks = moved
             .iter()
             .map(|&t| Mark::Jump {
@@ -113,27 +118,29 @@ pub(super) fn merge_join_steps() -> Figure {
         for &t in &moved {
             cursors[t] += 1;
         }
-        let mut narration = match ord {
-            Ordering::Less => rich![
+        let mut narration = if equal {
+            rich![
+                label(lk),
+                " is in both, so it's joined, and both move past it."
+            ]
+        } else if a.input == 0 {
+            rich![
                 label(lk),
                 " is below ",
                 label(rk),
                 ", so ",
                 name("A"),
                 " moves past it."
-            ],
-            Ordering::Greater => rich![
+            ]
+        } else {
+            rich![
                 label(rk),
                 " is below ",
                 label(lk),
                 ", so ",
                 name("B"),
                 " moves past it."
-            ],
-            Ordering::Equal => rich![
-                label(lk),
-                " is in both, so it's joined, and both move past it."
-            ],
+            ]
         };
         if let Some(t) = (0..2).find(|&t| cursors[t] == inputs[t].len()) {
             narration = narration
@@ -143,7 +150,7 @@ pub(super) fn merge_join_steps() -> Figure {
         }
         d.frame(TracksFrame {
             cursors: on(cursors.to_vec()),
-            target: (ord == Ordering::Equal).then_some((lk, true)),
+            target: equal.then_some((lk, true)),
             marks,
             joined: joined.clone(),
             narration,
@@ -152,8 +159,8 @@ pub(super) fn merge_join_steps() -> Figure {
     }
     assert_eq!(joined, common(&inputs));
     assert!(
-        compared < inputs[0].len() + inputs[1].len(),
-        "fewer comparisons than rows"
+        compared <= 3 * moved_past,
+        "at most three comparisons for each row it moves past"
     );
     assert!(
         cursors.iter().zip(&inputs).any(|(&c, i)| c == i.len()),
