@@ -22,10 +22,11 @@ use super::Render;
 use super::steps::{At, timed};
 use super::svg::{
     actor_attrs, dot_line_svg, dot_line_with_slots, escape_attr, one_line, relation_attr,
-    role_classes, space_time_svg, step_sentence, subject, with_actor_slots,
+    role_classes, space_time_svg, step_sentence, subject, tracks_svg, tracks_with_slots,
+    with_actor_slots,
 };
 use crate::label::split_fields;
-use crate::model::{Beat, Diagram, DotLine, LaneId, Note, Rich, SpaceTime, Span, Timeline};
+use crate::model::{Beat, Diagram, DotLine, LaneId, Note, Rich, SpaceTime, Span, Timeline, Tracks};
 
 pub struct Html;
 
@@ -41,6 +42,10 @@ impl Render for Html {
     fn dot_line(&self, stem: &str, d: &DotLine) -> Option<String> {
         Some(dot_line_html(stem, d, At::End))
     }
+
+    fn tracks(&self, stem: &str, d: &Tracks) -> Option<String> {
+        Some(tracks_html(stem, d, At::End))
+    }
 }
 
 /// A figure as a step-through.
@@ -48,6 +53,7 @@ pub fn steps_html(stem: &str, d: &Diagram) -> String {
     match d {
         Diagram::SpaceTime(d) => space_time_html(stem, d, At::Every),
         Diagram::DotLine(d) => dot_line_html(stem, d, At::Every),
+        Diagram::Tracks(d) => tracks_html(stem, d, At::Every),
     }
 }
 
@@ -108,6 +114,31 @@ pub(crate) fn dot_line_html(stem: &str, d: &DotLine, at: At) -> String {
         "dot-line",
         d.title(),
         &dot_line_svg(stem, d, at),
+        &[],
+        play,
+    )
+}
+
+/// Tracks at `at`: at [`At::End`] the finished figure alone, otherwise its
+/// frames, each with what it says.
+pub(crate) fn tracks_html(stem: &str, d: &Tracks, at: At) -> String {
+    let d = &tracks_with_slots(d);
+    let last = d.last_step();
+    let play = (at != At::End).then(|| {
+        let beats = timed(at, last, "", |s| {
+            let body = rich_html(&squeezed(&d.frame_at(s).narration));
+            Some(
+                format!(r#"<p class="ds-beat"><span class="ds-beat-body">{body}</span></p>"#)
+                    + "\n",
+            )
+        });
+        (last, play(&beats, None))
+    });
+    figure(
+        stem,
+        "tracks",
+        d.title(),
+        &tracks_svg(stem, d, at),
         &[],
         play,
     )
@@ -359,7 +390,7 @@ mod tests {
             .filter(|f| f.form() == Form::Steps)
             .filter_map(|f| match f.diagram {
                 Diagram::SpaceTime(d) => Some((f.stem, d)),
-                Diagram::DotLine(_) => None,
+                Diagram::DotLine(_) | Diagram::Tracks(_) => None,
             })
             .collect()
     }
@@ -402,6 +433,7 @@ mod tests {
         match d {
             Diagram::SpaceTime(d) => space_time_html(stem, d, at),
             Diagram::DotLine(d) => dot_line_html(stem, d, at),
+            Diagram::Tracks(d) => tracks_html(stem, d, at),
         }
     }
 
@@ -409,6 +441,7 @@ mod tests {
         match d {
             Diagram::SpaceTime(d) => d.timeline().last(),
             Diagram::DotLine(d) => d.last_step(),
+            Diagram::Tracks(d) => d.last_step(),
         }
     }
 

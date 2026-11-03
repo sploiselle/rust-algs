@@ -38,7 +38,7 @@ use std::fmt::Write as _;
 use super::Render;
 use super::steps::{At, timed};
 use crate::model::{
-    Claim, DotLine, EventId, LaneId, Message, Note, Relation, Rich, SpaceTime, Span,
+    Claim, DotLine, EventId, LaneId, Message, Note, Relation, Rich, SpaceTime, Span, Tracks,
 };
 
 pub struct Svg;
@@ -117,6 +117,9 @@ macro_rules! emit {
         writeln!($out, $($arg)*).expect("writing to a String cannot fail")
     };
 }
+
+mod tracks;
+pub(crate) use tracks::{tracks_svg, tracks_with_slots};
 
 // ---------------------------------------------------------------------------
 // Text, measured without a font engine.
@@ -2005,6 +2008,10 @@ impl Render for Svg {
 
     fn dot_line(&self, stem: &str, d: &DotLine) -> Option<String> {
         Some(dot_line_svg(stem, d, At::End))
+    }
+
+    fn tracks(&self, stem: &str, d: &Tracks) -> Option<String> {
+        Some(tracks_svg(stem, d, At::End))
     }
 }
 

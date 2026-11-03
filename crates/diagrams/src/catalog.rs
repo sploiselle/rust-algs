@@ -24,6 +24,8 @@ use algs::state_machine::{self, Bookkeeper, Config, Stamped};
 use crate::label::{Label, bookkeeper, fields, phrase, sorted_entries, split_fields, v, voters};
 use crate::model::{Claim, Diagram, DotLine, EventId, LaneId, Rich, SpaceTime, Span, rich};
 
+mod leapfrog;
+
 /// A figure and the file stem its renderings are written under.
 pub struct Figure {
     pub stem: &'static str,
@@ -83,6 +85,9 @@ pub fn all() -> Vec<Figure> {
         mutex_crash(),
         bookkeeper_crash(),
         cbcast_delay(),
+        leapfrog::leapfrog_turns(),
+        leapfrog::leapfrog_seeks(),
+        leapfrog::leapfrog_comparisons(),
     ];
     for f in &mut figures {
         if let (Form::Steps, Diagram::SpaceTime(d)) = (f.form(), &mut f.diagram) {

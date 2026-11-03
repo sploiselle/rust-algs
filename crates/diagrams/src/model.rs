@@ -1059,11 +1059,202 @@ impl DotLine {
     }
 }
 
+/// Sorted inputs as horizontal tracks on one key axis, so equal keys line up
+/// in a column, with a cursor on each and what one input does to reach a key:
+/// its probes, the stride it searches, the rows it skips. A step-through shows
+/// its frames in turn.
+#[derive(Debug, Clone)]
+pub struct Tracks {
+    title: String,
+    tracks: Vec<Track>,
+    frames: Vec<TracksFrame>,
+}
+
+/// One input: its name, which is also its actor, and its keys, ascending.
+#[derive(Debug, Clone)]
+pub struct Track {
+    pub name: String,
+    pub keys: Vec<u64>,
+}
+
+/// One moment of the tracks. A row before its track's cursor is joined if
+/// its key is in `joined`, and skipped otherwise.
+#[derive(Debug, Clone)]
+pub struct TracksFrame {
+    /// Each track's current row; a track's row count once it has run out.
+    pub cursors: Vec<usize>,
+    /// The key the moving input is after, and whether every input is on it.
+    pub target: Option<(u64, bool)>,
+    pub marks: Vec<Mark>,
+    /// The keys emitted so far, in order.
+    pub joined: Vec<u64>,
+    /// Lines of state shown under the tracks, such as the code's variables.
+    pub panel: Vec<Rich>,
+    pub narration: Rich,
+}
+
+/// Something one track does on the way to the target, by row. `now` marks the
+/// one this step adds, in a figure that adds them one at a time.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Mark {
+    /// A gallop probe: a hop from row `from` to row `to`, whose key is below
+    /// the target or not.
+    Hop {
+        track: usize,
+        from: usize,
+        to: usize,
+        below: bool,
+        now: bool,
+    },
+    /// The rows a binary search covers, `start..end`.
+    Stride {
+        track: usize,
+        start: usize,
+        end: usize,
+    },
+    /// A binary search's probe of `row`.
+    Probe {
+        track: usize,
+        row: usize,
+        below: bool,
+        now: bool,
+    },
+    /// A whole seek, from row `from` to the row it lands on.
+    Jump {
+        track: usize,
+        from: usize,
+        to: usize,
+    },
+}
+
+impl Mark {
+    pub fn track(&self) -> usize {
+        match *self {
+            Mark::Hop { track, .. }
+            | Mark::Stride { track, .. }
+            | Mark::Probe { track, .. }
+            | Mark::Jump { track, .. } => track,
+        }
+    }
+
+    /// The rows the mark touches, to check they are on its track.
+    fn rows(&self) -> Vec<usize> {
+        match *self {
+            Mark::Hop { from, to, .. } | Mark::Jump { from, to, .. } => vec![from, to],
+            Mark::Stride { start, end, .. } => vec![start, end - 1],
+            Mark::Probe { row, .. } => vec![row],
+        }
+    }
+
+    /// The same mark whether or not this step adds it, so a page sees one mark
+    /// that changes rather than two.
+    pub fn settled(self) -> Mark {
+        let mut m = self;
+        if let Mark::Hop { now, .. } | Mark::Probe { now, .. } = &mut m {
+            *now = false;
+        }
+        m
+    }
+}
+
+impl Tracks {
+    /// Panics unless there are tracks, each holds a key, each track's keys
+    /// ascend, and the axis from the smallest key to the largest is short
+    /// enough to be a figure.
+    pub fn new(title: impl Into<String>, tracks: Vec<Track>) -> Self {
+        assert!(!tracks.is_empty(), "tracks need a track");
+        assert!(
+            tracks
+                .iter()
+                .all(|t| !t.keys.is_empty() && t.keys.is_sorted_by(|a, b| a < b)),
+            "each track's keys ascend"
+        );
+        let d = Self {
+            title: title.into(),
+            tracks,
+            frames: Vec::new(),
+        };
+        assert!(d.axis().count() <= 40, "an axis is at most 40 keys");
+        d
+    }
+
+    /// The next frame. Panics unless there is a cursor per track, each cursor
+    /// and mark is on its track, a stride isn't empty, and every joined key is
+    /// in every track.
+    pub fn frame(&mut self, f: TracksFrame) {
+        assert_eq!(f.cursors.len(), self.tracks.len(), "a cursor per track");
+        for (t, &c) in self.tracks.iter().zip(&f.cursors) {
+            assert!(c <= t.keys.len(), "a cursor is on its track");
+        }
+        for m in &f.marks {
+            let keys = &self
+                .tracks
+                .get(m.track())
+                .expect("a mark is on a track")
+                .keys;
+            if let Mark::Stride { start, end, .. } = *m {
+                assert!(start < end, "a stride covers a row");
+            }
+            assert!(
+                m.rows().iter().all(|&r| r < keys.len()),
+                "a mark is on its track's rows"
+            );
+        }
+        assert!(
+            f.joined
+                .iter()
+                .all(|k| self.tracks.iter().all(|t| t.keys.contains(k))),
+            "a joined key is in every track"
+        );
+        self.frames.push(f);
+    }
+
+    pub fn title(&self) -> &str {
+        &self.title
+    }
+
+    pub fn tracks(&self) -> &[Track] {
+        &self.tracks
+    }
+
+    /// Every key from the smallest any track holds to the largest.
+    pub fn axis(&self) -> std::ops::RangeInclusive<u64> {
+        let keys = self.tracks.iter().flat_map(|t| &t.keys);
+        let lo = *keys.clone().min().expect("tracks hold keys");
+        let hi = *keys.max().expect("tracks hold keys");
+        lo..=hi
+    }
+
+    pub fn all_frames(&self) -> &[TracksFrame] {
+        &self.frames
+    }
+
+    /// The last step, which shows the finished figure: one step per frame.
+    pub fn last_step(&self) -> usize {
+        assert!(!self.frames.is_empty(), "tracks need a frame");
+        self.frames.len() - 1
+    }
+
+    pub fn frame_at(&self, step: usize) -> &TracksFrame {
+        &self.frames[step]
+    }
+
+    /// Apply `f` to every span of every frame's text.
+    pub fn for_each_span(&mut self, mut f: impl FnMut(&mut Span)) {
+        for frame in &mut self.frames {
+            for r in frame.panel.iter_mut().chain([&mut frame.narration]) {
+                r.lines.iter_mut().flatten().for_each(&mut f);
+            }
+        }
+    }
+}
+
 /// Every kind of figure a backend may be asked to draw.
 #[derive(Debug, Clone)]
 pub enum Diagram {
     SpaceTime(SpaceTime),
     DotLine(DotLine),
+    Tracks(Tracks),
 }
 
 impl Diagram {
@@ -1071,24 +1262,28 @@ impl Diagram {
         match self {
             Diagram::SpaceTime(d) => d.title(),
             Diagram::DotLine(d) => d.title(),
+            Diagram::Tracks(d) => d.title(),
         }
     }
 
     /// Is there more than one step to walk through? A space-time figure
     /// needs two events or notes to show one after the other, and a number
-    /// line two frames; with fewer, the finished figure is all there is to see.
+    /// line or tracks two frames; with fewer, the finished figure is all there is to see.
     pub fn is_walkable(&self) -> bool {
         match self {
             Diagram::SpaceTime(d) => d.timeline().beats().len() > 1,
             Diagram::DotLine(d) => d.all_frames().len() > 1,
+            Diagram::Tracks(d) => d.all_frames().len() > 1,
         }
     }
 
-    /// The kind as it appears in rendered output: `space-time` or `dot-line`.
+    /// The kind as it appears in rendered output: `space-time`, `dot-line` or
+    /// `tracks`.
     pub fn kind(&self) -> &'static str {
         match self {
             Diagram::SpaceTime(_) => "space-time",
             Diagram::DotLine(_) => "dot-line",
+            Diagram::Tracks(_) => "tracks",
         }
     }
 }

@@ -16,7 +16,7 @@
 //! it and no `.mmd` is written for that figure.
 
 use super::Render;
-use crate::model::{DotLine, LaneId, SpaceTime};
+use crate::model::{DotLine, LaneId, SpaceTime, Tracks};
 
 pub struct Mermaid;
 
@@ -88,6 +88,10 @@ impl Render for Mermaid {
     }
 
     fn dot_line(&self, _stem: &str, _: &DotLine) -> Option<String> {
+        None
+    }
+
+    fn tracks(&self, _stem: &str, _: &Tracks) -> Option<String> {
         None
     }
 }
