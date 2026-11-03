@@ -21,20 +21,28 @@ pub fn merge_join<K: Ord, V>(
         right.is_sorted_by(|a, b| a.0 < b.0),
         "right input's keys don't strictly increase"
     );
-    let mut i = 0;
-    let mut j = 0;
-    while i < left.len() && j < right.len() {
-        let l = &left[i];
-        let r = &right[j];
+    let mut lefts = left.iter();
+    let mut rights = right.iter();
+    let Some(mut l) = lefts.next() else { return };
+    let Some(mut r) = rights.next() else { return };
+    loop {
         // The smaller key matches nothing still to come on the other side, so
         // move past it.
         match l.0.cmp(&r.0) {
-            Ordering::Less => i += 1,
-            Ordering::Greater => j += 1,
+            Ordering::Less => {
+                let Some(next) = lefts.next() else { return };
+                l = next;
+            }
+            Ordering::Greater => {
+                let Some(next) = rights.next() else { return };
+                r = next;
+            }
             Ordering::Equal => {
                 emit(l, r);
-                i += 1;
-                j += 1;
+                let Some(next) = lefts.next() else { return };
+                l = next;
+                let Some(next) = rights.next() else { return };
+                r = next;
             }
         }
     }
