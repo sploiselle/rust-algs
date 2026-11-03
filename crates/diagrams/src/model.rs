@@ -1067,30 +1067,53 @@ impl DotLine {
 pub struct Tracks {
     title: String,
     tracks: Vec<Track>,
+    key_prefix: String,
     frames: Vec<TracksFrame>,
 }
 
-/// One input: its name, which is also its actor, and its keys, ascending.
+/// An input: its name, which is also its actor, and its keys, ascending.
 #[derive(Debug, Clone)]
 pub struct Track {
     pub name: String,
     pub keys: Vec<u64>,
 }
 
+impl Track {
+    pub fn input(name: &str, keys: Vec<u64>) -> Self {
+        Track {
+            name: name.to_string(),
+            keys,
+        }
+    }
+}
+
 /// One moment of the tracks. A row before its track's cursor is joined if
-/// its key is in `joined`, and skipped otherwise.
-#[derive(Debug, Clone)]
+/// its key is in `joined`, and passed otherwise.
+#[derive(Debug, Clone, Default)]
 pub struct TracksFrame {
-    /// Each track's current row; a track's row count once it has run out.
-    pub cursors: Vec<usize>,
+    /// Each track's current row, its row count once it has run out, or `None`
+    /// for a track nothing is reading.
+    pub cursors: Vec<Option<usize>>,
     /// The key the moving input is after, and whether every input is on it.
     pub target: Option<(u64, bool)>,
     pub marks: Vec<Mark>,
     /// The keys emitted so far, in order.
     pub joined: Vec<u64>,
-    /// Lines of state shown under the tracks, such as the code's variables.
+    /// A heap of the tracks' next keys, drawn as a tree under them.
+    pub heap: Option<HeapTree>,
+    /// Lines of state shown under the tracks, such as the code's variables,
+    /// or the comparisons the heap made.
     pub panel: Vec<Rich>,
     pub narration: Rich,
+}
+
+/// A binary min-heap of `(key, track)` entries as its array, so entry `i`'s
+/// children are entries `2i + 1` and `2i + 2`.
+#[derive(Debug, Clone, Default)]
+pub struct HeapTree {
+    pub entries: Vec<(u64, usize)>,
+    /// Where the entry this step put in ended up.
+    pub new: Option<usize>,
 }
 
 /// Something one track does on the way to the target, by row. `now` marks the
@@ -1172,19 +1195,50 @@ impl Tracks {
         let d = Self {
             title: title.into(),
             tracks,
+            key_prefix: String::new(),
             frames: Vec::new(),
         };
         assert!(d.axis().count() <= 40, "an axis is at most 40 keys");
         d
     }
 
+    /// Keys written with `prefix`: `k0` rather than `0`.
+    pub fn key_prefix(mut self, prefix: &str) -> Self {
+        self.key_prefix = prefix.to_string();
+        self
+    }
+
+    /// `key` as the figure writes it.
+    pub fn key_label(&self, key: u64) -> String {
+        format!("{}{key}", self.key_prefix)
+    }
+
     /// The next frame. Panics unless there is a cursor per track, each cursor
-    /// and mark is on its track, a stride isn't empty, and every joined key is
-    /// in every track.
+    /// and mark is on its track, a stride isn't empty, every joined key is in
+    /// every track, and a heap is a heap of the tracks' keys.
     pub fn frame(&mut self, f: TracksFrame) {
+        if let Some(h) = &f.heap {
+            assert!(
+                h.entries
+                    .iter()
+                    .all(|&(k, t)| t < self.tracks.len() && self.tracks[t].keys.contains(&k)),
+                "a heap entry is a key of its track"
+            );
+            assert!(
+                (1..h.entries.len()).all(|i| h.entries[(i - 1) / 2] <= h.entries[i]),
+                "no entry is smaller than its parent"
+            );
+            assert!(
+                h.new.is_none_or(|n| n < h.entries.len()),
+                "the new entry is in the heap"
+            );
+        }
         assert_eq!(f.cursors.len(), self.tracks.len(), "a cursor per track");
-        for (t, &c) in self.tracks.iter().zip(&f.cursors) {
-            assert!(c <= t.keys.len(), "a cursor is on its track");
+        for (t, c) in self.tracks.iter().zip(&f.cursors) {
+            assert!(
+                c.is_none_or(|c| c <= t.keys.len()),
+                "a cursor is on its track"
+            );
         }
         for m in &f.marks {
             let keys = &self
@@ -1249,12 +1303,199 @@ impl Tracks {
     }
 }
 
+/// Two inputs as a grid, one down and one across, a cell for each pair of
+/// rows, filled in as the pairs are compared.
+#[derive(Debug, Clone)]
+pub struct Grid {
+    title: String,
+    pub down: Track,
+    pub across: Track,
+    key_prefix: String,
+    frames: Vec<GridFrame>,
+}
+
+/// One moment of a grid.
+#[derive(Debug, Clone, Default)]
+pub struct GridFrame {
+    /// The pairs compared so far, `(down row, across row, matched)`, in the
+    /// order they were; the last is this step's.
+    pub compared: Vec<(usize, usize, bool)>,
+    pub narration: Rich,
+}
+
+impl Grid {
+    pub fn new(title: impl Into<String>, down: Track, across: Track, key_prefix: &str) -> Self {
+        Self {
+            title: title.into(),
+            down,
+            across,
+            key_prefix: key_prefix.to_string(),
+            frames: Vec::new(),
+        }
+    }
+
+    /// Panics unless every pair is a cell of the grid, compared once.
+    pub fn frame(&mut self, f: GridFrame) {
+        for (k, &(r, c, _)) in f.compared.iter().enumerate() {
+            assert!(
+                r < self.down.keys.len() && c < self.across.keys.len(),
+                "a pair is a cell"
+            );
+            assert!(
+                !f.compared[..k]
+                    .iter()
+                    .any(|&(r2, c2, _)| (r2, c2) == (r, c)),
+                "a pair is compared once"
+            );
+        }
+        self.frames.push(f);
+    }
+
+    pub fn title(&self) -> &str {
+        &self.title
+    }
+
+    pub fn key_label(&self, key: u64) -> String {
+        format!("{}{key}", self.key_prefix)
+    }
+
+    pub fn all_frames(&self) -> &[GridFrame] {
+        &self.frames
+    }
+
+    pub fn last_step(&self) -> usize {
+        assert!(!self.frames.is_empty(), "a grid needs a frame");
+        self.frames.len() - 1
+    }
+
+    pub fn frame_at(&self, step: usize) -> &GridFrame {
+        &self.frames[step]
+    }
+
+    pub fn for_each_span(&mut self, mut f: impl FnMut(&mut Span)) {
+        for frame in &mut self.frames {
+            frame.narration.lines.iter_mut().flatten().for_each(&mut f);
+        }
+    }
+}
+
+/// A hash join's two phases: the build input's rows go into a table, then
+/// each of the probe input's rows looks its key up there. The table is drawn
+/// as its entries in the order they went in, not as buckets: where a hash map
+/// puts a key is its own business.
+#[derive(Debug, Clone)]
+pub struct BuildProbe {
+    title: String,
+    pub build: Track,
+    pub probe: Track,
+    key_prefix: String,
+    frames: Vec<BuildProbeFrame>,
+}
+
+/// One moment of a hash join.
+#[derive(Debug, Clone, Default)]
+pub struct BuildProbeFrame {
+    /// How many build rows are in the table.
+    pub built: usize,
+    /// How many probe rows have looked themselves up.
+    pub probed: usize,
+    pub now: Option<Lookup>,
+    /// `(probe row, build row)` for each pair emitted, in order.
+    pub joined: Vec<(usize, usize)>,
+    pub narration: Rich,
+}
+
+/// What a hash join's step did.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Lookup {
+    /// A build row went into the table.
+    Insert(usize),
+    /// A probe row looked itself up, and found this build row, or nothing.
+    Probe { row: usize, found: Option<usize> },
+}
+
+impl BuildProbe {
+    pub fn new(title: impl Into<String>, build: Track, probe: Track, key_prefix: &str) -> Self {
+        Self {
+            title: title.into(),
+            build,
+            probe,
+            key_prefix: key_prefix.to_string(),
+            frames: Vec::new(),
+        }
+    }
+
+    /// Panics unless the counts and rows are on their inputs, nothing is
+    /// probed before the table is built, and each joined pair's keys match.
+    pub fn frame(&mut self, f: BuildProbeFrame) {
+        assert!(
+            f.built <= self.build.keys.len(),
+            "built rows are build rows"
+        );
+        assert!(
+            f.probed <= self.probe.keys.len(),
+            "probed rows are probe rows"
+        );
+        assert!(
+            f.probed == 0 || f.built == self.build.keys.len(),
+            "probing waits for the whole build"
+        );
+        match f.now {
+            Some(Lookup::Insert(r)) => assert!(r < f.built, "an insert is built"),
+            Some(Lookup::Probe { row, found }) => {
+                assert!(row < f.probed, "a probe is probed");
+                assert!(
+                    found.is_none_or(|b| b < f.built),
+                    "a probe finds a built row"
+                );
+            }
+            None => {}
+        }
+        assert!(
+            f.joined
+                .iter()
+                .all(|&(p, b)| self.probe.keys[p] == self.build.keys[b]),
+            "a joined pair's keys match"
+        );
+        self.frames.push(f);
+    }
+
+    pub fn title(&self) -> &str {
+        &self.title
+    }
+
+    pub fn key_label(&self, key: u64) -> String {
+        format!("{}{key}", self.key_prefix)
+    }
+
+    pub fn all_frames(&self) -> &[BuildProbeFrame] {
+        &self.frames
+    }
+
+    pub fn last_step(&self) -> usize {
+        assert!(!self.frames.is_empty(), "a hash join needs a frame");
+        self.frames.len() - 1
+    }
+
+    pub fn frame_at(&self, step: usize) -> &BuildProbeFrame {
+        &self.frames[step]
+    }
+
+    pub fn for_each_span(&mut self, mut f: impl FnMut(&mut Span)) {
+        for frame in &mut self.frames {
+            frame.narration.lines.iter_mut().flatten().for_each(&mut f);
+        }
+    }
+}
+
 /// Every kind of figure a backend may be asked to draw.
 #[derive(Debug, Clone)]
 pub enum Diagram {
     SpaceTime(SpaceTime),
     DotLine(DotLine),
     Tracks(Tracks),
+    Grid(Grid),
+    BuildProbe(BuildProbe),
 }
 
 impl Diagram {
@@ -1263,27 +1504,33 @@ impl Diagram {
             Diagram::SpaceTime(d) => d.title(),
             Diagram::DotLine(d) => d.title(),
             Diagram::Tracks(d) => d.title(),
+            Diagram::Grid(d) => d.title(),
+            Diagram::BuildProbe(d) => d.title(),
         }
     }
 
     /// Is there more than one step to walk through? A space-time figure
     /// needs two events or notes to show one after the other, and a number
-    /// line or tracks two frames; with fewer, the finished figure is all there is to see.
+    /// line or any of the joins' figures two frames; with fewer, the finished figure is all there is to see.
     pub fn is_walkable(&self) -> bool {
         match self {
             Diagram::SpaceTime(d) => d.timeline().beats().len() > 1,
             Diagram::DotLine(d) => d.all_frames().len() > 1,
             Diagram::Tracks(d) => d.all_frames().len() > 1,
+            Diagram::Grid(d) => d.all_frames().len() > 1,
+            Diagram::BuildProbe(d) => d.all_frames().len() > 1,
         }
     }
 
-    /// The kind as it appears in rendered output: `space-time`, `dot-line` or
-    /// `tracks`.
+    /// The kind as it appears in rendered output: `space-time`, `dot-line`,
+    /// `tracks`, `grid` or `build-probe`.
     pub fn kind(&self) -> &'static str {
         match self {
             Diagram::SpaceTime(_) => "space-time",
             Diagram::DotLine(_) => "dot-line",
             Diagram::Tracks(_) => "tracks",
+            Diagram::Grid(_) => "grid",
+            Diagram::BuildProbe(_) => "build-probe",
         }
     }
 }
@@ -1463,6 +1710,52 @@ mod tests {
         assert_eq!(d.frame_at(0).present, [1]);
         assert_eq!(d.frame_at(1).present, [1, 3]);
         assert_eq!(d.present(), [1, 3], "the last step is finished");
+    }
+
+    #[test]
+    #[should_panic(expected = "a mark is on its track's rows")]
+    fn tracks_reject_a_mark_off_its_track() {
+        let mut d = Tracks::new("t", vec![Track::input("A", vec![1, 2])]);
+        d.frame(TracksFrame {
+            cursors: vec![Some(0)],
+            marks: vec![Mark::Jump {
+                track: 0,
+                from: 0,
+                to: 2,
+            }],
+            ..TracksFrame::default()
+        });
+    }
+
+    #[test]
+    #[should_panic(expected = "compared once")]
+    fn a_grid_compares_a_pair_once() {
+        let mut d = Grid::new(
+            "t",
+            Track::input("A", vec![1]),
+            Track::input("B", vec![1]),
+            "",
+        );
+        d.frame(GridFrame {
+            compared: vec![(0, 0, true), (0, 0, true)],
+            narration: Rich::default(),
+        });
+    }
+
+    #[test]
+    #[should_panic(expected = "waits for the whole build")]
+    fn a_hash_join_probes_only_a_built_table() {
+        let mut d = BuildProbe::new(
+            "t",
+            Track::input("B", vec![1, 2]),
+            Track::input("A", vec![1]),
+            "",
+        );
+        d.frame(BuildProbeFrame {
+            built: 1,
+            probed: 1,
+            ..BuildProbeFrame::default()
+        });
     }
 
     #[test]

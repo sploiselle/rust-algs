@@ -16,7 +16,7 @@
 //! it and no `.mmd` is written for that figure.
 
 use super::Render;
-use crate::model::{DotLine, LaneId, SpaceTime, Tracks};
+use crate::model::{BuildProbe, DotLine, Grid, LaneId, SpaceTime, Tracks};
 
 pub struct Mermaid;
 
@@ -92,6 +92,14 @@ impl Render for Mermaid {
     }
 
     fn tracks(&self, _stem: &str, _: &Tracks) -> Option<String> {
+        None
+    }
+
+    fn grid(&self, _stem: &str, _: &Grid) -> Option<String> {
+        None
+    }
+
+    fn build_probe(&self, _stem: &str, _: &BuildProbe) -> Option<String> {
         None
     }
 }

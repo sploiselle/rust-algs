@@ -9,7 +9,7 @@ pub use html::{Html, steps_html};
 pub use mermaid::Mermaid;
 pub use svg::Svg;
 
-use crate::model::{Diagram, DotLine, SpaceTime, Tracks};
+use crate::model::{BuildProbe, Diagram, DotLine, Grid, SpaceTime, Tracks};
 
 /// A rendering backend. One method per diagram model; a backend returns `None`
 /// for a model it has no sensible picture for, and that file is simply not
@@ -21,12 +21,16 @@ pub trait Render {
     fn space_time(&self, stem: &str, d: &SpaceTime) -> Option<String>;
     fn dot_line(&self, stem: &str, d: &DotLine) -> Option<String>;
     fn tracks(&self, stem: &str, d: &Tracks) -> Option<String>;
+    fn grid(&self, stem: &str, d: &Grid) -> Option<String>;
+    fn build_probe(&self, stem: &str, d: &BuildProbe) -> Option<String>;
 
     fn render(&self, stem: &str, d: &Diagram) -> Option<String> {
         match d {
             Diagram::SpaceTime(s) => self.space_time(stem, s),
             Diagram::DotLine(l) => self.dot_line(stem, l),
             Diagram::Tracks(t) => self.tracks(stem, t),
+            Diagram::Grid(g) => self.grid(stem, g),
+            Diagram::BuildProbe(b) => self.build_probe(stem, b),
         }
     }
 }

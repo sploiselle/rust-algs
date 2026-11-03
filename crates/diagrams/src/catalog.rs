@@ -24,7 +24,10 @@ use algs::state_machine::{self, Bookkeeper, Config, Stamped};
 use crate::label::{Label, bookkeeper, fields, phrase, sorted_entries, split_fields, v, voters};
 use crate::model::{Claim, Diagram, DotLine, EventId, LaneId, Rich, SpaceTime, Span, rich};
 
+mod binary;
 mod leapfrog;
+mod logged;
+mod merges;
 
 /// A figure and the file stem its renderings are written under.
 pub struct Figure {
@@ -85,6 +88,10 @@ pub fn all() -> Vec<Figure> {
         mutex_crash(),
         bookkeeper_crash(),
         cbcast_delay(),
+        binary::nested_loop(),
+        binary::hash(),
+        merges::merge_join_steps(),
+        merges::heap_merge(),
         leapfrog::leapfrog_turns(),
         leapfrog::leapfrog_seeks(),
         leapfrog::leapfrog_comparisons(),

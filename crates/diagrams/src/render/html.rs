@@ -21,12 +21,14 @@
 use super::Render;
 use super::steps::{At, timed};
 use super::svg::{
-    actor_attrs, dot_line_svg, dot_line_with_slots, escape_attr, one_line, relation_attr,
-    role_classes, space_time_svg, step_sentence, subject, tracks_svg, tracks_with_slots,
-    with_actor_slots,
+    actor_attrs, build_probe_svg, build_probe_with_slots, dot_line_svg, dot_line_with_slots,
+    escape_attr, grid_svg, grid_with_slots, one_line, relation_attr, role_classes, space_time_svg,
+    step_sentence, subject, tracks_svg, tracks_with_slots, with_actor_slots,
 };
 use crate::label::split_fields;
-use crate::model::{Beat, Diagram, DotLine, LaneId, Note, Rich, SpaceTime, Span, Timeline, Tracks};
+use crate::model::{
+    Beat, BuildProbe, Diagram, DotLine, Grid, LaneId, Note, Rich, SpaceTime, Span, Timeline, Tracks,
+};
 
 pub struct Html;
 
@@ -46,6 +48,14 @@ impl Render for Html {
     fn tracks(&self, stem: &str, d: &Tracks) -> Option<String> {
         Some(tracks_html(stem, d, At::End))
     }
+
+    fn grid(&self, stem: &str, d: &Grid) -> Option<String> {
+        Some(grid_html(stem, d, At::End))
+    }
+
+    fn build_probe(&self, stem: &str, d: &BuildProbe) -> Option<String> {
+        Some(build_probe_html(stem, d, At::End))
+    }
 }
 
 /// A figure as a step-through.
@@ -54,6 +64,8 @@ pub fn steps_html(stem: &str, d: &Diagram) -> String {
         Diagram::SpaceTime(d) => space_time_html(stem, d, At::Every),
         Diagram::DotLine(d) => dot_line_html(stem, d, At::Every),
         Diagram::Tracks(d) => tracks_html(stem, d, At::Every),
+        Diagram::Grid(d) => grid_html(stem, d, At::Every),
+        Diagram::BuildProbe(d) => build_probe_html(stem, d, At::Every),
     }
 }
 
@@ -123,10 +135,50 @@ pub(crate) fn dot_line_html(stem: &str, d: &DotLine, at: At) -> String {
 /// frames, each with what it says.
 pub(crate) fn tracks_html(stem: &str, d: &Tracks, at: At) -> String {
     let d = &tracks_with_slots(d);
-    let last = d.last_step();
+    let svg = tracks_svg(stem, d, at);
+    narrated(stem, "tracks", d.title(), &svg, at, d.last_step(), |s| {
+        &d.frame_at(s).narration
+    })
+}
+
+/// A grid at `at`, as [`tracks_html`].
+pub(crate) fn grid_html(stem: &str, d: &Grid, at: At) -> String {
+    let d = &grid_with_slots(d);
+    let svg = grid_svg(stem, d, at);
+    narrated(stem, "grid", d.title(), &svg, at, d.last_step(), |s| {
+        &d.frame_at(s).narration
+    })
+}
+
+/// A hash join at `at`, as [`tracks_html`].
+pub(crate) fn build_probe_html(stem: &str, d: &BuildProbe, at: At) -> String {
+    let d = &build_probe_with_slots(d);
+    let svg = build_probe_svg(stem, d, at);
+    narrated(
+        stem,
+        "build-probe",
+        d.title(),
+        &svg,
+        at,
+        d.last_step(),
+        |s| &d.frame_at(s).narration,
+    )
+}
+
+/// A figure whose steps each say one thing: at [`At::End`] the finished
+/// figure alone, otherwise with a sentence per step.
+fn narrated<'a>(
+    stem: &str,
+    kind: &str,
+    title: &str,
+    svg: &str,
+    at: At,
+    last: usize,
+    says: impl Fn(usize) -> &'a Rich,
+) -> String {
     let play = (at != At::End).then(|| {
         let beats = timed(at, last, "", |s| {
-            let body = rich_html(&squeezed(&d.frame_at(s).narration));
+            let body = rich_html(&squeezed(says(s)));
             Some(
                 format!(r#"<p class="ds-beat"><span class="ds-beat-body">{body}</span></p>"#)
                     + "\n",
@@ -134,14 +186,7 @@ pub(crate) fn tracks_html(stem: &str, d: &Tracks, at: At) -> String {
         });
         (last, play(&beats, None))
     });
-    figure(
-        stem,
-        "tracks",
-        d.title(),
-        &tracks_svg(stem, d, at),
-        &[],
-        play,
-    )
+    figure(stem, kind, title, svg, &[], play)
 }
 
 /// The block a page's player fills in: an empty bar for its controls, the
@@ -390,7 +435,7 @@ mod tests {
             .filter(|f| f.form() == Form::Steps)
             .filter_map(|f| match f.diagram {
                 Diagram::SpaceTime(d) => Some((f.stem, d)),
-                Diagram::DotLine(_) | Diagram::Tracks(_) => None,
+                _ => None,
             })
             .collect()
     }
@@ -434,6 +479,8 @@ mod tests {
             Diagram::SpaceTime(d) => space_time_html(stem, d, at),
             Diagram::DotLine(d) => dot_line_html(stem, d, at),
             Diagram::Tracks(d) => tracks_html(stem, d, at),
+            Diagram::Grid(d) => grid_html(stem, d, at),
+            Diagram::BuildProbe(d) => build_probe_html(stem, d, at),
         }
     }
 
@@ -442,6 +489,8 @@ mod tests {
             Diagram::SpaceTime(d) => d.timeline().last(),
             Diagram::DotLine(d) => d.last_step(),
             Diagram::Tracks(d) => d.last_step(),
+            Diagram::Grid(d) => d.last_step(),
+            Diagram::BuildProbe(d) => d.last_step(),
         }
     }
 

@@ -8,115 +8,17 @@
 //! the code says it does, and drawn three ways: a turn per step, a seek in
 //! two steps (its gallop, then its search), and a comparison per step.
 
-use std::cell::RefCell;
-use std::cmp::Ordering;
-
 use algs::join::{leapfrog_join, multiway_merge_join};
 
 use super::Figure;
+use super::logged::{self, At, Logged};
 use crate::model::{Diagram, Mark, Rich, Span, Track, Tracks, TracksFrame, actor_span, rich};
-
-/// A row: which input, and where in it.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct At {
-    input: usize,
-    row: usize,
-}
-
-/// What the join did, in order.
-#[derive(Clone, Debug, PartialEq, Eq)]
-enum Logged {
-    /// `a == b`.
-    Eq { a: At, b: At, equal: bool },
-    /// `a < b`.
-    Lt { a: At, b: At, below: bool },
-    /// Any other comparison: `a.cmp(b)`, or `a <= b` and the like.
-    Cmp { a: At, b: At },
-    /// `emit` called with these rows.
-    Emit(Vec<At>),
-}
-
-thread_local! {
-    static LOG: RefCell<Vec<Logged>> = const { RefCell::new(Vec::new()) };
-}
-
-fn log(entry: Logged) {
-    LOG.with_borrow_mut(|l| l.push(entry));
-}
-
-/// A key that logs every comparison made with it. It compares as its `key`.
-#[derive(Debug)]
-struct Key {
-    key: u64,
-    at: At,
-}
-
-impl PartialEq for Key {
-    fn eq(&self, other: &Self) -> bool {
-        let equal = self.key == other.key;
-        log(Logged::Eq {
-            a: self.at,
-            b: other.at,
-            equal,
-        });
-        equal
-    }
-}
-
-impl Eq for Key {}
-
-impl PartialOrd for Key {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-
-    fn lt(&self, other: &Self) -> bool {
-        let below = self.key < other.key;
-        log(Logged::Lt {
-            a: self.at,
-            b: other.at,
-            below,
-        });
-        below
-    }
-}
-
-impl Ord for Key {
-    fn cmp(&self, other: &Self) -> Ordering {
-        log(Logged::Cmp {
-            a: self.at,
-            b: other.at,
-        });
-        self.key.cmp(&other.key)
-    }
-}
 
 /// Runs the library's join on `inputs` and returns what it did.
 fn record(inputs: &[Vec<u64>]) -> Vec<Logged> {
-    let rows: Vec<Vec<(Key, ())>> = inputs
-        .iter()
-        .enumerate()
-        .map(|(input, keys)| {
-            keys.iter()
-                .enumerate()
-                .map(|(row, &key)| {
-                    (
-                        Key {
-                            key,
-                            at: At { input, row },
-                        },
-                        (),
-                    )
-                })
-                .collect()
-        })
-        .collect();
-    let slices: Vec<&[(Key, ())]> = rows.iter().map(Vec::as_slice).collect();
-    LOG.with_borrow_mut(Vec::clear);
-    leapfrog_join(&slices, |tuple| {
-        log(Logged::Emit(tuple.iter().map(|row| row.0.at).collect()));
-    });
-    LOG.take()
+    let rows = logged::rows(inputs);
+    let slices: Vec<&[_]> = rows.iter().map(Vec::as_slice).collect();
+    logged::record(|| leapfrog_join(&slices, |tuple| logged::emitted(tuple.iter().copied())))
 }
 
 /// One turn of the loop: the input furthest behind, at row `from`, either
@@ -192,11 +94,16 @@ impl Run {
 
 /// The selective workload's shape, at a size a figure can show: A and B hold
 /// most keys and share most of them, and C holds two that both have.
-fn leapfrog_run() -> Run {
+pub(super) fn accounts() -> (Vec<&'static str>, Vec<Vec<u64>>) {
     let a: Vec<u64> = (0..20).filter(|k| k % 4 != 3).collect();
     let b: Vec<u64> = (0..20).filter(|k| k % 4 != 1).collect();
-    let c: Vec<u64> = vec![6, 14];
-    let run = rebuild(vec!["A", "B", "C"], vec![a, b, c]);
+    (vec!["A", "B", "C"], vec![a, b, vec![6, 14]])
+}
+
+/// The join on [`accounts`], rebuilt.
+fn leapfrog_run() -> Run {
+    let (names, inputs) = accounts();
+    let run = rebuild(names, inputs);
     assert_eq!(run.joined, [6, 14]);
     let gallops: Vec<Vec<usize>> = run
         .turns
@@ -240,12 +147,10 @@ fn rebuild(names: Vec<&'static str>, inputs: Vec<Vec<u64>>) -> Run {
             panic!("a turn starts with `==`, not {:?}", log[i]);
         };
         i += 1;
-        let (behind, ahead) = (a.input, b.input);
-        assert_eq!(
-            (a.row, b.row),
-            (cursors[behind], cursors[ahead]),
-            "a turn compares the heads"
-        );
+        let behind = a.input;
+        let ahead = b.input;
+        assert_eq!(a.row, cursors[behind], "a turn compares the heads");
+        assert_eq!(b.row, cursors[ahead], "a turn compares the heads");
         let heads: Vec<u64> = (0..k).map(|n| inputs[n][cursors[n]]).collect();
         assert_eq!(
             heads[behind],
@@ -273,11 +178,8 @@ fn rebuild(names: Vec<&'static str>, inputs: Vec<Vec<u64>>) -> Run {
             let rows = &inputs[behind][from..];
             let mut probes = Vec::new();
             while let Some(&Logged::Lt { a: x, b: y, below }) = log.get(i) {
-                assert_eq!(
-                    (x.input, y),
-                    (behind, b),
-                    "a seek compares its rows with the target"
-                );
+                assert_eq!(x.input, behind, "a seek compares its own rows");
+                assert_eq!(y, b, "a seek compares with the target");
                 probes.push((x.row - from, below));
                 i += 1;
             }
@@ -349,7 +251,8 @@ fn split(probes: Vec<(usize, bool)>, len: usize, landed: usize) -> Seek {
         }
         bound *= 2;
     }
-    let (start, end) = (bound / 2, len.min(bound));
+    let start = bound / 2;
+    let end = len.min(bound);
     let search: Vec<(usize, bool)> = rest.collect();
     assert!(
         search.iter().all(|&(o, _)| (start..end).contains(&o)),
@@ -401,10 +304,7 @@ fn tracks(run: &Run, title: &str) -> Tracks {
         run.names
             .iter()
             .zip(&run.inputs)
-            .map(|(name, keys)| Track {
-                name: name.to_string(),
-                keys: keys.clone(),
-            })
+            .map(|(name, keys)| Track::input(name, keys.clone()))
             .collect(),
     )
 }
@@ -412,13 +312,16 @@ fn tracks(run: &Run, title: &str) -> Tracks {
 /// A frame with nothing on the tracks but their cursors.
 fn bare(cursors: Vec<usize>, joined: &[u64], narration: Rich) -> TracksFrame {
     TracksFrame {
-        cursors,
-        target: None,
-        marks: Vec::new(),
+        cursors: on(cursors),
         joined: joined.to_vec(),
-        panel: Vec::new(),
         narration,
+        ..TracksFrame::default()
     }
+}
+
+/// Every input being read, at these rows.
+pub(super) fn on(cursors: Vec<usize>) -> Vec<Option<usize>> {
+    cursors.into_iter().map(Some).collect()
 }
 
 fn start(run: &Run) -> Rich {
@@ -489,7 +392,7 @@ pub(super) fn leapfrog_turns() -> Figure {
         let joined = joined_by(&run, n);
         let frame = match &t.seek {
             Some(s) => TracksFrame {
-                cursors: t.after(),
+                cursors: on(t.after()),
                 target: Some((t.target, false)),
                 marks: vec![Mark::Jump {
                     track: t.behind,
@@ -497,6 +400,7 @@ pub(super) fn leapfrog_turns() -> Figure {
                     to: t.from() + s.landed,
                 }],
                 joined,
+                heap: None,
                 panel: Vec::new(),
                 narration: who(&run, t)
                     .then(run.name(t.behind))
@@ -505,10 +409,11 @@ pub(super) fn leapfrog_turns() -> Figure {
                     .then("."),
             },
             None => TracksFrame {
-                cursors: t.after(),
+                cursors: on(t.after()),
                 target: Some((t.target, true)),
                 marks: Vec::new(),
                 joined,
+                heap: None,
                 panel: Vec::new(),
                 narration: emits(&run, t),
             },
@@ -609,30 +514,33 @@ pub(super) fn leapfrog_seeks() -> Figure {
         let joined = joined_by(&run, n);
         let Some(s) = &t.seek else {
             d.frame(TracksFrame {
-                cursors: t.after(),
+                cursors: on(t.after()),
                 target: Some((t.target, true)),
                 marks: Vec::new(),
                 joined,
+                heap: None,
                 panel: Vec::new(),
                 narration: emits(&run, t),
             });
             continue;
         };
         d.frame(TracksFrame {
-            cursors: t.cursors.clone(),
+            cursors: on(t.cursors.clone()),
             target: Some((t.target, false)),
             marks: hops(t, s, None),
             joined: joined.clone(),
+            heap: None,
             panel: Vec::new(),
             narration: who(&run, t).then(gallop_said(&run, t, s)),
         });
         let mut marks = vec![stride(t, s)];
         marks.extend(probes(t, s, None));
         d.frame(TracksFrame {
-            cursors: t.after(),
+            cursors: on(t.after()),
             target: Some((t.target, false)),
             marks,
             joined,
+            heap: None,
             panel: Vec::new(),
             narration: search_said(&run, t, s),
         });
@@ -707,10 +615,11 @@ pub(super) fn leapfrog_comparisons() -> Figure {
             val(format!("{head} == {} is {}", t.target, is(equal)))
         ];
         d.frame(TracksFrame {
-            cursors: t.cursors.clone(),
+            cursors: on(t.cursors.clone()),
             target: Some((t.target, equal)),
             marks: Vec::new(),
             joined: before.clone(),
+            heap: None,
             panel: vec![panel.turn(Some(t)), compared],
             narration: who(&run, t).then(if equal {
                 "Its key equals the target, so every input is on it."
@@ -720,10 +629,11 @@ pub(super) fn leapfrog_comparisons() -> Figure {
         });
         let Some(s) = &t.seek else {
             d.frame(TracksFrame {
-                cursors: t.after(),
+                cursors: on(t.after()),
                 target: Some((t.target, true)),
                 marks: Vec::new(),
                 joined: joined_by(&run, n),
+                heap: None,
                 panel: vec![panel.turn(Some(t))],
                 narration: emits(&run, t),
             });
@@ -743,10 +653,11 @@ pub(super) fn leapfrog_comparisons() -> Figure {
         for (j, &(offset, below)) in s.gallop.iter().enumerate() {
             let key = val(run.key(t.behind, t.from() + offset));
             d.frame(TracksFrame {
-                cursors: t.cursors.clone(),
+                cursors: on(t.cursors.clone()),
                 target: Some((t.target, false)),
                 marks: hops(t, s, Some(j)),
                 joined: before.clone(),
+                heap: None,
                 panel: vec![
                     panel.turn(Some(t)),
                     rich![val(format!("bound = {offset}"))],
@@ -777,10 +688,11 @@ pub(super) fn leapfrog_comparisons() -> Figure {
             marks.push(stride(t, s));
             marks.extend(probes(t, s, Some(j)));
             d.frame(TracksFrame {
-                cursors: t.cursors.clone(),
+                cursors: on(t.cursors.clone()),
                 target: Some((t.target, false)),
                 marks,
                 joined: before.clone(),
+                heap: None,
                 panel: vec![panel.turn(Some(t)), panel.seek(s, true), lt(offset, below)],
                 narration: rich![
                     format!("Search: {offset} rows on, "),
@@ -795,10 +707,11 @@ pub(super) fn leapfrog_comparisons() -> Figure {
         marks.push(stride(t, s));
         marks.extend(probes(t, s, None));
         d.frame(TracksFrame {
-            cursors: t.after(),
+            cursors: on(t.after()),
             target: Some((t.target, false)),
             marks,
             joined: before,
+            heap: None,
             panel: vec![
                 panel.turn(Some(t)),
                 panel.seek(s, true),
