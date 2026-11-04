@@ -638,6 +638,18 @@ pub const TABLES: &[Table] = {
             },
         },
         Table {
+            file: "sorted_pair.md",
+            note: None,
+            kind: Kind::Grid {
+                rows: "rows a side",
+                metric: Metric::Time,
+                columns: &[
+                    column("one_to_one", Merge, "merge (sorted input)"),
+                    column("one_to_one", Leapfrog, "leapfrog (sorted input)"),
+                ],
+            },
+        },
+        Table {
             file: "small_side.md",
             note: None,
             kind: Kind::Grid {
@@ -670,6 +682,10 @@ pub const TABLES: &[Table] = {
                     (column("one_to_one", Hash, "hash"), 1 << 20),
                     (column("one_to_one", Merge, "merge (sorted input)"), 1 << 20),
                     (column("one_to_one", SortMerge, "sort-merge"), 1 << 20),
+                    (
+                        column("one_to_one", Leapfrog, "leapfrog (sorted input)"),
+                        1 << 20,
+                    ),
                     (
                         column("one_to_one", NestedLoop, "nested loop, at 64K rows a side"),
                         1 << 16,

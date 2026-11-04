@@ -6,7 +6,8 @@
 //! Each workload makes one tradeoff visible:
 //!
 //! - `one_to_one` is the main case: two inputs of the same size that share
-//!   half their keys, from 1K to 4M rows a side.
+//!   half their keys, from 1K to 4M rows a side. Leapfrog runs on it too, on
+//!   the sorted inputs, to set it beside the merge join at two.
 //! - `small_side` is the one regime where a nested loop can win.
 //! - `hash_variants` shows what the hasher costs.
 //! - `multiway_dense` against `multiway_sparse` shows when a heap pays against
@@ -110,7 +111,7 @@ pub enum Algorithm {
     Heap,
     /// [`baseline::multiway_merge_join_by_scan`].
     Scan,
-    /// `leapfrog_join`.
+    /// `leapfrog_join`; on two inputs, on both sorted, as `Merge` takes them.
     Leapfrog,
     /// `cascade_merge_join` on the inputs smallest first, as a planner with
     /// estimates orders them.
@@ -198,6 +199,9 @@ impl Algorithm {
             (Heap, Prepared::Multi { inputs, .. }) => multiway_merge_join(inputs, |t| out.tuple(t)),
             (Scan, Prepared::Multi { inputs, .. }) => {
                 baseline::multiway_merge_join_by_scan(inputs, |t| out.tuple(t));
+            }
+            (Leapfrog, Prepared::Binary(w)) => {
+                leapfrog_join(&[&w.left_sorted, &w.right_sorted], |t| out.tuple(t));
             }
             (Leapfrog, Prepared::Multi { inputs, .. }) => leapfrog_join(inputs, |t| out.tuple(t)),
             (CascadeUnplanned, Prepared::Multi { inputs, .. }) => {
@@ -309,7 +313,7 @@ const SENTINEL: usize = 1 << 18;
 /// The numbers of inputs the n-way groups join.
 const KS: &[usize] = &[2, 4, 8, 16, 32, 64];
 
-/// Every group, in run order: 106 cases.
+/// Every group, in run order: 113 cases.
 pub const GROUPS: &[Group] = {
     use Algorithm::*;
     use Workload::*;
@@ -324,7 +328,7 @@ pub const GROUPS: &[Group] = {
             name: "one_to_one",
             workload: OneToOne,
             params: &SIZES,
-            algorithms: &[NestedLoop, Hash, HashSorted, Merge, SortMerge],
+            algorithms: &[NestedLoop, Hash, HashSorted, Merge, SortMerge, Leapfrog],
         },
         Group {
             name: "small_side",
@@ -644,6 +648,7 @@ pub fn memory_claim(alg: Algorithm, data: &Data) -> Option<Claim> {
         }
         // Plus the inputs' order in the cycle: 32 B an input.
         (Leapfrog, Data::Multi(w)) => exact(w.inputs.len() * (per_input + size_of::<usize>()), 3),
+        (Leapfrog, Data::Binary(_)) => exact(2 * (per_input + size_of::<usize>()), 3),
         // 24 B an input.
         (Scan, Data::Multi(w)) => exact(w.inputs.len() * per_input, 2),
         _ => None,
@@ -751,7 +756,7 @@ mod tests {
     #[test]
     fn ids_are_unique() {
         let ids: Vec<String> = cases().map(|case| case.to_string()).collect();
-        assert_eq!(ids.len(), 106);
+        assert_eq!(ids.len(), 113);
         assert_eq!(ids.iter().collect::<HashSet<_>>().len(), ids.len());
     }
 
