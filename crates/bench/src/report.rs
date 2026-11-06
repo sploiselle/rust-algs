@@ -14,7 +14,9 @@
 //!   ([`shortened`]), or with a confidence level other than 95%
 //!   (`--allow-stale`);
 //! - memory profiles that are filtered, incomplete, or from another commit or
-//!   rustc (`--allow-stale`), or from a dirty tree (`--allow-dirty`).
+//!   rustc (`--allow-stale`), or from a dirty tree (`--allow-dirty`);
+//! - cache measures from another commit or rustc (`--allow-stale`), or from a
+//!   dirty tree (`--allow-dirty`).
 //!
 //! Rerunning a noisy group at the same commit extends the window, so its new
 //! timings replace the old without invalidating the rest. Under
@@ -31,6 +33,7 @@ use serde::Deserialize;
 use serde::de::DeserializeOwned;
 
 use crate::Row;
+use crate::cache::{self, Cache};
 use crate::cases::{self, Algorithm, Case, Workload};
 use crate::record::{self, Memory, MemoryCase, Run};
 
@@ -98,6 +101,8 @@ pub struct Results {
     /// The run that profiled memory, which the memory tables cite.
     pub memory_run: Option<Run>,
     pub memory: HashMap<Key, MemoryCase>,
+    /// The cache harness's measures, which the cache tables cite.
+    pub cache: Option<Cache>,
     /// The flags that let the report use results it would otherwise refuse.
     pub allowed: Vec<&'static str>,
 }
@@ -107,15 +112,20 @@ pub struct Results {
 enum Source {
     Timings,
     Memory,
+    Cache,
 }
 
 impl Results {
     /// The run `source`'s numbers came from, and when its results start.
     fn cited(&self, source: Source) -> (&Run, u64) {
-        match (source, &self.memory_run) {
-            (Source::Memory, Some(run)) => (run, run.started_unix_ms),
-            _ => (&self.run, self.since_unix_ms),
-        }
+        let run = match source {
+            Source::Timings => None,
+            Source::Memory => self.memory_run.as_ref(),
+            Source::Cache => self.cache.as_ref().map(|cache| &cache.run),
+        };
+        run.map_or((&self.run, self.since_unix_ms), |run| {
+            (run, run.started_unix_ms)
+        })
     }
 
     /// Whether `q` reads a [noisy](Timing::noisy) timing. Memory is
@@ -175,7 +185,7 @@ impl Results {
 pub fn load(options: &Options) -> Result<(Results, Vec<String>), String> {
     let runs = record::read_runs()?;
     let timings = read_timings(&record::target_dir().join("criterion"))?;
-    vouch(options, &runs, timings, read_memory()?)
+    vouch(options, &runs, timings, read_memory()?, read_cache()?)
 }
 
 /// Checks the results against the run log, refusing what `options` doesn't
@@ -189,6 +199,7 @@ pub fn vouch(
     runs: &[Run],
     timings: HashMap<Key, Timing>,
     memory: Option<Memory>,
+    cache: Option<Cache>,
 ) -> Result<(Results, Vec<String>), String> {
     let window = window(runs);
     let (Some(first), Some(latest)) = (window.first(), window.last()) else {
@@ -247,6 +258,13 @@ pub fn vouch(
             record::memory_path().display()
         )),
     }
+    match &cache {
+        Some(cache) => check_cache(cache, latest, &mut problems),
+        None => problems.stale(format!(
+            "no cache measures at {}: run `cargo bench -p bench --bench cache`",
+            record::cache_path().display()
+        )),
+    }
     let (warnings, allowed) = problems.into_result()?;
 
     let (memory_run, memory) = match memory {
@@ -259,6 +277,7 @@ pub fn vouch(
         timings,
         memory_run,
         memory,
+        cache,
         allowed,
     };
     Ok((results, warnings))
@@ -387,6 +406,21 @@ fn check_memory(memory: &Memory, latest: &Run, problems: &mut Problems) {
             "the memory profiles ran at {} with {}, the timings at {} with {}",
             short(&memory.run.commit),
             memory.run.rustc,
+            short(&latest.commit),
+            latest.rustc
+        ));
+    }
+}
+
+fn check_cache(cache: &Cache, latest: &Run, problems: &mut Problems) {
+    if cache.run.dirty {
+        problems.dirty("the cache measures ran on a dirty tree".to_owned());
+    }
+    if (&cache.run.commit, &cache.run.rustc) != (&latest.commit, &latest.rustc) {
+        problems.stale(format!(
+            "the cache measures ran at {} with {}, the timings at {} with {}",
+            short(&cache.run.commit),
+            cache.run.rustc,
             short(&latest.commit),
             latest.rustc
         ));
@@ -544,6 +578,17 @@ fn read_json<T: DeserializeOwned>(path: &Path) -> Result<T, String> {
 /// The memory harness's output, if it has run.
 fn read_memory() -> Result<Option<Memory>, String> {
     let path = record::memory_path();
+    match fs::read(&path) {
+        Ok(json) => serde_json::from_slice(&json)
+            .map(Some)
+            .map_err(|err| format!("parsing {}: {err}", path.display())),
+        Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(err) => Err(format!("reading {}: {err}", path.display())),
+    }
+}
+
+fn read_cache() -> Result<Option<Cache>, String> {
+    let path = record::cache_path();
     match fs::read(&path) {
         Ok(json) => serde_json::from_slice(&json)
             .map(Some)
@@ -798,6 +843,12 @@ pub fn render(results: &Results) -> Vec<(String, String)> {
         .iter()
         .map(|table| (table.file.to_owned(), table.render(results)))
         .collect();
+    files.extend(
+        results
+            .cache
+            .as_ref()
+            .map_or(Vec::new(), |cache| cache_tables(results, cache)),
+    );
     files.push(("all.md".to_owned(), all(results)));
     files.push(("facts.md".to_owned(), facts(results)));
     files
@@ -869,6 +920,140 @@ impl Table {
             }
         }
     }
+}
+
+/// The tables on why the hash join's cost per row climbs: its loops, what it
+/// reads, what a read costs, how many reach DRAM, and what those predict.
+fn cache_tables(results: &Results, cache: &Cache) -> Vec<(String, String)> {
+    let run = &cache.run;
+    let from = format!(
+        "{}, macOS {}, {}, rust-algs {}.",
+        run.cpu,
+        run.os,
+        rustc(&run.rustc),
+        sha(run)
+    );
+    let file = |name: &str, header: &[&str], rows: Vec<Vec<String>>, what: String| {
+        let header: Vec<String> = header.iter().map(|&cell| cell.to_owned()).collect();
+        let body = markdown(&header, header.len() - 1, rows);
+        let caption = format!("{what} {from}");
+        let page = page(name, results, Source::Cache, &body, &caption);
+        (format!("{name}.md"), page)
+    };
+    let (l2, line) = (cache.l2_bytes, cache.line_bytes);
+    let modelled = || cache.phases.iter().filter(|p| p.rows_a_side >= cache::FLAT);
+    let label = |p: &cache::Phases| param_label(p.rows_a_side);
+    let reads = |p: &cache::Phases| cache::dram_reads(p.rows_a_side, l2, line);
+
+    let phases = cache.phases.iter().map(|p| {
+        let cells = [p.build_ns, p.probe_ns, p.whole_ns].map(sig3);
+        [vec![label(p)], cells.to_vec()].concat()
+    });
+    let footprints = cache.phases.iter().map(|p| {
+        let size = cache::footprint(p.rows_a_side);
+        let cells = [size.control, size.buckets, size.rows, l2].map(|b| bytes(b as u64));
+        [vec![label(p)], cells.to_vec()].concat()
+    });
+    let costs = cache.reads.iter().map(|r| {
+        let cells = [r.chased_ns, r.overlapped_ns, r.paged_ns].map(sig3);
+        [vec![param_label(r.bytes)], cells.to_vec()].concat()
+    });
+    let dram = modelled().map(|p| {
+        let r = reads(p);
+        let cells = [r.control, r.buckets, r.rows, r.total()].map(|x| format!("{x:.2}"));
+        [vec![label(p)], cells.to_vec()].concat()
+    });
+    let flat = modelled().next();
+    let predicted = modelled().map(|p| {
+        let (base, base_reads) = flat.map_or((0.0, 0.0), |f| (f.whole_ns, reads(f).total()));
+        let added = reads(p).total() - base_reads;
+        let across = cache::footprint(p.rows_a_side).total();
+        let (low, high) = cache
+            .reads
+            .iter()
+            .find(|r| r.bytes >= across)
+            .or(cache.reads.last())
+            .map_or((0.0, 0.0), |r| (r.paged_ns, r.overlapped_ns));
+        let cells = [base + added * low, base + added * high, p.whole_ns].map(sig3);
+        [vec![label(p)], cells.to_vec()].concat()
+    });
+
+    let first = param_label(cache::FLAT);
+    vec![
+        file(
+            "hash_phases",
+            &["rows a side", "build", "probe", "whole join"],
+            phases.collect(),
+            "Median of at least 30 calls, in ns per input row, counting both sides together, \
+             2n. A clock reads between the hash join's two loops; the whole join also allocates \
+             and frees its table."
+                .to_owned(),
+        ),
+        file(
+            "hash_footprint",
+            &[
+                "rows a side",
+                "control bytes",
+                "buckets",
+                "build rows",
+                "L2 cache",
+            ],
+            footprints.collect(),
+            "What the hash join reads at random: its table's control bytes and buckets, and the \
+             build rows its buckets point to. The rows it scans are read in order. The L2 cache \
+             is what this machine reports."
+                .to_owned(),
+        ),
+        file(
+            "read_cost",
+            &[
+                "working set",
+                "one at a time",
+                "overlapped",
+                "overlapped, few pages",
+            ],
+            costs.collect(),
+            format!(
+                "Median of five runs, in ns per read of a {line}-byte cache line in random \
+                 order. One at a time, each read's address comes from the last. Overlapped, \
+                 addresses come from a list, so the core runs as many as it can at once. Few \
+                 pages reads the same lines 1 MiB at a time, so hardly a read misses the TLB."
+            ),
+        ),
+        file(
+            "hash_reads",
+            &[
+                "rows a side",
+                "control bytes",
+                "buckets",
+                "build rows",
+                "all reads",
+            ],
+            dram.collect(),
+            format!(
+                "Reads per input row that reach DRAM, modelled, not measured: uniform random \
+                 reads of each structure, half the keys matching, in an LRU cache of {} and \
+                 {line}-byte lines, by Che's approximation.",
+                bytes(l2 as u64)
+            ),
+        ),
+        file(
+            "hash_predicted",
+            &[
+                "rows a side",
+                "predicted, low",
+                "predicted, high",
+                "measured",
+            ],
+            predicted.collect(),
+            format!(
+                "In ns per input row. Predicted is the whole join measured at {first} rows a \
+                 side, plus each modelled DRAM read past that point at the cost of an overlapped \
+                 read across the join's own footprint: low without TLB misses, high with them. \
+                 Measured is the whole join."
+            ),
+        ),
+    ]
 }
 
 /// What a cell shows for a case that should have a result and doesn't.
@@ -1553,10 +1738,12 @@ fn thousands(digits: &str) -> String {
 pub fn bytes(n: u64) -> String {
     const KIB: u64 = 1 << 10;
     const MIB: u64 = 1 << 20;
+    const GIB: u64 = 1 << 30;
     match n {
         0..KIB => format!("{} B", count(n)),
         KIB..MIB => format!("{} KiB", sig3(n as f64 / KIB as f64)),
-        _ => format!("{} MiB", sig3(n as f64 / MIB as f64)),
+        MIB..GIB => format!("{} MiB", sig3(n as f64 / MIB as f64)),
+        _ => format!("{} GiB", sig3(n as f64 / GIB as f64)),
     }
 }
 
@@ -1571,11 +1758,14 @@ pub fn duration(ns: f64) -> String {
     format!("{} {unit}", sig3(value))
 }
 
-/// A parameter as a row label: 64 for 64, 1K for 1,024, 4M for 4,194,304.
+/// A parameter as a row label: 64 for 64, 1K for 1,024, 4M for 4,194,304, 2G
+/// for 2,147,483,648.
 pub fn param_label(param: usize) -> String {
     const K: usize = 1 << 10;
     const M: usize = 1 << 20;
+    const G: usize = 1 << 30;
     match param {
+        p if p >= G && p % G == 0 => format!("{}G", p / G),
         p if p >= M && p % M == 0 => format!("{}M", p / M),
         p if p >= K && p % K == 0 => format!("{}K", p / K),
         p => p.to_string(),
@@ -1696,6 +1886,32 @@ mod tests {
     }
 
     /// Timing results at commit `aaaaaaa`, and nothing else.
+    fn cache(run: Run) -> Cache {
+        let phases = |rows_a_side, whole_ns| cache::Phases {
+            rows_a_side,
+            build_ns: whole_ns / 3.0,
+            probe_ns: whole_ns * 2.0 / 3.0,
+            whole_ns,
+        };
+        let cost = |bytes, ns| cache::ReadCost {
+            bytes,
+            chased_ns: 20.0 * ns,
+            overlapped_ns: ns,
+            paged_ns: ns - 1.0,
+        };
+        Cache {
+            run,
+            l2_bytes: 20 << 20,
+            line_bytes: 128,
+            phases: vec![
+                phases(1 << 16, 3.0),
+                phases(1 << 18, 4.0),
+                phases(1 << 26, 15.0),
+            ],
+            reads: vec![cost(1 << 20, 2.0), cost(1 << 31, 5.0)],
+        }
+    }
+
     fn results(timings: HashMap<Key, Timing>) -> Results {
         Results {
             run: run("joins", 0, "aaaaaaa000", false, RUSTC),
@@ -1703,6 +1919,7 @@ mod tests {
             timings,
             memory_run: None,
             memory: HashMap::new(),
+            cache: None,
             allowed: Vec::new(),
         }
     }
@@ -1773,6 +1990,7 @@ mod tests {
         );
         let rerun = joins(3000, &["small_side", "--bench"]);
         let profiles = || Some(memory(run("memory", 900, "aaaaaaa000", false, RUSTC)));
+        let measures = || Some(cache(run("cache", 900, "aaaaaaa000", false, RUSTC)));
         let small: Vec<Case> = cases::group("small_side").cases().take(3).collect();
 
         let mut timings = every_timing(1500);
@@ -1781,7 +1999,8 @@ mod tests {
                 &STRICT,
                 std::slice::from_ref(&full),
                 timings.clone(),
-                profiles()
+                profiles(),
+                measures()
             )
             .is_ok()
         );
@@ -1791,7 +2010,7 @@ mod tests {
             timings.insert(key(case), timing(2500));
         }
         let runs = [full.clone(), smoke.clone()];
-        let Err(refused) = vouch(&STRICT, &runs, timings.clone(), profiles()) else {
+        let Err(refused) = vouch(&STRICT, &runs, timings.clone(), profiles(), measures()) else {
             panic!("a smoke run's timings passed");
         };
         for case in &small {
@@ -1802,13 +2021,23 @@ mod tests {
         for case in &small {
             timings.insert(key(case), timing(3500));
         }
-        assert!(vouch(&STRICT, &[full, smoke, rerun], timings, profiles()).is_ok());
+        assert!(
+            vouch(
+                &STRICT,
+                &[full, smoke, rerun],
+                timings,
+                profiles(),
+                measures()
+            )
+            .is_ok()
+        );
     }
 
     #[test]
     fn refuses_a_confidence_level_other_than_95_percent() {
         let full = run("joins", 1000, "aaaaaaa000", false, RUSTC);
         let profiles = Some(memory(run("memory", 900, "aaaaaaa000", false, RUSTC)));
+        let measures = Some(cache(run("cache", 900, "aaaaaaa000", false, RUSTC)));
         let mut timings = every_timing(1500);
         let case = cases::cases().next().unwrap();
         timings.insert(
@@ -1818,7 +2047,7 @@ mod tests {
                 ..timing(1500)
             },
         );
-        let Err(refused) = vouch(&STRICT, &[full], timings, profiles) else {
+        let Err(refused) = vouch(&STRICT, &[full], timings, profiles, measures) else {
             panic!("a 99% interval passed");
         };
         assert!(refused.contains(&case.to_string()), "{refused}");
@@ -1906,6 +2135,56 @@ mod tests {
         assert!(memory.contains("bbbbbbb") && !memory.contains("aaaaaaa"));
         assert!(files["facts.md"].contains("memory profiles at rust-algs bbbbbbb"));
         assert!(!files["one_to_one.md"].contains("bbbbbbb"));
+    }
+
+    #[test]
+    fn cache_tables_cite_the_cache_run() {
+        let mut results = results(every_timing(0));
+        results.cache = Some(cache(run("cache", 0, "ccccccc000", false, RUSTC)));
+        let files = render(&results);
+        for name in [
+            "hash_phases",
+            "hash_footprint",
+            "read_cost",
+            "hash_reads",
+            "hash_predicted",
+        ] {
+            let (_, page) = files
+                .iter()
+                .find(|(file, _)| file == &format!("{name}.md"))
+                .unwrap_or_else(|| panic!("no {name}"));
+            assert!(page.contains("rust-algs ccccccc"), "{page}");
+        }
+    }
+
+    #[test]
+    fn the_prediction_starts_at_the_flat_join_and_stays_in_its_band() {
+        let mut results = results(every_timing(0));
+        results.cache = Some(cache(run("cache", 0, "ccccccc000", false, RUSTC)));
+        let files = render(&results);
+        let (_, page) = files
+            .iter()
+            .find(|(file, _)| file == "hash_predicted.md")
+            .expect("a prediction");
+        assert!(page.contains("| 256K | 4.00 | 4.00 | 4.00 |"), "{page}");
+        let last = page.lines().find(|l| l.starts_with("| 64M")).expect("64M");
+        let cells: Vec<f64> = last
+            .split('|')
+            .filter_map(|cell| cell.trim().parse().ok())
+            .collect();
+        assert!(cells[0] < cells[1], "{last}");
+    }
+
+    #[test]
+    fn refuses_cache_measures_from_another_commit() {
+        let joins = run("joins", 0, "aaaaaaa000", false, RUSTC);
+        let timings = every_timing(1);
+        let memory = memory(run("memory", 0, "aaaaaaa000", false, RUSTC));
+        let other = cache(run("cache", 0, "bbbbbbb000", false, RUSTC));
+        let Err(refused) = vouch(&STRICT, &[joins], timings, Some(memory), Some(other)) else {
+            panic!("accepted measures from another commit");
+        };
+        assert!(refused.contains("the cache measures ran at"), "{refused}");
     }
 
     #[test]

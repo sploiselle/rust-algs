@@ -530,7 +530,7 @@ pub enum Prepared<'w> {
 
 /// Bytes per bucket in the hash join's table: a `(&key, &row)` entry, and
 /// hashbrown's control byte.
-const BUCKET: usize = size_of::<(&u64, &Row)>() + 1;
+pub const BUCKET: usize = size_of::<(&u64, &Row)>() + 1;
 
 /// Control bytes hashbrown adds past the last bucket, one per lane of its
 /// group: 8 on aarch64, 16 on x86, so a claim allows up to 16.

@@ -7,6 +7,7 @@
 //! cargo bench -p bench                           # time every case, then profile its memory
 //! cargo bench -p bench --bench joins -- <group>  # rerun one group's timings
 //! cargo bench -p bench --bench memory            # only the memory profiles
+//! cargo bench -p bench --bench cache             # only the hash join's cache costs
 //! cargo run -p bench --release                   # the tables
 //! ```
 //!
@@ -60,6 +61,7 @@ use serde::{Deserialize, Serialize};
 
 pub mod alloc;
 pub mod baseline;
+pub mod cache;
 pub mod cases;
 pub mod record;
 pub mod report;

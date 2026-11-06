@@ -62,7 +62,7 @@ pub fn has_flag(args: &[String], flag: &str) -> bool {
 /// What `program` printed, trimmed, or `None` if it couldn't run or failed.
 /// It runs in this package's directory, so git sees this repository whatever
 /// the caller's working directory.
-fn output(program: &str, args: &[&str]) -> Option<String> {
+pub(crate) fn output(program: &str, args: &[&str]) -> Option<String> {
     let out = Command::new(program)
         .args(args)
         .current_dir(env!("CARGO_MANIFEST_DIR"))
@@ -105,6 +105,11 @@ pub fn runs_path() -> PathBuf {
 /// The memory harness's output.
 pub fn memory_path() -> PathBuf {
     bench_dir().join("memory.json")
+}
+
+/// The cache harness's output.
+pub fn cache_path() -> PathBuf {
+    bench_dir().join("cache.json")
 }
 
 /// Appends `run` to the run log.

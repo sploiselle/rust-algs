@@ -250,6 +250,12 @@ about 32 MiB, as generated and sorted. Leapfrog reads only about 0.5% of
 in cache. Every instance is checked before it's timed; the memory harness
 profiles each case's first instance alone.
 
+A third target, `cache`, measures why the hash join's cost per row climbs: it
+times the join's two loops apart from 64K rows a side to 64M, and what a read
+costs across working sets to 2 GiB, one at a time and overlapped. The tables
+set those beside a model of how many of the join's reads reach DRAM. It needs
+about 7 GiB free at its largest size.
+
 The tables cite the commit they ran at, so commit first. Then, on AC power
 with other apps closed:
 
