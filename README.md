@@ -253,8 +253,11 @@ profiles each case's first instance alone.
 A third target, `cache`, measures why the hash join's cost per row climbs: it
 times the join's two loops apart from 64K rows a side to 64M, and what a read
 costs across working sets to 2 GiB, one at a time and overlapped. The tables
-set those beside a model of how many of the join's reads reach DRAM. It needs
-about 7 GiB free at its largest size.
+set those beside a model of how many of the join's reads reach DRAM. It also
+times the join with hashers that run more instructions, and with keys hashed
+in batches before their lookups, and counts the instructions each retires, to
+show why a slow hasher costs more past L2. It needs about 7 GiB free at its
+largest size.
 
 The tables cite the commit they ran at, so commit first. Then, on AC power
 with other apps closed:

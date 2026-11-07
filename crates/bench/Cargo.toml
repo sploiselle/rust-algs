@@ -16,6 +16,10 @@ bench = false
 [dependencies]
 algs = { path = "../algs" }
 foldhash = "0.2"
+# HashTable takes a hash the caller computed, for the batched join.
+hashbrown = { version = "0.17", default-features = false, features = ["inline-more"] }
+# proc_pid_rusage, for the instructions a join retires.
+libc = "0.2"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 

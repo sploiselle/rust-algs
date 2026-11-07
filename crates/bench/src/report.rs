@@ -978,6 +978,30 @@ fn cache_tables(results: &Results, cache: &Cache) -> Vec<(String, String)> {
         [vec![label(p)], cells.to_vec()].concat()
     });
 
+    // A row per size the hashers ran at, a column per hashing.
+    let hashings = cache::HASHINGS.map(cache::Hashing::label);
+    let mut sizes: Vec<usize> = cache.hashers.iter().map(|h| h.rows_a_side).collect();
+    sizes.dedup();
+    let by_hashing = |value: fn(&cache::HasherCost) -> f64| -> Vec<Vec<String>> {
+        sizes
+            .iter()
+            .map(|&n| {
+                let cells = hashings.iter().map(|&hashing| {
+                    cache
+                        .hashers
+                        .iter()
+                        .find(|h| h.rows_a_side == n && h.hashing == hashing)
+                        .map_or(MISSING.to_owned(), |h| sig3(value(h)))
+                });
+                [param_label(n)].into_iter().chain(cells).collect()
+            })
+            .collect()
+    };
+    let hasher_header: Vec<&str> = ["rows a side"].into_iter().chain(hashings).collect();
+    let hashed = "foldhash + 16 or 32 rounds mixes each hash that many more times, adding \
+                  instructions but not reads. 16 or 256 at a time hashes that many keys before \
+                  it inserts or looks up any of them.";
+
     let first = param_label(cache::FLAT);
     vec![
         file(
@@ -1051,6 +1075,33 @@ fn cache_tables(results: &Results, cache: &Cache) -> Vec<(String, String)> {
                  side, plus each modelled DRAM read past that point at the cost of an overlapped \
                  read across the join's own footprint: low without TLB misses, high with them. \
                  Measured is the whole join."
+            ),
+        ),
+        file(
+            "hash_hashers",
+            &hasher_header,
+            by_hashing(|h| h.ns),
+            format!(
+                "Median of at least 30 calls, in ns per input row, counting both sides \
+                 together, 2n. {hashed}"
+            ),
+        ),
+        file(
+            "hash_instructions",
+            &hasher_header,
+            by_hashing(|h| h.instructions),
+            format!(
+                "Median instructions retired per input row over the same calls, as the \
+                 kernel counts them for the process. {hashed}"
+            ),
+        ),
+        file(
+            "hash_per_instruction",
+            &hasher_header,
+            by_hashing(|h| h.ns / h.instructions),
+            format!(
+                "Each call's median time over its median instructions, in ns per \
+                 instruction. {hashed}"
             ),
         ),
     ]
@@ -1909,6 +1960,17 @@ mod tests {
                 phases(1 << 26, 15.0),
             ],
             reads: vec![cost(1 << 20, 2.0), cost(1 << 31, 5.0)],
+            hashers: [1 << 14, 1 << 22]
+                .into_iter()
+                .flat_map(|rows_a_side| {
+                    cache::HASHINGS.map(|hashing| cache::HasherCost {
+                        rows_a_side,
+                        hashing: hashing.label().to_owned(),
+                        ns: 10.0,
+                        instructions: 40.0,
+                    })
+                })
+                .collect(),
         }
     }
 
@@ -2148,6 +2210,9 @@ mod tests {
             "read_cost",
             "hash_reads",
             "hash_predicted",
+            "hash_hashers",
+            "hash_instructions",
+            "hash_per_instruction",
         ] {
             let (_, page) = files
                 .iter()
@@ -2173,6 +2238,33 @@ mod tests {
             .filter_map(|cell| cell.trim().parse().ok())
             .collect();
         assert!(cells[0] < cells[1], "{last}");
+    }
+
+    #[test]
+    fn the_hasher_tables_have_a_column_per_hashing() {
+        let mut results = results(every_timing(0));
+        results.cache = Some(cache(run("cache", 0, "ccccccc000", false, RUSTC)));
+        let files = render(&results);
+        let page = |name: &str| {
+            files
+                .iter()
+                .find(|(file, _)| file == &format!("{name}.md"))
+                .map(|(_, page)| page.clone())
+                .unwrap_or_else(|| panic!("no {name}"))
+        };
+        let times = page("hash_hashers");
+        assert!(
+            times.contains(
+                "| rows a side | foldhash | foldhash + 16 rounds | foldhash + 32 rounds | \
+                 SipHash | SipHash, 16 at a time | SipHash, 256 at a time | \
+                 foldhash, 256 at a time |"
+            ),
+            "{times}"
+        );
+        assert!(times.contains("| 16K | 10.0 |"), "{times}");
+        assert!(times.contains("| 4M | 10.0 |"), "{times}");
+        assert!(page("hash_instructions").contains("| 4M | 40.0 |"));
+        assert!(page("hash_per_instruction").contains("| 4M | 0.250 |"));
     }
 
     #[test]

@@ -79,6 +79,8 @@ dependencies = [
  "algs",
  "criterion",
  "foldhash",
+ "hashbrown",
+ "libc",
  "serde",
  "serde_json",
 ]
@@ -378,6 +380,12 @@ checksum = "b0c35f58762feb77d74ebe43bdbc3210f09be9fe6742234d573bacc26ed92b67"
 dependencies = [
  "byteorder",
 ]
+
+[[package]]
+name = "hashbrown"
+version = "0.17.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a"
 
 [[package]]
 name = "heapless"
