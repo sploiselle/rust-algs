@@ -417,6 +417,13 @@ pub fn timed_hash_join<S: Sink>(
     (built - start, built.elapsed())
 }
 
+/// A join's two sides and how many pairs it emits.
+struct Sides {
+    left: Vec<Row>,
+    right: Vec<Row>,
+    expected: u64,
+}
+
 /// `probe`'s rows, those whose key `build` holds first, each part in its
 /// original order.
 pub fn matches_first(build: &[Row], probe: &[Row]) -> Vec<Row> {
@@ -437,11 +444,25 @@ pub fn matches_first(build: &[Row], probe: &[Row]) -> Vec<Row> {
 /// If a call emits the wrong number of pairs.
 pub fn time_phases(rows_a_side: usize) -> Phases {
     let instances = cases::rotation(2 * rows_a_side as u64);
+    // Only the sides, and the probe side reordered: at 64M rows a side the
+    // sorted copies would hold 2 GiB more, enough to page.
     let inputs: Vec<_> = (0..instances)
         .map(|i| {
-            let input = workload::one_to_one(rows_a_side, i);
-            let grouped = matches_first(&input.left, &input.right);
-            (input, grouped)
+            let workload::Binary {
+                left,
+                right,
+                expected,
+                ..
+            } = workload::one_to_one(rows_a_side, i);
+            let grouped = matches_first(&left, &right);
+            (
+                Sides {
+                    left,
+                    right,
+                    expected,
+                },
+                grouped,
+            )
         })
         .collect();
     let mut next = inputs.iter().cycle();
