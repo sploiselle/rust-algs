@@ -6,7 +6,7 @@
 //! Each workload makes one tradeoff visible:
 //!
 //! - `one_to_one` is the main case: two inputs of the same size that share
-//!   half their keys, from 1K to 4M rows a side. Leapfrog runs on it too, on
+//!   half their keys, from 1K to 64M rows a side. Leapfrog runs on it too, on
 //!   the sorted inputs, to set it beside the merge join at two.
 //! - `small_side` is the one regime where a nested loop can win.
 //! - `hash_variants` shows what the hasher costs.
@@ -40,8 +40,10 @@ use foldhash::fast::FixedState;
 use crate::alloc::Usage;
 use crate::{Checksum, Row, Sink, baseline, workload};
 
-/// The input sizes of the binary groups: 1K to 4M rows, by fours.
-pub const SIZES: [usize; 7] = [
+/// The input sizes of the binary groups: 1K to 64M rows, by fours. The
+/// largest are far past L2, to show where the hash join's climb takes it
+/// against sort-merge.
+pub const SIZES: [usize; 9] = [
     1 << 10,
     1 << 12,
     1 << 14,
@@ -49,6 +51,8 @@ pub const SIZES: [usize; 7] = [
     1 << 18,
     1 << 20,
     1 << 22,
+    1 << 24,
+    1 << 26,
 ];
 
 /// How long criterion warms each case up.
@@ -313,7 +317,7 @@ const SENTINEL: usize = 1 << 18;
 /// The numbers of inputs the n-way groups join.
 const KS: &[usize] = &[2, 4, 8, 16, 32, 64];
 
-/// Every group, in run order: 113 cases.
+/// Every group, in run order: 123 cases.
 pub const GROUPS: &[Group] = {
     use Algorithm::*;
     use Workload::*;
@@ -756,7 +760,7 @@ mod tests {
     #[test]
     fn ids_are_unique() {
         let ids: Vec<String> = cases().map(|case| case.to_string()).collect();
-        assert_eq!(ids.len(), 113);
+        assert_eq!(ids.len(), 123);
         assert_eq!(ids.iter().collect::<HashSet<_>>().len(), ids.len());
     }
 
