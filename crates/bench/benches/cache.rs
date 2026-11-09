@@ -19,8 +19,8 @@ fn main() {
     let measured = cache::measure(run, &SIZES, &WORKING_SETS, &HASHER_SIZES);
     for p in &measured.phases {
         println!(
-            "{:>9} rows a side: build {:5.2}, probe {:5.2}, whole {:5.2} ns per input row",
-            p.rows_a_side, p.build_ns, p.probe_ns, p.whole_ns
+            "{:>9} rows a side: build {:5.2}, probe {:5.2} ({:5.2} matches first), whole {:5.2} ns per input row",
+            p.rows_a_side, p.build_ns, p.probe_ns, p.grouped_probe_ns, p.whole_ns
         );
     }
     for r in &measured.reads {

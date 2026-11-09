@@ -6,7 +6,8 @@
 //! Once those structures outgrow L2, some of the reads reach DRAM, and more of
 //! them the larger the structures are:
 //!
-//! - [`time_phases`] times the join's build and probe loops apart;
+//! - [`time_phases`] times the join's build and probe loops apart, and the
+//!   probe loop again with its matching rows first;
 //! - [`time_reads`] measures what a read costs, one at a time and overlapped;
 //! - [`dram_reads`] models how many reads reach DRAM at each size.
 //!
@@ -88,6 +89,11 @@ pub struct Phases {
     pub rows_a_side: usize,
     pub build_ns: f64,
     pub probe_ns: f64,
+    /// The probe loop on the same rows, the ones that match first. It does the
+    /// same work, but whether a row matches is no longer a coin toss, so the
+    /// branch on it is predicted, where the main order misses about every
+    /// other row.
+    pub grouped_probe_ns: f64,
     /// The whole call, with allocating and freeing its table.
     pub whole_ns: f64,
 }
@@ -411,9 +417,20 @@ pub fn timed_hash_join<S: Sink>(
     (built - start, built.elapsed())
 }
 
+/// `probe`'s rows, those whose key `build` holds first, each part in its
+/// original order.
+pub fn matches_first(build: &[Row], probe: &[Row]) -> Vec<Row> {
+    let held: std::collections::HashSet<u64> = build.iter().map(|row| row.0).collect();
+    let (mut first, rest): (Vec<Row>, Vec<Row>) =
+        probe.iter().partition(|row| held.contains(&row.0));
+    first.extend(rest);
+    first
+}
+
 /// Times the hash join's loops at `rows_a_side`, on the main case's inputs and
 /// its rotation, for the same time as a criterion case and at least as many
-/// samples.
+/// samples. Each sample is two calls: one on the input, and one on it with the
+/// probe side's matching rows first, of which only the probe loop counts.
 ///
 /// # Panics
 ///
@@ -421,11 +438,15 @@ pub fn timed_hash_join<S: Sink>(
 pub fn time_phases(rows_a_side: usize) -> Phases {
     let instances = cases::rotation(2 * rows_a_side as u64);
     let inputs: Vec<_> = (0..instances)
-        .map(|i| workload::one_to_one(rows_a_side, i))
+        .map(|i| {
+            let input = workload::one_to_one(rows_a_side, i);
+            let grouped = matches_first(&input.left, &input.right);
+            (input, grouped)
+        })
         .collect();
     let mut next = inputs.iter().cycle();
     let mut call = || {
-        let input = next.next().expect("a case has an instance");
+        let (input, grouped) = next.next().expect("a case has an instance");
         let mut tally = Tally::default();
         let start = Instant::now();
         let (build, probe) = timed_hash_join(
@@ -436,7 +457,18 @@ pub fn time_phases(rows_a_side: usize) -> Phases {
         );
         let whole = start.elapsed();
         assert_eq!(tally.tuples, input.expected, "at {rows_a_side} rows a side");
-        [build, probe, whole].map(|time| time.as_nanos() as f64)
+        let mut tally = Tally::default();
+        let (_, grouped_probe) = timed_hash_join(
+            black_box(&input.left),
+            black_box(grouped),
+            FixedState::default(),
+            &mut tally,
+        );
+        assert_eq!(
+            tally.tuples, input.expected,
+            "at {rows_a_side} rows a side, matches first"
+        );
+        [build, probe, whole, grouped_probe].map(|time| time.as_nanos() as f64)
     };
     (0..instances).for_each(|_| {
         call();
@@ -454,6 +486,7 @@ pub fn time_phases(rows_a_side: usize) -> Phases {
         rows_a_side,
         build_ns: per_row(0),
         probe_ns: per_row(1),
+        grouped_probe_ns: per_row(3),
         whole_ns: per_row(2),
     }
 }
@@ -620,6 +653,23 @@ mod tests {
 
     const L2: usize = 20 << 20;
     const LINE: usize = 128;
+
+    #[test]
+    fn matches_first_keeps_every_row_and_puts_the_matches_first() {
+        let input = workload::one_to_one(1 << 10, 0);
+        let grouped = matches_first(&input.left, &input.right);
+        let held: std::collections::HashSet<u64> = input.left.iter().map(|row| row.0).collect();
+        let matched = grouped
+            .iter()
+            .take_while(|row| held.contains(&row.0))
+            .count();
+        assert_eq!(matched as u64, input.expected);
+        assert!(grouped[matched..].iter().all(|row| !held.contains(&row.0)));
+        let (mut a, mut b) = (grouped, input.right.clone());
+        a.sort_unstable();
+        b.sort_unstable();
+        assert_eq!(a, b);
+    }
 
     #[test]
     fn the_clocked_join_matches_the_join() {

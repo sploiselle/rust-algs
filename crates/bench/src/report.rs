@@ -946,7 +946,7 @@ fn cache_tables(results: &Results, cache: &Cache) -> Vec<(String, String)> {
     let reads = |p: &cache::Phases| cache::dram_reads(p.rows_a_side, l2, line);
 
     let phases = cache.phases.iter().map(|p| {
-        let cells = [p.build_ns, p.probe_ns, p.whole_ns].map(sig3);
+        let cells = [p.build_ns, p.probe_ns, p.grouped_probe_ns, p.whole_ns].map(sig3);
         [vec![label(p)], cells.to_vec()].concat()
     });
     let footprints = cache.phases.iter().map(|p| {
@@ -1006,11 +1006,18 @@ fn cache_tables(results: &Results, cache: &Cache) -> Vec<(String, String)> {
     vec![
         file(
             "hash_phases",
-            &["rows a side", "build", "probe", "whole join"],
+            &[
+                "rows a side",
+                "build",
+                "probe",
+                "probe, matches first",
+                "whole join",
+            ],
             phases.collect(),
             "Median of at least 30 calls, in ns per input row, counting both sides together, \
              2n. A clock reads between the hash join's two loops; the whole join also allocates \
-             and frees its table."
+             and frees its table. Probe, matches first, is the probe loop of a second call, on \
+             the same rows with those that match moved to the front."
                 .to_owned(),
         ),
         file(
@@ -1942,6 +1949,7 @@ mod tests {
             rows_a_side,
             build_ns: whole_ns / 3.0,
             probe_ns: whole_ns * 2.0 / 3.0,
+            grouped_probe_ns: whole_ns / 2.0,
             whole_ns,
         };
         let cost = |bytes, ns| cache::ReadCost {
