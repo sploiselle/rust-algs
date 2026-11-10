@@ -14,7 +14,7 @@
 //! measured is some other machine's: [`Evidence::unsteady`]. Such a target
 //! counts as out of date.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -149,6 +149,10 @@ pub struct Written<T> {
 pub struct Evidence {
     /// The run log, oldest first.
     pub runs: Vec<Run>,
+    /// The commits in the log that aren't in the history of what's checked
+    /// out: amended or rebased away, or on another branch. A table can't cite
+    /// one: nobody could find it.
+    pub unreachable: HashSet<String>,
     pub timings: HashMap<Key, Timing>,
     pub memory: Option<Written<Memory>>,
     pub phases: Option<Written<PhasesPart>>,
@@ -163,8 +167,16 @@ pub struct Evidence {
 ///
 /// If one can't be read.
 pub fn gather() -> Result<Evidence, String> {
+    let runs = record::read_runs()?;
+    let commits: HashSet<&String> = runs.iter().map(|run| &run.commit).collect();
+    let unreachable = commits
+        .into_iter()
+        .filter(|commit| !in_history(commit))
+        .cloned()
+        .collect();
     Ok(Evidence {
-        runs: record::read_runs()?,
+        runs,
+        unreachable,
         timings: read_timings(&paths::criterion_dir())?,
         memory: read_written(&paths::memory_path())?,
         phases: read_written(&bench_cache::part_path("phases"))?,
@@ -172,6 +184,16 @@ pub fn gather() -> Result<Evidence, String> {
         hashers: read_written(&bench_cache::part_path("hashers"))?,
         absent: read_written(&bench_cache::part_path("absent"))?,
     })
+}
+
+/// Whether `commit` is the commit checked out, or one of its ancestors.
+fn in_history(commit: &str) -> bool {
+    Command::new("git")
+        .args(["merge-base", "--is-ancestor", commit, "HEAD"])
+        .current_dir(paths::workspace())
+        .stderr(Stdio::null())
+        .status()
+        .is_ok_and(|status| status.success())
 }
 
 /// The JSON file at `path` and when it was written, if it exists and is in

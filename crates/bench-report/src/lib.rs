@@ -291,7 +291,7 @@ pub fn vouch(
             evidence::Kind::Cache => format!("the {} measures", target.name),
         };
         let run = cite(
-            &evidence.runs,
+            &evidence,
             &target.name,
             &target.binary,
             &what,
@@ -338,27 +338,32 @@ pub fn vouch(
 }
 
 /// The run a table of `target`'s results cites: the oldest clean run of
-/// `binary`, whose commit is the first known to hold the code that built it.
-/// A later run of the same binary ran the same code, whatever its commit. If
-/// only dirty trees have run it, no commit is known to hold that code, which
-/// `what` is told.
-fn cite<'r>(
-    runs: &'r [Run],
+/// `binary` at a commit in this checkout's history, which is the first
+/// commit here known to hold the code that built it. A later run of the same
+/// binary ran the same code, whatever its commit. If no such run exists,
+/// because only dirty trees have run it, or only commits since amended away,
+/// no commit here is known to hold that code, which `what` is told.
+fn cite<'e>(
+    evidence: &'e Evidence,
     target: &str,
     binary: &str,
     what: &str,
     problems: &mut Problems,
-) -> Option<&'r Run> {
-    let mut of_binary = runs
+) -> Option<&'e Run> {
+    let mut of_binary = evidence
+        .runs
         .iter()
         .filter(|run| run.target == target && run.binary == binary);
-    let clean = of_binary.clone().find(|run| !run.dirty);
-    if clean.is_none() && of_binary.next().is_some() {
+    let citable = of_binary
+        .clone()
+        .find(|run| !run.dirty && !evidence.unreachable.contains(&run.commit));
+    if citable.is_none() && of_binary.next().is_some() {
         problems.dirty(format!(
-            "{what} came from a binary only dirty trees have run, so no commit holds its code"
+            "{what} came from a binary no clean tree in this history has run, so no commit \
+             here holds its code"
         ));
     }
-    clean
+    citable
 }
 
 /// Notes the timings of `group` that criterion didn't sample as the captions
@@ -2141,6 +2146,7 @@ mod tests {
         };
         Evidence {
             runs,
+            unreachable: Default::default(),
             timings,
             memory: Some(Written {
                 value: memory(),
@@ -2426,12 +2432,27 @@ mod tests {
     }
 
     #[test]
+    fn never_cites_a_commit_that_left_the_history() {
+        // The first clean run was at a commit since amended away.
+        let mut runs = log(1000, "9999999000", false);
+        runs.extend(log(2000, "bbbbbbb000", false));
+        let mut evidence = evidence(runs, every_timing(2500), 2500);
+        evidence.unreachable.insert("9999999000".to_owned());
+        let (results, _) =
+            vouch(&STRICT, &targets(), evidence).expect("a later clean run is still here");
+        assert!(results.cited.values().all(|run| run.commit == "bbbbbbb000"));
+    }
+
+    #[test]
     fn a_binary_only_dirty_trees_ran_cites_no_commit() {
         let dirty = || evidence(log(1000, "aaaaaaa000", true), every_timing(1500), 1500);
         let Err(refused) = vouch(&STRICT, &targets(), dirty()) else {
             panic!("cited a commit for a dirty tree's binary");
         };
-        assert!(refused.contains("only dirty trees have run"), "{refused}");
+        assert!(
+            refused.contains("no clean tree in this history"),
+            "{refused}"
+        );
         let allowed = Options {
             allow_dirty: true,
             ..STRICT
