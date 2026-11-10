@@ -270,7 +270,8 @@ many of the join's reads reach DRAM. The largest sizes need about 7 GiB free.
 
 ### Running them
 
-On AC power with other apps closed:
+On AC power, with other apps closed, and away from the machine: start it and
+leave, or from a terminal rather than an app that redraws as it runs.
 
 ```bash
 cargo run -p bench-report --release -- run
@@ -285,6 +286,29 @@ tables into `target/bench/tables/` (pass `--out <dir>` to write somewhere
 else). The tables cite the commit their numbers were measured at, so commit
 before running: results from a dirty tree cite no commit, and the tables
 refuse them.
+
+### A quiet machine
+
+macOS can't pin a thread to a core or keep other work off the cores that
+share its L2, so the only isolation here is a machine doing nothing else, and
+the runner checks for it. Every target times two sentinels before its first
+measure and after its last: random reads across 8 MiB, which L2 holds, and
+across 32 MiB, which it doesn't. The narrow one moves with the clock: a core
+pushed to a slower mode takes two to six times as long. The wide one moves
+with what else is running. With an editor and a chat app open, the hash join
+past L2 ran 7 to 17% slower, the wide sentinel 9% and the narrow one 2%; while
+something compiled, the join and the wide sentinel took about 2.5 times as
+long and the narrow one didn't move. Left alone, the wide sentinel stays
+within about 1%.
+
+A target whose sentinel moved while it ran, or read slower than the fastest
+this machine has on record, is rerun, up to three times, and the tables
+refuse its results until a run passes. The record is
+`target/bench/sentinels.jsonl`, a line for every run, so a whole run on a
+busy machine is caught too, not only one target that differs from the rest.
+A filtered rerun times the sentinels like any other. If the machine itself
+changes speed for good, the record keeps only lines with the same CPU and
+macOS version; failing that, delete the file.
 
 ### What reruns
 

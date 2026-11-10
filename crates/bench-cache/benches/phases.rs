@@ -1,12 +1,11 @@
 //! Times the hash join's two loops apart: see [`bench_cache::time_phases`].
 
 use bench_cache::{
-    PhasesPart, SIZES, Sentinel, benching, l2_bytes, line_bytes, sentinel_ns, time_phases,
-    write_part,
+    PhasesPart, SIZES, Sentinels, benching, l2_bytes, line_bytes, time_phases, write_part,
 };
 
 fn main() {
-    let start_ns = sentinel_ns();
+    let started = Sentinels::start();
     let sizes = if benching() { &SIZES[..] } else { &SIZES[..1] };
     let phases: Vec<_> = sizes.iter().map(|&n| time_phases(n)).collect();
     for p in &phases {
@@ -21,20 +20,12 @@ fn main() {
             p.probe_instructions
         );
     }
-    let sentinel = Sentinel {
-        start_ns,
-        end_ns: sentinel_ns(),
-    };
-    println!(
-        "sentinel: {:.1} µs before, {:.1} µs after",
-        sentinel.start_ns / 1e3,
-        sentinel.end_ns / 1e3
-    );
+    let sentinels = started.finish();
     if benching() {
         write_part(
             "phases",
             &PhasesPart {
-                sentinel,
+                sentinels,
                 l2_bytes: l2_bytes(),
                 line_bytes: line_bytes(),
                 phases,

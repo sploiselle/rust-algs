@@ -195,44 +195,91 @@ pub struct HasherCost {
 /// its own, so changing one reruns only it.
 pub const PARTS: [&str; 4] = ["phases", "reads", "hashers", "absent"];
 
-/// The same work timed before a target measured anything and after it
-/// finished, each the median in ns a call: see [`sentinel_ns`].
+/// One sentinel, timed before a target measured anything and after it
+/// finished, each the median in ns a call.
 #[derive(Serialize, Deserialize, Clone, Copy, Debug)]
 pub struct Sentinel {
     pub start_ns: f64,
     pub end_ns: f64,
 }
 
-/// Lines the sentinel reads across: 8 MiB of `u64`s, which L2 holds.
-const SENTINEL_WORDS: usize = 1 << 20;
-/// Reads a call of the sentinel makes.
-const SENTINEL_READS: u64 = 1 << 18;
+/// Both [sentinels](harness::Sentinel) of a target: fixed work that is no
+/// measure's, the same as the timing binaries time
+/// (`crates/bench/benches/support/timing.rs`), so the report can set every
+/// target's beside the others'. If a target's two timings of one differ, or
+/// both are slow beside other targets', the machine wasn't steady or wasn't
+/// quiet while it ran, and the report refuses its measures.
+#[derive(Serialize, Deserialize, Clone, Copy, Debug)]
+pub struct Sentinels {
+    pub narrow: Sentinel,
+    pub wide: Sentinel,
+}
 
-/// Times the sentinel: work that is no measure's, whose time moves with the
-/// machine's speed and with what else is using the cache. It is the timing
-/// binaries' sentinel (`crates/bench/benches/support/timing.rs`), random
-/// reads across L2 each mixed into a sum, so the report can set every
-/// target's beside the others'. A target times it first and last; if the two
-/// differ, or both are slow beside other targets', the machine wasn't steady
-/// while it ran, and the report refuses its measures.
-pub fn sentinel_ns() -> f64 {
-    let words: Vec<u64> = (0..SENTINEL_WORDS as u64).map(bench::mix).collect();
-    let call = || {
-        let words = black_box(&words);
-        (0..SENTINEL_READS).fold(0u64, |sum, i| {
-            sum.wrapping_add(words[bench::mix(i) as usize & (SENTINEL_WORDS - 1)])
-        })
-    };
-    // As long as criterion warms a case up, and about as long as it measures one.
+impl Sentinels {
+    pub fn of(self, sentinel: harness::Sentinel) -> Sentinel {
+        match sentinel {
+            harness::Sentinel::Narrow => self.narrow,
+            harness::Sentinel::Wide => self.wide,
+        }
+    }
+}
+
+/// The sentinels as timed before a target's first measure.
+pub struct Started {
+    narrow_ns: f64,
+    wide_ns: f64,
+}
+
+impl Sentinels {
+    /// Times both, before a target's first measure.
+    #[inline]
+    pub fn start() -> Started {
+        Started {
+            narrow_ns: sentinel_ns(harness::Sentinel::Narrow),
+            wide_ns: sentinel_ns(harness::Sentinel::Wide),
+        }
+    }
+}
+
+impl Started {
+    /// Times both again, after a target's last measure, and prints the four.
+    #[inline]
+    pub fn finish(self) -> Sentinels {
+        let sentinels = Sentinels {
+            narrow: Sentinel {
+                start_ns: self.narrow_ns,
+                end_ns: sentinel_ns(harness::Sentinel::Narrow),
+            },
+            wide: Sentinel {
+                start_ns: self.wide_ns,
+                end_ns: sentinel_ns(harness::Sentinel::Wide),
+            },
+        };
+        for (name, s) in [("narrow", sentinels.narrow), ("wide", sentinels.wide)] {
+            println!(
+                "{name} sentinel: {:.1} µs before, {:.1} µs after",
+                s.start_ns / 1e3,
+                s.end_ns / 1e3
+            );
+        }
+        sentinels
+    }
+}
+
+/// The median time of a call of `sentinel`, in ns, after as long a warm-up
+/// as criterion gives a case and about as long a measurement.
+#[inline]
+fn sentinel_ns(sentinel: harness::Sentinel) -> f64 {
+    let mut work = sentinel.work();
     let warm = Instant::now();
     while warm.elapsed() < harness::WARM_UP {
-        black_box(call());
+        black_box(work.call());
     }
     let start = Instant::now();
     let mut samples = Vec::new();
     while start.elapsed() < harness::MEASUREMENT {
         let call_start = Instant::now();
-        black_box(call());
+        black_box(work.call());
         samples.push(call_start.elapsed().as_nanos() as f64);
     }
     median(&mut samples)
@@ -241,7 +288,7 @@ pub fn sentinel_ns() -> f64 {
 /// What the `phases` target wrote.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct PhasesPart {
-    pub sentinel: Sentinel,
+    pub sentinels: Sentinels,
     pub l2_bytes: usize,
     pub line_bytes: usize,
     pub phases: Vec<Phases>,
@@ -250,7 +297,7 @@ pub struct PhasesPart {
 /// What the `reads` target wrote.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct ReadsPart {
-    pub sentinel: Sentinel,
+    pub sentinels: Sentinels,
     pub line_bytes: usize,
     pub reads: Vec<ReadCost>,
     pub worked_reads: Vec<WorkedRead>,
@@ -259,14 +306,14 @@ pub struct ReadsPart {
 /// What the `hashers` target wrote.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct HashersPart {
-    pub sentinel: Sentinel,
+    pub sentinels: Sentinels,
     pub hashers: Vec<HasherCost>,
 }
 
 /// What the `absent` target wrote.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct AbsentPart {
-    pub sentinel: Sentinel,
+    pub sentinels: Sentinels,
     pub absent: Vec<AbsentProbe>,
 }
 

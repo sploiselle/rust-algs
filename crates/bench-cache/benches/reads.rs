@@ -2,12 +2,12 @@
 //! [`bench_cache::time_worked_reads`].
 
 use bench_cache::{
-    ReadsPart, Sentinel, WORKING_SETS, benching, line_bytes, sentinel_ns, time_reads,
-    time_worked_reads, write_part,
+    ReadsPart, Sentinels, WORKING_SETS, benching, line_bytes, time_reads, time_worked_reads,
+    write_part,
 };
 
 fn main() {
-    let start_ns = sentinel_ns();
+    let started = Sentinels::start();
     let line_bytes = line_bytes();
     let sets = if benching() {
         &WORKING_SETS[..]
@@ -36,20 +36,12 @@ fn main() {
             w.rounds, w.instructions, w.l2_ns, w.dram_ns
         );
     }
-    let sentinel = Sentinel {
-        start_ns,
-        end_ns: sentinel_ns(),
-    };
-    println!(
-        "sentinel: {:.1} µs before, {:.1} µs after",
-        sentinel.start_ns / 1e3,
-        sentinel.end_ns / 1e3
-    );
+    let sentinels = started.finish();
     if benching() {
         write_part(
             "reads",
             &ReadsPart {
-                sentinel,
+                sentinels,
                 line_bytes,
                 reads,
                 worked_reads,

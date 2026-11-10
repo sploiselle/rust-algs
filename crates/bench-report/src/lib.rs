@@ -48,6 +48,7 @@ use serde::de::DeserializeOwned;
 
 use bench::Row;
 use bench::harness;
+use bench::harness::Sentinel;
 use bench_cache as cache;
 use bench_plan::cases::{self, Algorithm, Case, Workload};
 pub use bench_plan::fmt::{bytes, count, sig3};
@@ -63,7 +64,7 @@ use record::Run;
 /// The criterion version the timings were taken with, for captions.
 const CRITERION: &str = "criterion 0.8.2";
 
-pub use evidence::DRIFT_LIMIT;
+pub use evidence::{BUSY_LIMIT, DRIFT_LIMIT};
 
 /// What the report CLI was asked to do.
 pub struct Options {
@@ -600,14 +601,14 @@ fn read_json<T: DeserializeOwned>(path: &Path) -> Result<T, String> {
     serde_json::from_slice(&json).map_err(|err| format!("parsing {}: {err}", path.display()))
 }
 
-/// How far the machine's speed moved while each group ran: |end / start − 1|
-/// for its sentinel, the same work timed before the group's first case and
-/// after its last. A group whose sentinel has no timing is left out.
-pub fn drifts(results: &Results) -> Vec<(&'static str, f64)> {
+/// How far `sentinel` moved while each group ran: |end / start − 1|, the
+/// same work timed before the group's first case and after its last. A group
+/// whose sentinel has no timing is left out.
+pub fn drifts(results: &Results, sentinel: Sentinel) -> Vec<(&'static str, f64)> {
     cases::GROUPS
         .iter()
         .filter_map(|group| {
-            let [start, end] = evidence::sentinel_keys(group.name);
+            let [start, end] = evidence::sentinel_keys(group.name, sentinel);
             let median = |key: &Key| Some(results.timings.get(key)?.median_ns);
             Some((group.name, (median(&end)? / median(&start)? - 1.0).abs()))
         })
@@ -615,8 +616,8 @@ pub fn drifts(results: &Results) -> Vec<(&'static str, f64)> {
 }
 
 /// The largest of the groups' [`drifts`].
-pub fn drift(results: &Results) -> Option<f64> {
-    drifts(results)
+pub fn drift(results: &Results, sentinel: Sentinel) -> Option<f64> {
+    drifts(results, sentinel)
         .into_iter()
         .map(|(_, drift)| drift)
         .max_by(f64::total_cmp)
@@ -1469,8 +1470,8 @@ pub enum Value {
         faster: Algorithm,
         slower: Algorithm,
     },
-    /// The largest of the groups' sentinel drifts: see [`drifts`].
-    Drift,
+    /// The largest of the groups' drifts of one sentinel: see [`drifts`].
+    Drift(Sentinel),
 }
 
 /// A measure of one case.
@@ -1712,7 +1713,8 @@ pub const FACTS: &[Fact] = {
             "heap_over_leapfrog_selective_1M",
             ratio("multiway_selective", Heap, Leapfrog, M1),
         ),
-        fact("sentinel_drift", Value::Drift),
+        fact("sentinel_drift", Value::Drift(Sentinel::Narrow)),
+        fact("wide_sentinel_drift", Value::Drift(Sentinel::Wide)),
     ]
 };
 
@@ -1721,7 +1723,7 @@ impl Fact {
     fn timed(&self) -> Vec<(&'static str, Algorithm, usize)> {
         let quantities = match &self.value {
             Value::Ratio(a, b) => vec![a, b],
-            Value::Drift => vec![],
+            Value::Drift(_) => vec![],
             Value::Single(a) => vec![a],
             Value::Crossover {
                 group,
@@ -1772,10 +1774,14 @@ impl Fact {
                 let id = |alg: &Algorithm| format!("{group}/{}/{param} median", alg.name());
                 ([value, id(faster), id(slower)], unsure)
             }
-            Value::Drift => {
-                let value = drift(results)
+            Value::Drift(sentinel) => {
+                let value = drift(results, *sentinel)
                     .map_or_else(missing, |drift| format!("{}%", sig3(drift * 100.0)));
-                let over = "the largest drift of any group's sentinel".to_owned();
+                let over = match sentinel {
+                    Sentinel::Narrow => "the largest drift of any group's sentinel",
+                    Sentinel::Wide => "the largest drift of any group's wide sentinel",
+                }
+                .to_owned();
                 ([value, over, "—".to_owned()], false)
             }
         }
@@ -1867,9 +1873,10 @@ fn facts(results: &Results) -> String {
         })
         .collect();
     let what = "Each value is the numerator's measure over the denominator's, or the \
-                numerator's alone where there's no denominator. The drift is the largest \
+                numerator's alone where there's no denominator. A drift is the largest \
                 |end / start − 1| of any group's sentinel, the same work timed before the \
-                group's first case and after its last, and a crossover the smallest parameter from which the \
+                group's first case and after its last: random reads across 8 MiB, which L2 \
+                holds, and for the wide sentinel across 32 MiB, which it doesn't. A crossover is the smallest parameter from which the \
                 numerator is faster than the denominator at every larger one, or the range it \
                 lies in where their confidence intervals overlap. Times are from";
     let reads = reads(results, FACTS.iter().flat_map(Fact::timed));
@@ -1964,6 +1971,7 @@ fn date(unix_ms: u64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::record::Checked;
     use bench_plan::alloc::Usage;
     use bench_plan::profile::Memory;
     use evidence::{Kind as TargetKind, Written};
@@ -2135,18 +2143,30 @@ mod tests {
         }
     }
 
+    /// A cache measure's sentinels, each reading the same before and after.
+    fn steady(narrow_ns: f64, wide_ns: f64) -> cache::Sentinels {
+        let both = |ns| cache::Sentinel {
+            start_ns: ns,
+            end_ns: ns,
+        };
+        cache::Sentinels {
+            narrow: both(narrow_ns),
+            wide: both(wide_ns),
+        }
+    }
+
     /// The run log `runs`, `timings`, and every other result written at
     /// `written_unix_ms`.
     fn evidence(runs: Vec<Run>, timings: HashMap<Key, Timing>, written_unix_ms: u64) -> Evidence {
         let cache = cache();
         // As steady as the timings' sentinels, which `timing` makes 1,000 ns.
-        let sentinel = cache::Sentinel {
-            start_ns: 1000.0,
-            end_ns: 1000.0,
-        };
+        let sentinels = steady(1000.0, 1000.0);
         Evidence {
             runs,
             unreachable: Default::default(),
+            checked: Vec::new(),
+            cpu: "a cpu".to_owned(),
+            os: "an os".to_owned(),
             timings,
             memory: Some(Written {
                 value: memory(),
@@ -2154,7 +2174,7 @@ mod tests {
             }),
             phases: Some(Written {
                 value: cache::PhasesPart {
-                    sentinel,
+                    sentinels,
                     l2_bytes: cache.l2_bytes,
                     line_bytes: cache.line_bytes,
                     phases: cache.phases,
@@ -2163,7 +2183,7 @@ mod tests {
             }),
             reads: Some(Written {
                 value: cache::ReadsPart {
-                    sentinel,
+                    sentinels,
                     line_bytes: cache.line_bytes,
                     reads: cache.reads,
                     worked_reads: cache.worked_reads,
@@ -2172,14 +2192,14 @@ mod tests {
             }),
             hashers: Some(Written {
                 value: cache::HashersPart {
-                    sentinel,
+                    sentinels,
                     hashers: cache.hashers,
                 },
                 written_unix_ms,
             }),
             absent: Some(Written {
                 value: cache::AbsentPart {
-                    sentinel,
+                    sentinels,
                     absent: cache.absent,
                 },
                 written_unix_ms,
@@ -2253,7 +2273,7 @@ mod tests {
         for fact in FACTS {
             let quantities = match &fact.value {
                 Value::Ratio(a, b) => vec![a, b],
-                Value::Drift => vec![],
+                Value::Drift(_) => vec![],
                 Value::Single(a) => vec![a],
                 Value::Crossover { .. } => vec![],
             };
@@ -2298,6 +2318,117 @@ mod tests {
         assert_eq!(stale, ["small_side", "absent"]);
     }
 
+    /// The names of the targets that are out of date.
+    fn out_of_date(evidence: &Evidence) -> Vec<String> {
+        targets()
+            .iter()
+            .filter(|target| !evidence::out_of_date(target, evidence).is_empty())
+            .map(|target| target.name.clone())
+            .collect()
+    }
+
+    /// Why the target called `name` is out of date.
+    fn why(evidence: &Evidence, name: &str) -> String {
+        let target = targets().into_iter().find(|t| t.name == name).unwrap();
+        evidence::out_of_date(&target, evidence).join("; ")
+    }
+
+    #[test]
+    fn a_target_that_ran_on_a_busy_machine_is_out_of_date() {
+        let mut evidence = evidence(log(1000, "aaaaaaa000", false), every_timing(1500), 1500);
+        assert!(out_of_date(&evidence).is_empty());
+
+        // Something else started reading memory while small_side ran: its
+        // narrow sentinel, inside L2, never moved, and its wide one did.
+        let [_, end] = evidence::sentinel_keys("small_side", Sentinel::Wide);
+        evidence.timings.insert(end, around(1100.0, 1500));
+        // both_small ran on a machine in use from start to finish.
+        for key in evidence::sentinel_keys("both_small", Sentinel::Wide) {
+            evidence.timings.insert(key, around(1130.0, 1500));
+        }
+        // 4% is within what a quiet machine does; 2.5 times is a compile.
+        evidence.hashers.as_mut().unwrap().value.sentinels = steady(1000.0, 1040.0);
+        evidence.absent.as_mut().unwrap().value.sentinels = steady(1000.0, 2500.0);
+        assert_eq!(
+            out_of_date(&evidence),
+            ["small_side", "both_small", "absent"]
+        );
+        assert!(
+            why(&evidence, "small_side").contains("reads past L2 moved 10%"),
+            "{}",
+            why(&evidence, "small_side")
+        );
+        assert!(
+            why(&evidence, "both_small").contains("1.13 times the fastest on record"),
+            "{}",
+            why(&evidence, "both_small")
+        );
+        assert!(
+            why(&evidence, "absent").contains("2.50 times"),
+            "{}",
+            why(&evidence, "absent")
+        );
+    }
+
+    #[test]
+    fn a_whole_run_on_a_busy_machine_is_set_beside_the_sentinel_log() {
+        // Every target's results agree with every other's, so nothing on
+        // disk says the machine was busy.
+        let mut evidence = evidence(log(1000, "aaaaaaa000", false), every_timing(1500), 1500);
+        assert!(out_of_date(&evidence).is_empty());
+
+        // But an earlier run of one group read past L2 a tenth faster.
+        let earlier = |cpu: &str, os: &str| Checked {
+            target: "one_to_one".to_owned(),
+            started_unix_ms: 500,
+            cpu: cpu.to_owned(),
+            os: os.to_owned(),
+            narrow: (1000.0, 1000.0),
+            wide: (900.0, 900.0),
+        };
+        // On another machine, or this one under another system, it says
+        // nothing about this one.
+        evidence.checked = vec![
+            earlier("another cpu", "an os"),
+            earlier("a cpu", "another os"),
+        ];
+        assert!(out_of_date(&evidence).is_empty());
+
+        // On this one, every timing group ran busy. The cache measures are
+        // timed another way, and are set beside their own.
+        evidence.checked.push(earlier("a cpu", "an os"));
+        let groups: Vec<String> = cases::GROUPS.iter().map(|g| g.name.to_owned()).collect();
+        assert_eq!(out_of_date(&evidence), groups);
+        assert!(
+            why(&evidence, "small_side").contains("1.11 times the fastest on record"),
+            "{}",
+            why(&evidence, "small_side")
+        );
+    }
+
+    #[test]
+    fn a_target_s_sentinels_make_a_line_of_the_sentinel_log() {
+        let mut evidence = evidence(log(1000, "aaaaaaa000", false), every_timing(1500), 1500);
+        let [start, _] = evidence::sentinel_keys("one_to_one", Sentinel::Wide);
+        evidence.timings.insert(start, around(3000.0, 1500));
+        assert_eq!(
+            evidence.checked(evidence::Kind::Timing, "one_to_one", 1000),
+            Some(Checked {
+                target: "one_to_one".to_owned(),
+                started_unix_ms: 1000,
+                cpu: "a cpu".to_owned(),
+                os: "an os".to_owned(),
+                narrow: (1000.0, 1000.0),
+                wide: (3000.0, 1000.0),
+            })
+        );
+        // The memory profiles time no sentinel.
+        assert_eq!(
+            evidence.checked(evidence::Kind::Memory, "memory", 1000),
+            None
+        );
+    }
+
     #[test]
     fn a_target_that_ran_on_an_unsteady_machine_is_out_of_date() {
         let mut evidence = evidence(log(1000, "aaaaaaa000", false), every_timing(1500), 1500);
@@ -2311,23 +2442,17 @@ mod tests {
         assert!(unsteady(&evidence).is_empty());
 
         // The machine slowed while one_to_one ran: its sentinel ends slower.
-        let [_, end] = evidence::sentinel_keys("one_to_one");
+        let [_, end] = evidence::sentinel_keys("one_to_one", Sentinel::Narrow);
         evidence.timings.insert(end, around(1900.0, 1500));
         // multiway_dense ran slow from start to finish: no drift of its own,
         // but six times the other groups' sentinels.
-        for key in evidence::sentinel_keys("multiway_dense") {
+        for key in evidence::sentinel_keys("multiway_dense", Sentinel::Narrow) {
             evidence.timings.insert(key, around(6000.0, 1500));
         }
         // A cache measure 8% slower than the others is within what a steady
         // machine does; one 20% slower isn't.
-        evidence.hashers.as_mut().unwrap().value.sentinel = cache::Sentinel {
-            start_ns: 1080.0,
-            end_ns: 1080.0,
-        };
-        evidence.absent.as_mut().unwrap().value.sentinel = cache::Sentinel {
-            start_ns: 1200.0,
-            end_ns: 1200.0,
-        };
+        evidence.hashers.as_mut().unwrap().value.sentinels = steady(1080.0, 1000.0);
+        evidence.absent.as_mut().unwrap().value.sentinels = steady(1200.0, 1000.0);
         assert_eq!(
             unsteady(&evidence),
             ["one_to_one", "multiway_dense", "absent"]

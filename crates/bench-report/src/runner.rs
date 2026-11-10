@@ -12,9 +12,12 @@
 //! hash.
 //!
 //! It also keeps the machine awake while a target runs, and reruns a target
-//! whose sentinel says the machine changed speed under it: an unattended Mac
-//! can push a long job to a slower mode for minutes at a time, and timings
-//! taken then are no use.
+//! whose sentinels say the machine changed speed under it or was busy with
+//! something else: an unattended Mac can push a long job to a slower mode for
+//! minutes at a time, and a Mac in use reads past L2 a tenth slower, or
+//! several times slower while something compiles. Timings taken then are no
+//! use. It logs what the sentinels read on every run, so a later run is set
+//! beside the fastest this machine has read, not only beside what's on disk.
 
 use std::process::Command;
 
@@ -93,12 +96,15 @@ pub fn run(request: &Request) -> Result<(), String> {
 /// machine.
 const ATTEMPTS: usize = 3;
 
-/// Runs `target` until the machine was steady while it ran, at most
-/// [`ATTEMPTS`] times: see [`evidence::Evidence::unsteady`].
+/// Runs `target` until the machine was steady and quiet while it ran, at
+/// most [`ATTEMPTS`] times: see [`evidence::Evidence::unsteady`].
 fn steadily(target: &Target, args: &[String]) -> Result<(), String> {
     for attempt in 1..=ATTEMPTS {
-        start(target, args)?;
+        let started_unix_ms = start(target, args)?;
         let evidence = evidence::gather()?;
+        if let Some(checked) = evidence.checked(target.kind, &target.name, started_unix_ms) {
+            record::append_checked(&checked)?;
+        }
         let Some(why) = evidence.unsteady(target.kind, &target.name) else {
             return Ok(());
         };
@@ -113,8 +119,8 @@ fn steadily(target: &Target, args: &[String]) -> Result<(), String> {
 }
 
 /// Logs a run of `target` and runs it with `args`, as `cargo bench` would:
-/// in its package's directory, with `--bench`.
-fn start(target: &Target, args: &[String]) -> Result<(), String> {
+/// in its package's directory, with `--bench`. Returns when the run started.
+fn start(target: &Target, args: &[String]) -> Result<u64, String> {
     let run = Run::now(&target.name, &target.binary, args);
     if run.dirty {
         println!(
@@ -143,7 +149,7 @@ fn start(target: &Target, args: &[String]) -> Result<(), String> {
         .status()
         .map_err(|err| format!("running {}: {err}", target.executable.display()))?;
     if status.success() {
-        Ok(())
+        Ok(run.started_unix_ms)
     } else {
         Err(format!("{} failed: {status}", target.name))
     }

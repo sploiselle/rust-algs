@@ -16,9 +16,10 @@
 
 use std::process::ExitCode;
 
+use bench::harness::Sentinel;
 use bench_plan::paths;
 use bench_report::runner::{self, Request};
-use bench_report::{self as report, DRIFT_LIMIT, Options};
+use bench_report::{self as report, BUSY_LIMIT, DRIFT_LIMIT, Options};
 
 const USAGE: &str = "usage: cargo run -p bench-report --release -- run [--all] [--only \
                      TARGET,...] [--list] [-- ARGS]\n       cargo run -p bench-report --release \
@@ -91,19 +92,24 @@ fn tables(options: &Options) -> Result<(), String> {
         .map_err(|err| format!("writing {}: {err}", options.out.display()))?;
     println!("wrote {} files to {}", written.len(), options.out.display());
 
-    for (group, drift) in report::drifts(&results) {
-        if drift > DRIFT_LIMIT {
-            println!(
-                "{group}: sentinel drift {}%, over {}%: the machine's speed changed while it \
-                 ran, so rerun it with `run --only {group}`",
-                report::sig3(drift * 100.0),
-                DRIFT_LIMIT * 100.0
-            );
+    for (sentinel, name, limit) in [
+        (Sentinel::Narrow, "sentinel", DRIFT_LIMIT),
+        (Sentinel::Wide, "wide sentinel", BUSY_LIMIT),
+    ] {
+        for (group, drift) in report::drifts(&results, sentinel) {
+            if drift > limit {
+                println!(
+                    "{group}: {name} drift {}%, over {}%: the machine changed while it ran, so \
+                     rerun it with `run --only {group}`",
+                    report::sig3(drift * 100.0),
+                    limit * 100.0
+                );
+            }
         }
-    }
-    match report::drift(&results) {
-        Some(drift) => println!("largest sentinel drift {}%", report::sig3(drift * 100.0)),
-        None => println!("sentinel drift unknown: no sentinel has a timing"),
+        match report::drift(&results, sentinel) {
+            Some(drift) => println!("largest {name} drift {}%", report::sig3(drift * 100.0)),
+            None => println!("{name} drift unknown: no {name} has a timing"),
+        }
     }
     let noisy = report::noisy(&results);
     if !noisy.is_empty() {

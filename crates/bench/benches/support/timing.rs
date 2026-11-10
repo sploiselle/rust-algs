@@ -30,7 +30,7 @@
 
 use std::hint::black_box;
 
-use bench::harness::{self, Data, Prepared};
+use bench::harness::{self, Data, Prepared, Sentinel};
 use bench::{Checksum, Tally};
 use criterion::{BenchmarkId, Criterion, SamplingMode, Throughput};
 
@@ -79,15 +79,21 @@ macro_rules! group {
 }
 
 /// Times every case of `spec` with criterion, after checking it, between two
-/// timings of the [`sentinel`].
+/// timings of each [sentinel](harness::Sentinel).
 pub fn run(spec: &Spec) {
-    let mut c = Criterion::default()
-        .warm_up_time(harness::WARM_UP)
-        .measurement_time(harness::MEASUREMENT)
-        .sample_size(harness::SAMPLES)
-        .without_plots()
-        .configure_from_args();
-    sentinel(&mut c, spec.name, "start");
+    let configured = || {
+        Criterion::default()
+            .warm_up_time(harness::WARM_UP)
+            .measurement_time(harness::MEASUREMENT)
+            .sample_size(harness::SAMPLES)
+            .without_plots()
+            .configure_from_args()
+    };
+    let mut c = configured();
+    // The sentinels run whatever filter the cases run under: a rerun of one
+    // case needs to know what machine it ran on as much as a whole run does.
+    let mut unfiltered = configured().with_filter("");
+    sentinels(&mut unfiltered, spec.name, "start");
     let mut g = c.benchmark_group(spec.name);
     g.sampling_mode(SamplingMode::Flat);
     // Parameters outermost, so each one's instances are built once and freed
@@ -120,31 +126,21 @@ pub fn run(spec: &Spec) {
         }
     }
     g.finish();
-    sentinel(&mut c, spec.name, "end");
+    sentinels(&mut unfiltered, spec.name, "end");
     c.final_summary();
 }
 
-/// Lines the sentinel reads across: 8 MiB of `u64`s, which L2 holds.
-const SENTINEL_WORDS: usize = 1 << 20;
-/// Reads a call of the sentinel makes.
-const SENTINEL_READS: u64 = 1 << 18;
-
-/// Times the same work as the group's first case and its last, under
-/// `<group>_sentinel/<edge>`, so the report can tell whether the machine sped
-/// up or slowed down while the group ran. The work is no join's: random reads
-/// across L2, each mixed into a sum, which moves with the clock's speed and
-/// with what else is using the cache, as the joins' times do.
-fn sentinel(c: &mut Criterion, group: &str, edge: &str) {
-    let words: Vec<u64> = (0..SENTINEL_WORDS as u64).map(bench::mix).collect();
-    let mut g = c.benchmark_group(format!("{group}_sentinel"));
-    g.sampling_mode(SamplingMode::Flat);
-    g.bench_function(BenchmarkId::new(edge, SENTINEL_WORDS), |b| {
-        b.iter(|| {
-            let words = black_box(&words);
-            (0..SENTINEL_READS).fold(0u64, |sum, i| {
-                sum.wrapping_add(words[bench::mix(i) as usize & (SENTINEL_WORDS - 1)])
-            })
+/// Times each [sentinel](harness::Sentinel) under
+/// `<group>_<its suffix>/<edge>/<its words>`: `start` before the group's
+/// first case, `end` after its last.
+fn sentinels(c: &mut Criterion, group: &str, edge: &str) {
+    for sentinel in Sentinel::ALL {
+        let mut work = sentinel.work();
+        let mut g = c.benchmark_group(format!("{group}_{}", sentinel.suffix()));
+        g.sampling_mode(SamplingMode::Flat);
+        g.bench_function(BenchmarkId::new(edge, sentinel.words()), |b| {
+            b.iter(|| work.call());
         });
-    });
-    g.finish();
+        g.finish();
+    }
 }

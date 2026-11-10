@@ -52,12 +52,22 @@ impl Run {
             dirty: output("git", &["status", "--porcelain", "--untracked-files=no"])
                 .is_none_or(|changes| !changes.is_empty()),
             rustc: output("rustc", &["-V"]).unwrap_or_else(unknown),
-            cpu: output("sysctl", &["-n", "machdep.cpu.brand_string"]).unwrap_or_else(unknown),
-            os: output("sw_vers", &["-productVersion"]).unwrap_or_else(unknown),
+            cpu: cpu(),
+            os: os(),
             args: args.to_vec(),
             binary: binary.to_owned(),
         }
     }
+}
+
+/// The machine's CPU, as `sysctl` names it, or `unknown`.
+pub fn cpu() -> String {
+    output("sysctl", &["-n", "machdep.cpu.brand_string"]).unwrap_or_else(|| "unknown".to_owned())
+}
+
+/// The macOS version, or `unknown`.
+pub fn os() -> String {
+    output("sw_vers", &["-productVersion"]).unwrap_or_else(|| "unknown".to_owned())
 }
 
 /// The SHA-256 of the file at `path`, in hex. Builds are reproducible, so a
@@ -101,9 +111,33 @@ pub fn unix_ms(time: SystemTime) -> u64 {
         .map_or(0, |since| since.as_millis() as u64)
 }
 
+/// What a target's sentinels read on one run of it: see
+/// [`bench::harness::Sentinel`]. The results on disk hold only each target's
+/// last run, so the sentinel log keeps every run's, and with them how fast
+/// this machine reads when it's quiet.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct Checked {
+    pub target: String,
+    /// When the run that timed them started.
+    pub started_unix_ms: u64,
+    pub cpu: String,
+    /// The macOS version.
+    pub os: String,
+    /// The narrow sentinel before the target's first measure and after its
+    /// last, in ns.
+    pub narrow: (f64, f64),
+    /// The wide sentinel, the same.
+    pub wide: (f64, f64),
+}
+
 /// The run log, one JSON [`Run`] per line.
 pub fn runs_path() -> PathBuf {
     paths::bench_dir().join("runs.jsonl")
+}
+
+/// The sentinel log, one JSON [`Checked`] per line.
+pub fn sentinels_path() -> PathBuf {
+    paths::bench_dir().join("sentinels.jsonl")
 }
 
 /// Appends `run` to the run log.
@@ -113,11 +147,23 @@ pub fn runs_path() -> PathBuf {
 /// If the log can't be written: a run the report can't see would leave its
 /// results looking stale.
 pub fn append(run: &Run) -> Result<(), String> {
-    let path = runs_path();
+    append_line(&runs_path(), run)
+}
+
+/// Appends `checked` to the sentinel log.
+///
+/// # Errors
+///
+/// If the log can't be written.
+pub fn append_checked(checked: &Checked) -> Result<(), String> {
+    append_line(&sentinels_path(), checked)
+}
+
+fn append_line<T: Serialize>(path: &Path, value: &T) -> Result<(), String> {
     let write = || {
         fs::create_dir_all(paths::bench_dir())?;
-        let mut log = OpenOptions::new().create(true).append(true).open(&path)?;
-        let line = serde_json::to_string(run).map_err(std::io::Error::other)?;
+        let mut log = OpenOptions::new().create(true).append(true).open(path)?;
+        let line = serde_json::to_string(value).map_err(std::io::Error::other)?;
         writeln!(log, "{line}")
     };
     write().map_err(|err| format!("appending to {}: {err}", path.display()))
@@ -129,8 +175,20 @@ pub fn append(run: &Run) -> Result<(), String> {
 ///
 /// If the log can't be read, or a line isn't a [`Run`].
 pub fn read_runs() -> Result<Vec<Run>, String> {
-    let path = runs_path();
-    let log = match fs::read_to_string(&path) {
+    read_lines(&runs_path())
+}
+
+/// Every line of the sentinel log, oldest first; none if there's no log yet.
+///
+/// # Errors
+///
+/// If the log can't be read, or a line isn't a [`Checked`].
+pub fn read_checked() -> Result<Vec<Checked>, String> {
+    read_lines(&sentinels_path())
+}
+
+fn read_lines<T: serde::de::DeserializeOwned>(path: &Path) -> Result<Vec<T>, String> {
+    let log = match fs::read_to_string(path) {
         Ok(log) => log,
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
         Err(err) => return Err(format!("reading {}: {err}", path.display())),

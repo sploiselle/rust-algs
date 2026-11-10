@@ -1,12 +1,10 @@
 //! Probes for keys the table doesn't hold: see
 //! [`bench_cache::time_absent_probes`].
 
-use bench_cache::{
-    ABSENT_SIZES, AbsentPart, Sentinel, benching, sentinel_ns, time_absent_probes, write_part,
-};
+use bench_cache::{ABSENT_SIZES, AbsentPart, Sentinels, benching, time_absent_probes, write_part};
 
 fn main() {
-    let start_ns = sentinel_ns();
+    let started = Sentinels::start();
     let sizes = if benching() {
         &ABSENT_SIZES[..]
     } else {
@@ -19,16 +17,8 @@ fn main() {
             a.rows_a_side, a.hashing, a.ns, a.instructions
         );
     }
-    let sentinel = Sentinel {
-        start_ns,
-        end_ns: sentinel_ns(),
-    };
-    println!(
-        "sentinel: {:.1} µs before, {:.1} µs after",
-        sentinel.start_ns / 1e3,
-        sentinel.end_ns / 1e3
-    );
+    let sentinels = started.finish();
     if benching() {
-        write_part("absent", &AbsentPart { sentinel, absent });
+        write_part("absent", &AbsentPart { sentinels, absent });
     }
 }

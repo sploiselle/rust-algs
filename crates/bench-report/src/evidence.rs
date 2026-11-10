@@ -7,12 +7,13 @@
 //! target lacks. The runner runs what's out of date, and the tables refuse
 //! it.
 //!
-//! A result also has to come from a steady machine. Every timing binary and
-//! every cache measure times a sentinel, work that is none of theirs, before
-//! it starts and after it ends. If the two differ, or both are slow beside
-//! the other targets', the machine changed speed, and what the target
-//! measured is some other machine's: [`Evidence::unsteady`]. Such a target
-//! counts as out of date.
+//! A result also has to come from a steady, quiet machine. Every timing
+//! binary and every cache measure times two [sentinels](Sentinel), work that
+//! is none of theirs, before it starts and after it ends. If a sentinel's two
+//! timings differ, or both are slow beside the fastest this machine has read,
+//! the machine changed speed or was busy with something else, and what the
+//! target measured is some other machine's: [`Evidence::unsteady`]. Such a
+//! target counts as out of date.
 
 use std::collections::{HashMap, HashSet};
 use std::fs;
@@ -20,13 +21,14 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
+use bench::harness::Sentinel;
 use bench_cache::{AbsentPart, HashersPart, PhasesPart, ReadsPart};
 use bench_plan::cases::{self, Group};
 use bench_plan::paths;
 use bench_plan::profile::Memory;
 use serde::de::DeserializeOwned;
 
-use crate::record::{self, Run};
+use crate::record::{self, Checked, Run};
 use crate::{Key, Timing, key, read_timings};
 
 /// What a bench target measures.
@@ -153,6 +155,12 @@ pub struct Evidence {
     /// out: amended or rebased away, or on another branch. A table can't cite
     /// one: nobody could find it.
     pub unreachable: HashSet<String>,
+    /// The sentinel log, oldest first.
+    pub checked: Vec<Checked>,
+    /// This machine's CPU and macOS version: a sentinel another machine
+    /// read, or this one under another system, says nothing about this one.
+    pub cpu: String,
+    pub os: String,
     pub timings: HashMap<Key, Timing>,
     pub memory: Option<Written<Memory>>,
     pub phases: Option<Written<PhasesPart>>,
@@ -177,6 +185,9 @@ pub fn gather() -> Result<Evidence, String> {
     Ok(Evidence {
         runs,
         unreachable,
+        checked: record::read_checked()?,
+        cpu: record::cpu(),
+        os: record::os(),
         timings: read_timings(&paths::criterion_dir())?,
         memory: read_written(&paths::memory_path())?,
         phases: read_written(&bench_cache::part_path("phases"))?,
@@ -222,26 +233,38 @@ fn read_written<T: DeserializeOwned>(path: &Path) -> Result<Option<Written<T>>, 
     }))
 }
 
-/// The criterion ids of the sentinel a group's binary times before its first
-/// case and after its last.
-pub fn sentinel_keys(group: &str) -> [Key; 2] {
+/// The criterion ids of `sentinel` as a group's binary times it, before its
+/// first case and after its last.
+pub fn sentinel_keys(group: &str, sentinel: Sentinel) -> [Key; 2] {
     ["start", "end"].map(|edge| {
         (
-            format!("{group}_sentinel"),
+            format!("{group}_{}", sentinel.suffix()),
             edge.to_owned(),
-            (1usize << 20).to_string(),
+            sentinel.words().to_string(),
         )
     })
 }
 
+/// What kind of target `name` is, if it's one with sentinels.
+fn kind_of(name: &str) -> Option<Kind> {
+    if cases::GROUPS.iter().any(|group| group.name == name) {
+        Some(Kind::Timing)
+    } else if bench_cache::PARTS.contains(&name) {
+        Some(Kind::Cache)
+    } else {
+        None
+    }
+}
+
 /// Every criterion id `group`'s binary writes: its cases', by name, and its
-/// sentinel's.
+/// sentinels'.
 pub fn timing_keys(group: &'static Group) -> Vec<(String, Key)> {
     let cases = group.cases().map(|case| (case.to_string(), key(&case)));
-    let sentinel = sentinel_keys(group.name)
+    let sentinels = Sentinel::ALL
         .into_iter()
+        .flat_map(|sentinel| sentinel_keys(group.name, sentinel))
         .map(|key| (format!("{}/{}", key.0, key.1), key));
-    cases.chain(sentinel).collect()
+    cases.chain(sentinels).collect()
 }
 
 impl Evidence {
@@ -283,59 +306,97 @@ impl Evidence {
     }
 }
 
-/// How far a target's sentinel may move between its start and its end before
-/// the machine's speed is taken to have changed while it ran.
+/// How far a target's narrow sentinel may move between its start and its
+/// end before the machine's speed is taken to have changed while it ran.
 pub const DRIFT_LIMIT: f64 = 0.03;
 
-/// How much slower than the fastest sentinel of its kind a target's may be.
-/// The timing binaries' sentinels are criterion's medians and the cache
-/// measures' are timed by hand, so each kind is set beside its own.
+/// How much slower than the fastest narrow sentinel of its kind a target's
+/// may be. The timing binaries' sentinels are criterion's medians and the
+/// cache measures' are timed by hand, so each kind is set beside its own.
 pub const SPREAD_LIMIT: f64 = 0.10;
 
-/// How much slower than the fastest sentinel of any kind a target's may be.
-/// The two kinds read within about a tenth of each other, and a core pushed
-/// to a slower mode takes two to six times as long.
+/// How much slower than the fastest narrow sentinel of any kind a target's
+/// may be. The two kinds read within about a tenth of each other, and a core
+/// pushed to a slower mode takes two to six times as long.
 pub const SLOW_LIMIT: f64 = 0.50;
 
+/// How far a target's wide sentinel may move between its start and its end,
+/// and how much slower than the fastest of its kind it may be, before the
+/// machine is taken to have been busy with something else. A machine left
+/// alone holds it within about 1%, and one in use reads about 9% slower.
+pub const BUSY_LIMIT: f64 = 0.05;
+
 impl Evidence {
-    /// `target`'s sentinel: the same work timed before it measured anything
-    /// and after it finished, in ns. `None` if it has none, as the memory
-    /// profiles don't, or one of the two hasn't been timed.
-    pub fn sentinel(&self, kind: Kind, name: &str) -> Option<(f64, f64)> {
-        let part = |sentinel: bench_cache::Sentinel| (sentinel.start_ns, sentinel.end_ns);
+    /// `sentinel` as the target of `kind` called `name` last timed it:
+    /// before it measured anything and after it finished, in ns. `None` if
+    /// it has none, as the memory profiles don't, or one of the two hasn't
+    /// been timed.
+    pub fn sentinel(&self, kind: Kind, name: &str, sentinel: Sentinel) -> Option<(f64, f64)> {
+        let part = |sentinels: bench_cache::Sentinels| {
+            let timed = sentinels.of(sentinel);
+            (timed.start_ns, timed.end_ns)
+        };
         match (kind, name) {
             (Kind::Timing, group) => {
-                let [start, end] = sentinel_keys(group);
+                let [start, end] = sentinel_keys(group, sentinel);
                 let median = |key: &Key| Some(self.timings.get(key)?.median_ns);
                 Some((median(&start)?, median(&end)?))
             }
-            (Kind::Cache, "phases") => self.phases.as_ref().map(|w| part(w.value.sentinel)),
-            (Kind::Cache, "reads") => self.reads.as_ref().map(|w| part(w.value.sentinel)),
-            (Kind::Cache, "hashers") => self.hashers.as_ref().map(|w| part(w.value.sentinel)),
-            (Kind::Cache, "absent") => self.absent.as_ref().map(|w| part(w.value.sentinel)),
+            (Kind::Cache, "phases") => self.phases.as_ref().map(|w| part(w.value.sentinels)),
+            (Kind::Cache, "reads") => self.reads.as_ref().map(|w| part(w.value.sentinels)),
+            (Kind::Cache, "hashers") => self.hashers.as_ref().map(|w| part(w.value.sentinels)),
+            (Kind::Cache, "absent") => self.absent.as_ref().map(|w| part(w.value.sentinels)),
             _ => None,
         }
     }
 
-    /// Every sentinel of `kind`, by target.
-    fn sentinels(&self, kind: Kind) -> Vec<(f64, f64)> {
+    /// Both sentinels of the target called `name`, as a line of the sentinel
+    /// log for the run that started at `started_unix_ms`; `None` if it lacks
+    /// one.
+    pub fn checked(&self, kind: Kind, name: &str, started_unix_ms: u64) -> Option<Checked> {
+        Some(Checked {
+            target: name.to_owned(),
+            started_unix_ms,
+            cpu: self.cpu.clone(),
+            os: self.os.clone(),
+            narrow: self.sentinel(kind, name, Sentinel::Narrow)?,
+            wide: self.sentinel(kind, name, Sentinel::Wide)?,
+        })
+    }
+
+    /// The fastest `sentinel` any target of `kind` has read on this machine:
+    /// in the results on disk, or in the sentinel log. One fast reading is
+    /// enough: nothing makes this work faster than a quiet machine does.
+    pub fn fastest(&self, kind: Kind, sentinel: Sentinel) -> Option<f64> {
         let names: Vec<&str> = match kind {
             Kind::Timing => cases::GROUPS.iter().map(|group| group.name).collect(),
             Kind::Cache => bench_cache::PARTS.to_vec(),
             Kind::Memory => Vec::new(),
         };
-        names
+        let on_disk = names
             .into_iter()
-            .filter_map(|name| self.sentinel(kind, name))
-            .collect()
+            .filter_map(|name| self.sentinel(kind, name, sentinel));
+        let logged = self
+            .checked
+            .iter()
+            .filter(|checked| checked.cpu == self.cpu && checked.os == self.os)
+            .filter(|checked| kind_of(&checked.target) == Some(kind))
+            .map(|checked| match sentinel {
+                Sentinel::Narrow => checked.narrow,
+                Sentinel::Wide => checked.wide,
+            });
+        on_disk
+            .chain(logged)
+            .map(|(start, end)| start.min(end))
+            .min_by(f64::total_cmp)
     }
 
-    /// Why the machine wasn't steady while the target of `kind` called `name`
-    /// ran, if it wasn't: its sentinel moved between its start and its end,
-    /// or was slow beside other targets'. A target that ran while the machine
-    /// was slow has timings of some other machine.
+    /// Why the machine wasn't steady and quiet while the target of `kind`
+    /// called `name` ran, if it wasn't: a sentinel moved between its start
+    /// and its end, or was slow beside the fastest on record. A target that
+    /// ran on a slow or a busy machine has timings of some other machine.
     pub fn unsteady(&self, kind: Kind, name: &str) -> Option<String> {
-        let (start, end) = self.sentinel(kind, name)?;
+        let (start, end) = self.sentinel(kind, name, Sentinel::Narrow)?;
         let drift = (end / start - 1.0).abs();
         if drift > DRIFT_LIMIT {
             return Some(format!(
@@ -343,15 +404,12 @@ impl Evidence {
                 drift * 100.0
             ));
         }
-        let fastest = |sentinels: Vec<(f64, f64)>| {
-            sentinels
-                .into_iter()
-                .map(|(start, end)| start.min(end))
-                .min_by(f64::total_cmp)
-        };
         let slowest = start.max(end);
-        let of_kind = fastest(self.sentinels(kind))?;
-        let of_any = fastest([self.sentinels(Kind::Timing), self.sentinels(Kind::Cache)].concat())?;
+        let of_kind = self.fastest(kind, Sentinel::Narrow)?;
+        let of_any = [Kind::Timing, Kind::Cache]
+            .into_iter()
+            .filter_map(|kind| self.fastest(kind, Sentinel::Narrow))
+            .min_by(f64::total_cmp)?;
         let slow = |fastest: f64, limit: f64| slowest > fastest * (1.0 + limit);
         if slow(of_kind, SPREAD_LIMIT) || slow(of_any, SLOW_LIMIT) {
             let beside = if slow(of_kind, SPREAD_LIMIT) {
@@ -361,8 +419,26 @@ impl Evidence {
             };
             return Some(format!(
                 "the machine was slow while it ran: its sentinel took {:.2} times the fastest \
-                 target's",
+                 on record",
                 slowest / beside
+            ));
+        }
+
+        let (start, end) = self.sentinel(kind, name, Sentinel::Wide)?;
+        let drift = (end / start - 1.0).abs();
+        if drift > BUSY_LIMIT {
+            return Some(format!(
+                "the machine got busier or quieter while it ran: its reads past L2 moved {:.0}%",
+                drift * 100.0
+            ));
+        }
+        let slowest = start.max(end);
+        let fastest = self.fastest(kind, Sentinel::Wide)?;
+        if slowest > fastest * (1.0 + BUSY_LIMIT) {
+            return Some(format!(
+                "the machine was busy with something else while it ran: its reads past L2 took \
+                 {:.2} times the fastest on record",
+                slowest / fastest
             ));
         }
         None

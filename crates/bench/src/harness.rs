@@ -209,3 +209,93 @@ mod tests {
         assert!(all[0].input_rows() * all.len() as u64 >= ROTATION_ROWS);
     }
 }
+
+/// One of the two pieces of fixed work every target times before its first
+/// measure and after its last, so the report can tell whether the machine
+/// was the same machine throughout, and the same one the other targets ran
+/// on. Neither is any join's work: both are random reads, each added to a
+/// sum.
+///
+/// They differ in what they notice. The narrow one reads across 8 MiB, which
+/// L2 holds whatever else is running, so it moves with the clock: a core
+/// pushed to a slower mode takes two to six times as long. It doesn't move
+/// when another program takes a share of the cache: on a machine in use it
+/// read 2% slower while the hash join at 1M rows a side ran 13% slower.
+///
+/// The wide one reads across more than L2 holds, so its time is what the
+/// joins past L2 pay: it moves with how much of L2 this core has to itself
+/// and with what a read from memory costs while other cores are reading too.
+/// Sampled beside the hash join, reads across 32 MiB moved with it most
+/// closely: within about 1% on a machine left alone, 9% slower with an
+/// editor and a chat app open, and 2.6 times as long while something
+/// compiled, when the join took 2.4 times as long.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Sentinel {
+    Narrow,
+    Wide,
+}
+
+impl Sentinel {
+    pub const ALL: [Sentinel; 2] = [Sentinel::Narrow, Sentinel::Wide];
+
+    /// Reads a call makes.
+    pub const READS: u64 = 1 << 18;
+
+    /// The `u64`s it reads across.
+    pub const fn words(self) -> usize {
+        match self {
+            // 8 MiB.
+            Sentinel::Narrow => 1 << 20,
+            // 32 MiB.
+            Sentinel::Wide => 1 << 22,
+        }
+    }
+
+    /// Its name in a criterion group's id, after the target's:
+    /// `one_to_one_sentinel`, `one_to_one_wide_sentinel`.
+    pub const fn suffix(self) -> &'static str {
+        match self {
+            Sentinel::Narrow => "sentinel",
+            Sentinel::Wide => "wide_sentinel",
+        }
+    }
+
+    /// The words it reads across, and where its next call starts.
+    #[inline]
+    pub fn work(self) -> SentinelWork {
+        SentinelWork {
+            words: (0..self.words() as u64).map(crate::mix).collect(),
+            next: 0,
+            step: match self {
+                // The same reads every call: they touch every line of the
+                // 8 MiB.
+                Sentinel::Narrow => 0,
+                // Other reads every call, so a call's lines are spread over
+                // all of it, and none is still in L2 because the last call
+                // read it.
+                Sentinel::Wide => Sentinel::READS,
+            },
+        }
+    }
+}
+
+/// A [`Sentinel`]'s words, ready to time.
+pub struct SentinelWork {
+    words: Vec<u64>,
+    next: u64,
+    step: u64,
+}
+
+impl SentinelWork {
+    /// One call: [`Sentinel::READS`] reads at mixed indices, summed.
+    #[inline]
+    pub fn call(&mut self) -> u64 {
+        let first = self.next;
+        self.next = self.next.wrapping_add(self.step);
+        let mask = self.words.len() - 1;
+        let words = std::hint::black_box(&self.words[..]);
+        (first..first + Sentinel::READS).fold(0u64, |sum, i| {
+            sum.wrapping_add(words[crate::mix(i) as usize & mask])
+        })
+    }
+}
