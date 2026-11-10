@@ -1,29 +1,43 @@
-//! The tables: criterion's timings and the memory profiles as Markdown a post
-//! can paste, each citing the commit and machine it came from.
+//! The tables: criterion's timings, the memory profiles and the cache
+//! measures as Markdown a post can paste, each citing the commit and machine
+//! it came from. And the [`runner`] that brings the results up to date.
 //!
-//! The report uses only results it can vouch for. It takes the latest timing
-//! run and the timing runs just before it at the same commit, dirtiness and
-//! rustc (the [`window`]), and refuses, naming what's wrong, unless a flag
-//! allows it:
+//! ```text
+//! cargo run -p bench-report --release -- run          # run what's out of date
+//! cargo run -p bench-report --release -- run --list   # say what would run
+//! cargo run -p bench-report --release                 # write the tables
+//! ```
 //!
-//! - a dirty tree, whose code isn't any commit's (`--allow-dirty`);
-//! - a case with no timing, or one written before the window started, which
-//!   ran other code ([`stale`]; `--allow-stale`);
+//! The report uses only results it can vouch for: those a bench target's
+//! binary wrote, when that target still builds to the same binary. The
+//! runner logs the hash of every executable it runs ([`record`]), and
+//! [`evidence::built`] hashes what cargo builds now. Builds are reproducible,
+//! so equal hashes mean the same machine code, laid out the same way, and a
+//! result stands for as long as they are equal, whatever commits have landed
+//! since. Each bench target links as little as it can (see `bench`'s docs),
+//! so a change reruns only the targets whose binaries it changes, and a
+//! change to this crate reruns none.
+//!
+//! It refuses, naming what's wrong, unless a flag allows it:
+//!
+//! - a target whose results are missing, or came from another build of it
+//!   than the one built now ([`evidence::out_of_date`]; `--allow-stale`);
 //! - a timing written by a run with other criterion settings than the
 //!   captions describe, such as a smoke run's shorter measurement
 //!   ([`shortened`]), or with a confidence level other than 95%
 //!   (`--allow-stale`);
-//! - memory profiles that are filtered, incomplete, or from another commit or
-//!   rustc (`--allow-stale`), or from a dirty tree (`--allow-dirty`);
-//! - cache measures from another commit or rustc (`--allow-stale`), or from a
-//!   dirty tree (`--allow-dirty`).
+//! - results whose binary no clean tree has run, so no commit is known to
+//!   hold their code (`--allow-dirty`).
 //!
-//! Rerunning a noisy group at the same commit extends the window, so its new
-//! timings replace the old without invalidating the rest. Under
-//! `--allow-stale`, a case with no result shows as `missing`. Every file
-//! written under a flag says so, in its provenance comment and its caption.
+//! Each table cites the commit of the oldest clean run of the binary its
+//! numbers came from: the first commit known to hold that code. A table that
+//! draws on several targets cites the latest of theirs. Rerunning a noisy
+//! case replaces its timing without invalidating the rest, and doesn't move
+//! the commit. Under `--allow-stale`, a case with no result shows as
+//! `missing`. Every file written under a flag says so, in its provenance
+//! comment and its caption.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::fmt;
 use std::fs;
 use std::io;
@@ -32,10 +46,19 @@ use std::path::{Path, PathBuf};
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 
-use crate::Row;
-use crate::cache::{self, Cache};
-use crate::cases::{self, Algorithm, Case, Workload};
-use crate::record::{self, Memory, MemoryCase, Run};
+use bench::Row;
+use bench::harness;
+use bench_cache as cache;
+use bench_plan::cases::{self, Algorithm, Case, Workload};
+pub use bench_plan::fmt::{bytes, count, sig3};
+use bench_plan::profile::MemoryCase;
+
+pub mod evidence;
+pub mod record;
+pub mod runner;
+
+use evidence::{Evidence, Target};
+use record::Run;
 
 /// The criterion version the timings were taken with, for captions.
 const CRITERION: &str = "criterion 0.8.2";
@@ -90,42 +113,96 @@ fn lookup(group: &str, algorithm: Algorithm, param: usize) -> Key {
     )
 }
 
+/// The cache targets' measures, together.
+#[derive(Clone, Debug)]
+pub struct Cache {
+    pub l2_bytes: usize,
+    pub line_bytes: usize,
+    pub phases: Vec<cache::Phases>,
+    pub reads: Vec<cache::ReadCost>,
+    pub worked_reads: Vec<cache::WorkedRead>,
+    pub hashers: Vec<cache::HasherCost>,
+    pub absent: Vec<cache::AbsentProbe>,
+}
+
 /// Everything the tables are made from.
 pub struct Results {
-    /// The window's latest run, whose commit, rustc and machine the timing
-    /// tables cite.
-    pub run: Run,
-    /// When the window started.
-    pub since_unix_ms: u64,
     pub timings: HashMap<Key, Timing>,
-    /// The run that profiled memory, which the memory tables cite.
-    pub memory_run: Option<Run>,
     pub memory: HashMap<Key, MemoryCase>,
-    /// The cache harness's measures, which the cache tables cite.
+    /// The cache targets' measures, if all four have run.
     pub cache: Option<Cache>,
+    /// The run each target's results are cited by, by target: the oldest
+    /// clean run of the binary that wrote them.
+    pub cited: HashMap<String, Run>,
     /// The flags that let the report use results it would otherwise refuse.
     pub allowed: Vec<&'static str>,
 }
 
-/// Which results a file's numbers come from, and so which run it cites.
-#[derive(Clone, Copy)]
+/// Which targets a file's numbers come from, and so which run it cites.
+#[derive(Clone, Debug)]
 enum Source {
-    Timings,
+    /// These groups' timings.
+    Timings(Vec<&'static str>),
+    /// The memory profiles.
     Memory,
-    Cache,
+    /// These cache measures.
+    Cache(&'static [&'static str]),
+}
+
+impl Source {
+    /// Every group's timings.
+    fn every_group() -> Source {
+        Source::Timings(cases::GROUPS.iter().map(|group| group.name).collect())
+    }
+
+    /// The groups of `columns`, each once.
+    fn of(columns: &[Column]) -> Source {
+        let mut groups: Vec<&'static str> = Vec::new();
+        for column in columns {
+            if !groups.contains(&column.group) {
+                groups.push(column.group);
+            }
+        }
+        Source::Timings(groups)
+    }
+
+    fn targets(&self) -> Vec<&'static str> {
+        match self {
+            Source::Timings(groups) => groups.clone(),
+            Source::Memory => vec!["memory"],
+            Source::Cache(parts) => parts.to_vec(),
+        }
+    }
+}
+
+/// What a file cites when none of its targets has a run to cite, which only
+/// a flag lets through.
+fn unknown_run() -> Run {
+    let unknown = || "unknown".to_owned();
+    Run {
+        target: unknown(),
+        started_unix_ms: 0,
+        commit: unknown(),
+        dirty: false,
+        rustc: unknown(),
+        cpu: unknown(),
+        os: unknown(),
+        args: Vec::new(),
+        binary: unknown(),
+    }
 }
 
 impl Results {
-    /// The run `source`'s numbers came from, and when its results start.
-    fn cited(&self, source: Source) -> (&Run, u64) {
-        let run = match source {
-            Source::Timings => None,
-            Source::Memory => self.memory_run.as_ref(),
-            Source::Cache => self.cache.as_ref().map(|cache| &cache.run),
-        };
-        run.map_or((&self.run, self.since_unix_ms), |run| {
-            (run, run.started_unix_ms)
-        })
+    /// The run a file drawing on `source` cites: of its targets' cited runs,
+    /// the one that started last, whose commit holds all of their code.
+    fn cited(&self, source: &Source) -> Run {
+        source
+            .targets()
+            .iter()
+            .filter_map(|target| self.cited.get(*target))
+            .max_by_key(|run| run.started_unix_ms)
+            .cloned()
+            .unwrap_or_else(unknown_run)
     }
 
     /// Whether `q` reads a [noisy](Timing::noisy) timing. Memory is
@@ -161,7 +238,7 @@ impl Results {
     fn rotated(&self, group: &str, algorithm: Algorithm, param: usize) -> bool {
         self.timing(group, algorithm, param)
             .and_then(|timing| timing.input_rows)
-            .is_some_and(|rows| cases::rotation(rows) > 1)
+            .is_some_and(|rows| harness::rotation(rows) > 1)
     }
 
     fn quantity(&self, q: &Quantity) -> Option<f64> {
@@ -176,68 +253,134 @@ impl Results {
     }
 }
 
-/// Reads every result, refusing what `options` doesn't allow. Returns the
-/// results, and a warning for each problem a flag allowed.
+/// Builds every bench target, reads every result, and refuses what
+/// `options` doesn't allow. Returns the results, and a warning for each
+/// problem a flag allowed.
 ///
 /// # Errors
 ///
-/// Every problem no flag allowed, or a file that can't be read.
+/// Every problem no flag allowed, or a failure to build or read.
 pub fn load(options: &Options) -> Result<(Results, Vec<String>), String> {
-    let runs = record::read_runs()?;
-    let timings = read_timings(&record::target_dir().join("criterion"))?;
-    vouch(options, &runs, timings, read_memory()?, read_cache()?)
+    let targets = evidence::built()?;
+    vouch(options, &targets, evidence::gather()?)
 }
 
-/// Checks the results against the run log, refusing what `options` doesn't
-/// allow: the part of [`load`] that reads no files.
+/// Checks `evidence` against the binaries `targets` build to now, refusing
+/// what `options` doesn't allow: the part of [`load`] that builds nothing and
+/// reads no files.
 ///
 /// # Errors
 ///
 /// Every problem no flag allowed.
 pub fn vouch(
     options: &Options,
-    runs: &[Run],
-    timings: HashMap<Key, Timing>,
-    memory: Option<Memory>,
-    cache: Option<Cache>,
+    targets: &[Target],
+    evidence: Evidence,
 ) -> Result<(Results, Vec<String>), String> {
-    let window = window(runs);
-    let (Some(first), Some(latest)) = (window.first(), window.last()) else {
-        return Err(format!(
-            "no joins run in {}: run `cargo bench -p bench` first",
-            record::runs_path().display()
-        ));
-    };
     let mut problems = Problems::new(options);
-    if latest.dirty {
-        problems.dirty(format!(
-            "the timings ran on a dirty tree at {}",
-            short(&latest.commit)
-        ));
+    let mut cited = HashMap::new();
+    for target in targets {
+        for why in evidence::out_of_date(target, &evidence) {
+            problems.stale(format!("{}: {why}", target.name));
+        }
+        let what = match target.kind {
+            evidence::Kind::Timing => {
+                check_sampling(cases::group(&target.name), &evidence, &mut problems);
+                format!("{}'s timings", target.name)
+            }
+            evidence::Kind::Memory => "the memory profiles".to_owned(),
+            evidence::Kind::Cache => format!("the {} measures", target.name),
+        };
+        let run = cite(
+            &evidence.runs,
+            &target.name,
+            &target.binary,
+            &what,
+            &mut problems,
+        );
+        if let Some(run) = run {
+            cited.insert(target.name.clone(), run.clone());
+        }
     }
+    let (warnings, allowed) = problems.into_result().map_err(|refused| {
+        format!(
+            "{refused}\nrun `cargo run -p bench-report --release -- run` to run what's out of date"
+        )
+    })?;
 
-    let stale = stale(&timings, first.started_unix_ms);
-    if !stale.is_empty() {
-        problems.stale(format!(
-            "{} timings are missing or older than the window, which started {}: {}",
-            stale.len(),
-            moment(first.started_unix_ms),
-            some(&stale)
+    let cache = match (
+        &evidence.phases,
+        &evidence.reads,
+        &evidence.hashers,
+        &evidence.absent,
+    ) {
+        (Some(phases), Some(reads), Some(hashers), Some(absent)) => Some(Cache {
+            l2_bytes: phases.value.l2_bytes,
+            line_bytes: phases.value.line_bytes,
+            phases: phases.value.phases.clone(),
+            reads: reads.value.reads.clone(),
+            worked_reads: reads.value.worked_reads.clone(),
+            hashers: hashers.value.hashers.clone(),
+            absent: absent.value.absent.clone(),
+        }),
+        _ => None,
+    };
+    let memory = evidence
+        .memory
+        .map_or(HashMap::new(), |memory| profiles(memory.value.cases));
+    let results = Results {
+        timings: evidence.timings,
+        memory,
+        cache,
+        cited,
+        allowed,
+    };
+    Ok((results, warnings))
+}
+
+/// The run a table of `target`'s results cites: the oldest clean run of
+/// `binary`, whose commit is the first known to hold the code that built it.
+/// A later run of the same binary ran the same code, whatever its commit. If
+/// only dirty trees have run it, no commit is known to hold that code, which
+/// `what` is told.
+fn cite<'r>(
+    runs: &'r [Run],
+    target: &str,
+    binary: &str,
+    what: &str,
+    problems: &mut Problems,
+) -> Option<&'r Run> {
+    let mut of_binary = runs
+        .iter()
+        .filter(|run| run.target == target && run.binary == binary);
+    let clean = of_binary.clone().find(|run| !run.dirty);
+    if clean.is_none() && of_binary.next().is_some() {
+        problems.dirty(format!(
+            "{what} came from a binary only dirty trees have run, so no commit holds its code"
         ));
     }
-    for (run, ids) in shortened(&window, &timings) {
+    clean
+}
+
+/// Notes the timings of `group` that criterion didn't sample as the captions
+/// say: those a run with other settings wrote, and those whose confidence
+/// interval isn't at 95%.
+fn check_sampling(group: &'static cases::Group, evidence: &Evidence, problems: &mut Problems) {
+    for (run, ids) in shortened(group, evidence) {
         problems.stale(format!(
             "{} timings came from the run that started {} with `{}`, not the criterion \
              settings the captions describe: {}",
             ids.len(),
             moment(run.started_unix_ms),
             run.args.join(" "),
-            some(&ids)
+            evidence::some(&ids)
         ));
     }
-    let off_level: Vec<String> = cases::cases()
+    let off_level: Vec<String> = group
+        .cases()
         .filter(|case| {
-            timings
+            evidence
+                .timings
                 .get(&key(case))
                 .is_some_and(|t| (t.confidence_level - CONFIDENCE).abs() > 1e-9)
         })
@@ -247,40 +390,9 @@ pub fn vouch(
         problems.stale(format!(
             "{} timings have a confidence interval at a level other than 95%: {}",
             off_level.len(),
-            some(&off_level)
+            evidence::some(&off_level)
         ));
     }
-
-    match &memory {
-        Some(memory) => check_memory(memory, latest, &mut problems),
-        None => problems.stale(format!(
-            "no memory profiles at {}: run `cargo bench -p bench --bench memory`",
-            record::memory_path().display()
-        )),
-    }
-    match &cache {
-        Some(cache) => check_cache(cache, latest, &mut problems),
-        None => problems.stale(format!(
-            "no cache measures at {}: run `cargo bench -p bench --bench cache`",
-            record::cache_path().display()
-        )),
-    }
-    let (warnings, allowed) = problems.into_result()?;
-
-    let (memory_run, memory) = match memory {
-        Some(memory) => (Some(memory.run), profiles(memory.cases)),
-        None => (None, HashMap::new()),
-    };
-    let results = Results {
-        run: (*latest).clone(),
-        since_unix_ms: first.started_unix_ms,
-        timings,
-        memory_run,
-        memory,
-        cache,
-        allowed,
-    };
-    Ok((results, warnings))
 }
 
 /// The confidence level the captions' "95%" and the † rule assume.
@@ -297,25 +409,22 @@ const SAMPLING_FLAGS: &[&str] = &[
     "--confidence-level",
 ];
 
-/// The timings in `window` that a run with non-default criterion settings
+/// The timings of `group` that a run with non-default criterion settings
 /// (`--warm-up-time`, `--measurement-time`, `--sample-size`, `--nresamples`,
-/// `--quick` or `--confidence-level`) wrote, by run.
-/// Each timing belongs to the last run that started before criterion wrote
-/// it, so a run whose timings were all rewritten since owns none.
-pub fn shortened<'r>(
-    window: &[&'r Run],
-    timings: &HashMap<Key, Timing>,
-) -> Vec<(&'r Run, Vec<String>)> {
+/// `--quick` or `--confidence-level`) wrote, by run. Each timing belongs to
+/// the last run of the group that started before criterion wrote it, so a run
+/// whose timings were all rewritten since owns none.
+pub fn shortened<'e>(
+    group: &'static cases::Group,
+    evidence: &'e Evidence,
+) -> Vec<(&'e Run, Vec<String>)> {
     let mut by_run: Vec<(&Run, Vec<String>)> = Vec::new();
-    for case in cases::cases() {
-        let Some(timing) = timings.get(&key(&case)) else {
-            continue;
-        };
-        let writer = window
-            .iter()
-            .rev()
-            .find(|run| run.started_unix_ms <= timing.written_unix_ms);
-        let Some(&run) = writer else { continue };
+    for (name, key) in evidence::timing_keys(group) {
+        let writer = evidence
+            .timings
+            .get(&key)
+            .and_then(|timing| evidence.writer(group.name, timing.written_unix_ms));
+        let Some(run) = writer else { continue };
         if !SAMPLING_FLAGS
             .iter()
             .any(|flag| record::has_flag(&run.args, flag))
@@ -323,8 +432,8 @@ pub fn shortened<'r>(
             continue;
         }
         match by_run.iter_mut().find(|(r, _)| std::ptr::eq(*r, run)) {
-            Some((_, ids)) => ids.push(case.to_string()),
-            None => by_run.push((run, vec![case.to_string()])),
+            Some((_, ids)) => ids.push(name),
+            None => by_run.push((run, vec![name])),
         }
     }
     by_run
@@ -380,53 +489,6 @@ impl<'o> Problems<'o> {
     }
 }
 
-/// Notes what keeps `memory` from vouching for the same code as the timing
-/// run `latest`.
-fn check_memory(memory: &Memory, latest: &Run, problems: &mut Problems) {
-    if let Some(filter) = &memory.filter {
-        problems.stale(format!("the memory profiles ran filtered to {filter:?}"));
-    }
-    let profiled: HashSet<Key> = memory.cases.iter().map(profile_key).collect();
-    let missing: Vec<String> = cases::cases()
-        .filter(|case| !case.group.is_sentinel() && !profiled.contains(&key(case)))
-        .map(|case| case.to_string())
-        .collect();
-    if !missing.is_empty() {
-        problems.stale(format!(
-            "{} cases have no memory profile: {}",
-            missing.len(),
-            some(&missing)
-        ));
-    }
-    if memory.run.dirty {
-        problems.dirty("the memory profiles ran on a dirty tree".to_owned());
-    }
-    if (&memory.run.commit, &memory.run.rustc) != (&latest.commit, &latest.rustc) {
-        problems.stale(format!(
-            "the memory profiles ran at {} with {}, the timings at {} with {}",
-            short(&memory.run.commit),
-            memory.run.rustc,
-            short(&latest.commit),
-            latest.rustc
-        ));
-    }
-}
-
-fn check_cache(cache: &Cache, latest: &Run, problems: &mut Problems) {
-    if cache.run.dirty {
-        problems.dirty("the cache measures ran on a dirty tree".to_owned());
-    }
-    if (&cache.run.commit, &cache.run.rustc) != (&latest.commit, &latest.rustc) {
-        problems.stale(format!(
-            "the cache measures ran at {} with {}, the timings at {} with {}",
-            short(&cache.run.commit),
-            cache.run.rustc,
-            short(&latest.commit),
-            latest.rustc
-        ));
-    }
-}
-
 /// The memory cases by key.
 fn profiles(cases: Vec<MemoryCase>) -> HashMap<Key, MemoryCase> {
     cases
@@ -442,47 +504,6 @@ fn profile_key(case: &MemoryCase) -> Key {
         case.algorithm.clone(),
         case.param.to_string(),
     )
-}
-
-/// The first few of `ids`, and how many more there are.
-fn some(ids: &[String]) -> String {
-    const SHOWN: usize = 8;
-    let mut list = ids[..ids.len().min(SHOWN)].join(", ");
-    if ids.len() > SHOWN {
-        list += &format!(" and {} more", ids.len() - SHOWN);
-    }
-    list
-}
-
-/// The runs whose timings the tables may use, oldest first: the latest
-/// `joins` run, and the `joins` runs before it back to the first at a
-/// different commit, dirtiness or rustc. Empty if there's no `joins` run.
-pub fn window(runs: &[Run]) -> Vec<&Run> {
-    let joins: Vec<&Run> = runs.iter().filter(|run| run.target == "joins").collect();
-    let Some(latest) = joins.last() else {
-        return Vec::new();
-    };
-    let same = |run: &Run| {
-        (&run.commit, run.dirty, &run.rustc) == (&latest.commit, latest.dirty, &latest.rustc)
-    };
-    let start = joins
-        .iter()
-        .rposition(|run| !same(run))
-        .map_or(0, |i| i + 1);
-    joins[start..].to_vec()
-}
-
-/// Every case with no timing, or one written before `since_unix_ms`, so by
-/// other code than the window's.
-pub fn stale(timings: &HashMap<Key, Timing>, since_unix_ms: u64) -> Vec<String> {
-    cases::cases()
-        .filter(|case| {
-            timings
-                .get(&key(case))
-                .is_none_or(|timing| timing.written_unix_ms < since_unix_ms)
-        })
-        .map(|case| case.to_string())
-        .collect()
 }
 
 /// The parts of criterion's `new/benchmark.json` the report reads.
@@ -575,34 +596,26 @@ fn read_json<T: DeserializeOwned>(path: &Path) -> Result<T, String> {
     serde_json::from_slice(&json).map_err(|err| format!("parsing {}: {err}", path.display()))
 }
 
-/// The memory harness's output, if it has run.
-fn read_memory() -> Result<Option<Memory>, String> {
-    let path = record::memory_path();
-    match fs::read(&path) {
-        Ok(json) => serde_json::from_slice(&json)
-            .map(Some)
-            .map_err(|err| format!("parsing {}: {err}", path.display())),
-        Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(None),
-        Err(err) => Err(format!("reading {}: {err}", path.display())),
-    }
+/// How far the machine's speed moved while each group ran: |end / start − 1|
+/// for its sentinel, the same work timed before the group's first case and
+/// after its last. A group whose sentinel has no timing is left out.
+pub fn drifts(results: &Results) -> Vec<(&'static str, f64)> {
+    cases::GROUPS
+        .iter()
+        .filter_map(|group| {
+            let [start, end] = evidence::sentinel_keys(group.name);
+            let median = |key: &Key| Some(results.timings.get(key)?.median_ns);
+            Some((group.name, (median(&end)? / median(&start)? - 1.0).abs()))
+        })
+        .collect()
 }
 
-fn read_cache() -> Result<Option<Cache>, String> {
-    let path = record::cache_path();
-    match fs::read(&path) {
-        Ok(json) => serde_json::from_slice(&json)
-            .map(Some)
-            .map_err(|err| format!("parsing {}: {err}", path.display())),
-        Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(None),
-        Err(err) => Err(format!("reading {}: {err}", path.display())),
-    }
-}
-
-/// How far the machine's speed moved during the run: |end / start − 1| for
-/// the sentinels, the same case timed first and last.
+/// The largest of the groups' [`drifts`].
 pub fn drift(results: &Results) -> Option<f64> {
-    let median = |group: &str| Some(results.timing(group, Algorithm::Hash, 1 << 18)?.median_ns);
-    Some((median("sentinel_end")? / median("sentinel_start")? - 1.0).abs())
+    drifts(results)
+        .into_iter()
+        .map(|(_, drift)| drift)
+        .max_by(f64::total_cmp)
 }
 
 /// Every case whose timing is [noisy](Timing::noisy).
@@ -904,8 +917,9 @@ impl Table {
                     params.iter().map(|&param| (c.group, c.algorithm, param))
                 });
                 let reads = reads(results, cells);
-                let caption = time_caption(results, &what, &reads, NOISY, &noisy);
-                page(self.name(), results, Source::Timings, &body, &caption)
+                let source = Source::of(columns);
+                let caption = time_caption(results, &source, &what, &reads, NOISY, &noisy);
+                page(self.name(), results, &source, &body, &caption)
             }
             Kind::Grid {
                 rows,
@@ -917,7 +931,7 @@ impl Table {
                     profile.map_or(MISSING.to_owned(), |p| bytes(p.usage.peak_bytes as u64))
                 });
                 let caption = memory_caption(results, &format!("{PEAK}{note}"));
-                page(self.name(), results, Source::Memory, &body, &caption)
+                page(self.name(), results, &Source::Memory, &body, &caption)
             }
             Kind::Profile { rows, cases } => {
                 let header = [rows, "peak", "× input", "allocations"].map(str::to_owned);
@@ -930,7 +944,7 @@ impl Table {
                 });
                 let body = markdown(&header, 3, lines);
                 let caption = memory_caption(results, &format!("{PEAK} {PER_INPUT}{note}"));
-                page(self.name(), results, Source::Memory, &body, &caption)
+                page(self.name(), results, &Source::Memory, &body, &caption)
             }
         }
     }
@@ -940,19 +954,24 @@ impl Table {
 /// reads, what a read costs, how many reach DRAM, what those predict, and
 /// where a read costs more than that prediction charges.
 fn cache_tables(results: &Results, cache: &Cache) -> Vec<(String, String)> {
-    let run = &cache.run;
-    let from = format!(
-        "{}, macOS {}, {}, rust-algs {}.",
-        run.cpu,
-        run.os,
-        rustc(&run.rustc),
-        sha(run)
-    );
-    let file = |name: &str, header: &[&str], rows: Vec<Vec<String>>, what: String| {
+    // Each file names the measures its numbers come from, and cites their run.
+    let file = |name: &str,
+                parts: &'static [&'static str],
+                header: &[&str],
+                rows: Vec<Vec<String>>,
+                what: String| {
+        let source = Source::Cache(parts);
+        let run = results.cited(&source);
         let header: Vec<String> = header.iter().map(|&cell| cell.to_owned()).collect();
         let body = markdown(&header, header.len() - 1, rows);
-        let caption = format!("{what} {from}");
-        let page = page(name, results, Source::Cache, &body, &caption);
+        let caption = format!(
+            "{what} {}, macOS {}, {}, rust-algs {}.",
+            run.cpu,
+            run.os,
+            rustc(&run.rustc),
+            sha(&run)
+        );
+        let page = page(name, results, &source, &body, &caption);
         (format!("{name}.md"), page)
     };
     let (l2, line) = (cache.l2_bytes, cache.line_bytes);
@@ -1061,6 +1080,7 @@ fn cache_tables(results: &Results, cache: &Cache) -> Vec<(String, String)> {
     vec![
         file(
             "hash_phases",
+            &["phases"],
             &[
                 "rows a side",
                 "build",
@@ -1079,6 +1099,7 @@ fn cache_tables(results: &Results, cache: &Cache) -> Vec<(String, String)> {
         ),
         file(
             "hash_footprint",
+            &["phases"],
             &[
                 "rows a side",
                 "control bytes",
@@ -1094,6 +1115,7 @@ fn cache_tables(results: &Results, cache: &Cache) -> Vec<(String, String)> {
         ),
         file(
             "read_cost",
+            &["reads"],
             &[
                 "working set",
                 "one at a time",
@@ -1110,6 +1132,7 @@ fn cache_tables(results: &Results, cache: &Cache) -> Vec<(String, String)> {
         ),
         file(
             "read_work",
+            &["reads"],
             &["instructions a read", "in L2", "past L2", "added past L2"],
             worked.collect(),
             format!(
@@ -1122,6 +1145,7 @@ fn cache_tables(results: &Results, cache: &Cache) -> Vec<(String, String)> {
         ),
         file(
             "control_miss",
+            &["absent"],
             &[
                 "rows a side",
                 absent_hashings[0],
@@ -1139,6 +1163,7 @@ fn cache_tables(results: &Results, cache: &Cache) -> Vec<(String, String)> {
         ),
         file(
             "hash_reads",
+            &["phases"],
             &[
                 "rows a side",
                 "control bytes",
@@ -1156,6 +1181,7 @@ fn cache_tables(results: &Results, cache: &Cache) -> Vec<(String, String)> {
         ),
         file(
             "hash_predicted",
+            &["phases", "reads"],
             &[
                 "rows a side",
                 "predicted, low",
@@ -1172,6 +1198,7 @@ fn cache_tables(results: &Results, cache: &Cache) -> Vec<(String, String)> {
         ),
         file(
             "hash_hashers",
+            &["hashers"],
             &hasher_header,
             by_hashing(|h| h.ns),
             format!(
@@ -1181,6 +1208,7 @@ fn cache_tables(results: &Results, cache: &Cache) -> Vec<(String, String)> {
         ),
         file(
             "hash_instructions",
+            &["hashers"],
             &hasher_header,
             by_hashing(|h| h.instructions),
             format!(
@@ -1190,6 +1218,7 @@ fn cache_tables(results: &Results, cache: &Cache) -> Vec<(String, String)> {
         ),
         file(
             "hash_per_instruction",
+            &["hashers"],
             &hasher_header,
             by_hashing(|h| h.ns / h.instructions),
             format!(
@@ -1255,34 +1284,33 @@ fn all(results: &Results) -> String {
         [vec![case.to_string()], cells].concat()
     });
     let cells = cases::cases().map(|case| (case.group.name, case.algorithm, case.param));
-    let caption = time_caption(results, ALL, &reads(results, cells), NOISY, &[]);
+    let source = Source::every_group();
+    let caption = time_caption(results, &source, ALL, &reads(results, cells), NOISY, &[]);
     let time = page(
         "all",
         results,
-        Source::Timings,
+        &source,
         &markdown(&header, 3, times),
         &caption,
     );
 
     let header = ["case", "peak", "× input", "allocations", "allocated"].map(str::to_owned);
-    let profiled = cases::cases()
-        .filter(|case| !case.group.is_sentinel())
-        .map(|case| {
-            let cells = match results.memory.get(&key(&case)) {
-                Some(p) => [
-                    profile_cells(p),
-                    vec![bytes(p.usage.allocated_bytes as u64)],
-                ]
-                .concat(),
-                None => vec![MISSING.to_owned(); 4],
-            };
-            [vec![case.to_string()], cells].concat()
-        });
+    let profiled = cases::cases().map(|case| {
+        let cells = match results.memory.get(&key(&case)) {
+            Some(p) => [
+                profile_cells(p),
+                vec![bytes(p.usage.allocated_bytes as u64)],
+            ]
+            .concat(),
+            None => vec![MISSING.to_owned(); 4],
+        };
+        [vec![case.to_string()], cells].concat()
+    });
     let caption = memory_caption(results, &format!("{PEAK} {PER_INPUT}"));
     let memory = page(
         "all (memory)",
         results,
-        Source::Memory,
+        &Source::Memory,
         &markdown(&header, 4, profiled),
         &caption,
     );
@@ -1309,8 +1337,8 @@ fn markdown(
 /// A file's worth: the provenance comment, the table, and its caption. Both
 /// cite the run `source`'s numbers came from, and any flag that let the
 /// report use results it would otherwise refuse.
-fn page(name: &str, results: &Results, source: Source, table: &str, caption: &str) -> String {
-    let (run, since) = results.cited(source);
+fn page(name: &str, results: &Results, source: &Source, table: &str, caption: &str) -> String {
+    let run = results.cited(source);
     let mut flags = String::new();
     let mut caption = caption.to_owned();
     if !results.allowed.is_empty() {
@@ -1322,12 +1350,15 @@ fn page(name: &str, results: &Results, source: Source, table: &str, caption: &st
         );
     }
     format!(
-        "<!-- bench table: {name} · rust-algs {} · {} · cargo bench -p bench{flags} -->\n\n\
+        "<!-- bench table: {name} · rust-algs {} · {} · {COMMAND}{flags} -->\n\n\
          {table}\n*{caption}*\n",
-        sha(run),
-        date(since)
+        sha(&run),
+        date(run.started_unix_ms)
     )
 }
+
+/// How the numbers were taken, for a table's provenance comment.
+const COMMAND: &str = "cargo run -p bench-report -- run";
 
 /// What the long-form timing table's numbers are.
 const ALL: &str = "Medians of criterion samples, the half-width of each one's 95% confidence \
@@ -1344,7 +1375,7 @@ const PER_INPUT: &str = "× input is the peak over the inputs' bytes.";
 const NOISY: &str = "a 95% confidence interval wider than ±5% of the median";
 
 /// What leapfrog's times on the selective workload leave out: see
-/// [`cases::ROTATION_ROWS`].
+/// [`harness::ROTATION_ROWS`].
 const LEAPFROG_SELECTIVE: &str = "On the selective workload, leapfrog reads about 0.5% of \
      the input rows, so a timed cycle read only 5K to 12K rows, which stayed in cache.";
 
@@ -1361,14 +1392,14 @@ fn reads<'a>(
         skips |= algorithm == Algorithm::Leapfrog
             && matches!(cases::group(group).workload, Workload::Selective);
     }
-    let rows = param_label(cases::ROTATION_ROWS as usize);
+    let rows = param_label(harness::ROTATION_ROWS as usize);
     let mut reads = if rotated {
         format!(
             "Below {rows} input rows, the timed calls cycled through instances of the inputs, \
              generated from other seeds, that held at least {rows} rows before one repeated, \
              too many for the branch predictor to learn much of. A join that reads every row \
              reads {} MiB a cycle, so a cache that holds that much served its rows.",
-            cases::ROTATION_ROWS * size_of::<Row>() as u64 / (1 << 20)
+            harness::ROTATION_ROWS * size_of::<Row>() as u64 / (1 << 20)
         )
     } else {
         format!(
@@ -1387,18 +1418,19 @@ fn reads<'a>(
 /// `marked` †, which means `dagger`.
 fn time_caption(
     results: &Results,
+    source: &Source,
     what: &str,
     reads: &str,
     dagger: &str,
     marked: &[String],
 ) -> String {
-    let run = &results.run;
+    let run = results.cited(source);
     let mut caption = format!(
         "{what} {}, macOS {}, {}, {CRITERION}, rust-algs {}. {reads}",
         run.cpu,
         run.os,
         rustc(&run.rustc),
-        sha(run)
+        sha(&run)
     );
     if !marked.is_empty() {
         caption += &format!(" † marks {dagger}: {}.", marked.join(", "));
@@ -1409,8 +1441,8 @@ fn time_caption(
 /// The line under a memory table: `what` its numbers are, and where they came
 /// from.
 fn memory_caption(results: &Results, what: &str) -> String {
-    let (run, _) = results.cited(Source::Memory);
-    format!("{what} {}, rust-algs {}.", rustc(&run.rustc), sha(run))
+    let run = results.cited(&Source::Memory);
+    format!("{what} {}, rust-algs {}.", rustc(&run.rustc), sha(&run))
 }
 
 /// A number the prose quotes, computed here so none is worked out by hand.
@@ -1433,8 +1465,8 @@ pub enum Value {
         faster: Algorithm,
         slower: Algorithm,
     },
-    /// |end / start − 1|: how far the machine's speed moved.
-    Drift(Quantity, Quantity),
+    /// The largest of the groups' sentinel drifts: see [`drifts`].
+    Drift,
 }
 
 /// A measure of one case.
@@ -1503,7 +1535,6 @@ pub const FACTS: &[Fact] = {
     const K1: usize = 1 << 10;
     const K16: usize = 1 << 14;
     const K64: usize = 1 << 16;
-    const K256: usize = 1 << 18;
     const M1: usize = 1 << 20;
     const M4: usize = 1 << 22;
     const fn fact(name: &'static str, value: Value) -> Fact {
@@ -1677,13 +1708,7 @@ pub const FACTS: &[Fact] = {
             "heap_over_leapfrog_selective_1M",
             ratio("multiway_selective", Heap, Leapfrog, M1),
         ),
-        fact(
-            "sentinel_drift",
-            Value::Drift(
-                q("sentinel_end", Hash, K256, Median),
-                q("sentinel_start", Hash, K256, Median),
-            ),
-        ),
+        fact("sentinel_drift", Value::Drift),
     ]
 };
 
@@ -1691,7 +1716,8 @@ impl Fact {
     /// The cases whose timings it reads, as (group, algorithm, parameter).
     fn timed(&self) -> Vec<(&'static str, Algorithm, usize)> {
         let quantities = match &self.value {
-            Value::Ratio(a, b) | Value::Drift(a, b) => vec![a, b],
+            Value::Ratio(a, b) => vec![a, b],
+            Value::Drift => vec![],
             Value::Single(a) => vec![a],
             Value::Crossover {
                 group,
@@ -1742,13 +1768,11 @@ impl Fact {
                 let id = |alg: &Algorithm| format!("{group}/{}/{param} median", alg.name());
                 ([value, id(faster), id(slower)], unsure)
             }
-            Value::Drift(end, start) => {
-                let drift = results.quantity(end).zip(results.quantity(start));
-                let value = drift.map_or_else(missing, |(e, s)| {
-                    format!("{}%", sig3((e / s - 1.0).abs() * 100.0))
-                });
-                let unsure = results.noisy(end) || results.noisy(start);
-                ([value, end.to_string(), start.to_string()], unsure)
+            Value::Drift => {
+                let value = drift(results)
+                    .map_or_else(missing, |drift| format!("{}%", sig3(drift * 100.0)));
+                let over = "the largest drift of any group's sentinel".to_owned();
+                ([value, over, "—".to_owned()], false)
             }
         }
     }
@@ -1839,21 +1863,22 @@ fn facts(results: &Results) -> String {
         })
         .collect();
     let what = "Each value is the numerator's measure over the denominator's, or the \
-                numerator's alone where there's no denominator. The drift is |numerator / \
-                denominator − 1|, and a crossover the smallest parameter from which the \
+                numerator's alone where there's no denominator. The drift is the largest \
+                |end / start − 1| of any group's sentinel, the same work timed before the \
+                group's first case and after its last, and a crossover the smallest parameter from which the \
                 numerator is faster than the denominator at every larger one, or the range it \
                 lies in where their confidence intervals overlap. Times are from";
     let reads = reads(results, FACTS.iter().flat_map(Fact::timed));
-    let mut caption = time_caption(results, what, &reads, UNSURE, &unsure);
-    let (memory, _) = results.cited(Source::Memory);
+    let source = Source::every_group();
+    let mut caption = time_caption(results, &source, what, &reads, UNSURE, &unsure);
     caption += &format!(
         " Peaks, allocations and input bytes are from the memory profiles at rust-algs {}.",
-        sha(memory)
+        sha(&results.cited(&Source::Memory))
     );
     page(
         "facts",
         results,
-        Source::Timings,
+        &source,
         &markdown(&header, 1, rows),
         &caption,
     )
@@ -1862,58 +1887,6 @@ fn facts(results: &Results) -> String {
 /// What † marks in the facts.
 const UNSURE: &str = "a fact that reads a timing whose 95% confidence interval is wider than \
                       ±5% of its median, or a crossover the intervals don't settle";
-
-/// `x` to three significant figures, without rounding its integer part, with
-/// commas between thousands: 0.0123, 1.23, 12.3, 123, 12,346.
-pub fn sig3(x: f64) -> String {
-    if x == 0.0 || !x.is_finite() {
-        return x.to_string();
-    }
-    let digits = x.abs().log10().floor() as i32 + 1;
-    let mut decimals = (3 - digits).max(0) as usize;
-    let mut text = format!("{x:.decimals$}");
-    // Rounding up can carry into a new digit, as 9.996 does to 10.00.
-    if decimals > 0 && text.parse::<f64>().unwrap().abs() >= 10f64.powi(digits) {
-        decimals -= 1;
-        text = format!("{x:.decimals$}");
-    }
-    match text.split_once('.') {
-        Some((integer, fraction)) => format!("{}.{fraction}", thousands(integer)),
-        None => thousands(&text),
-    }
-}
-
-/// An integer with commas between thousands.
-pub fn count(n: u64) -> String {
-    thousands(&n.to_string())
-}
-
-/// `digits`, a run of digits with an optional sign, with commas between
-/// thousands.
-fn thousands(digits: &str) -> String {
-    let (sign, digits) = digits.split_at(usize::from(digits.starts_with('-')));
-    let mut grouped = String::new();
-    for (i, digit) in digits.chars().enumerate() {
-        if i > 0 && (digits.len() - i) % 3 == 0 {
-            grouped.push(',');
-        }
-        grouped.push(digit);
-    }
-    format!("{sign}{grouped}")
-}
-
-/// A byte count as B, KiB or MiB, to three significant figures.
-pub fn bytes(n: u64) -> String {
-    const KIB: u64 = 1 << 10;
-    const MIB: u64 = 1 << 20;
-    const GIB: u64 = 1 << 30;
-    match n {
-        0..KIB => format!("{} B", count(n)),
-        KIB..MIB => format!("{} KiB", sig3(n as f64 / KIB as f64)),
-        MIB..GIB => format!("{} MiB", sig3(n as f64 / MIB as f64)),
-        _ => format!("{} GiB", sig3(n as f64 / GIB as f64)),
-    }
-}
 
 /// A time in ns, as ns, µs, ms or s, to three significant figures.
 pub fn duration(ns: f64) -> String {
@@ -1987,10 +1960,13 @@ fn date(unix_ms: u64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::alloc::Usage;
+    use bench_plan::alloc::Usage;
+    use bench_plan::profile::Memory;
+    use evidence::{Kind as TargetKind, Written};
 
     const RUSTC: &str = "rustc 1.98.1 (48a229cea 2026-09-01)";
 
+    /// A run of `target`, of the binary [`targets`] says it builds to now.
     fn run(target: &str, started_unix_ms: u64, commit: &str, dirty: bool, rustc: &str) -> Run {
         Run {
             target: target.to_owned(),
@@ -2001,14 +1977,50 @@ mod tests {
             cpu: "Apple M6".to_owned(),
             os: "27.0".to_owned(),
             args: Vec::new(),
+            binary: format!("{target}-bin"),
         }
     }
 
-    fn starts(window: &[&Run]) -> Vec<u64> {
-        window.iter().map(|run| run.started_unix_ms).collect()
+    /// A run of `target`, of `binary`.
+    fn of(target: &str, started_unix_ms: u64, binary: &str) -> Run {
+        Run {
+            binary: binary.to_owned(),
+            ..run(target, started_unix_ms, "aaaaaaa000", false, RUSTC)
+        }
     }
 
-    /// A 1 µs timing with a ±1% confidence interval.
+    /// Every bench target's name and kind, in run order.
+    fn names() -> Vec<(&'static str, TargetKind)> {
+        cases::GROUPS
+            .iter()
+            .map(|group| (group.name, TargetKind::Timing))
+            .chain([("memory", TargetKind::Memory)])
+            .chain(cache::PARTS.map(|part| (part, TargetKind::Cache)))
+            .collect()
+    }
+
+    /// Every bench target, building to the binary `run` records.
+    fn targets() -> Vec<Target> {
+        names()
+            .into_iter()
+            .map(|(name, kind)| Target {
+                name: name.to_owned(),
+                package: "bench",
+                kind,
+                executable: PathBuf::new(),
+                binary: format!("{name}-bin"),
+            })
+            .collect()
+    }
+
+    /// A run of every target at `commit`, each starting at `started_unix_ms`.
+    fn log(started_unix_ms: u64, commit: &str, dirty: bool) -> Vec<Run> {
+        names()
+            .into_iter()
+            .map(|(name, _)| run(name, started_unix_ms, commit, dirty, RUSTC))
+            .collect()
+    }
+
     fn timing(written_unix_ms: u64) -> Timing {
         around(1000.0, written_unix_ms)
     }
@@ -2025,17 +2037,19 @@ mod tests {
         }
     }
 
-    /// A timing for every case, written at `written_unix_ms`.
+    /// A timing for every case and every sentinel, written at
+    /// `written_unix_ms`.
     fn every_timing(written_unix_ms: u64) -> HashMap<Key, Timing> {
-        cases::cases()
-            .map(|case| (key(&case), timing(written_unix_ms)))
+        cases::GROUPS
+            .iter()
+            .flat_map(evidence::timing_keys)
+            .map(|(_, key)| (key, timing(written_unix_ms)))
             .collect()
     }
 
     /// A memory profile of every case.
-    fn memory(run: Run) -> Memory {
+    fn memory() -> Memory {
         let cases = cases::cases()
-            .filter(|case| !case.group.is_sentinel())
             .map(|case| MemoryCase {
                 group: case.group.name.to_owned(),
                 algorithm: case.algorithm.name().to_owned(),
@@ -2047,14 +2061,13 @@ mod tests {
             })
             .collect();
         Memory {
-            run,
             filter: None,
             cases,
         }
     }
 
-    /// Timing results at commit `aaaaaaa`, and nothing else.
-    fn cache(run: Run) -> Cache {
+    /// The cache targets' measures.
+    fn cache() -> Cache {
         let phases = |rows_a_side, whole_ns| cache::Phases {
             rows_a_side,
             build_ns: whole_ns / 3.0,
@@ -2071,7 +2084,6 @@ mod tests {
             paged_ns: ns - 1.0,
         };
         Cache {
-            run,
             l2_bytes: 20 << 20,
             line_bytes: 128,
             phases: vec![
@@ -2119,16 +2131,71 @@ mod tests {
         }
     }
 
+    /// The run log `runs`, `timings`, and every other result written at
+    /// `written_unix_ms`.
+    fn evidence(runs: Vec<Run>, timings: HashMap<Key, Timing>, written_unix_ms: u64) -> Evidence {
+        let cache = cache();
+        Evidence {
+            runs,
+            timings,
+            memory: Some(Written {
+                value: memory(),
+                written_unix_ms,
+            }),
+            phases: Some(Written {
+                value: cache::PhasesPart {
+                    l2_bytes: cache.l2_bytes,
+                    line_bytes: cache.line_bytes,
+                    phases: cache.phases,
+                },
+                written_unix_ms,
+            }),
+            reads: Some(Written {
+                value: cache::ReadsPart {
+                    line_bytes: cache.line_bytes,
+                    reads: cache.reads,
+                    worked_reads: cache.worked_reads,
+                },
+                written_unix_ms,
+            }),
+            hashers: Some(Written {
+                value: cache::HashersPart {
+                    hashers: cache.hashers,
+                },
+                written_unix_ms,
+            }),
+            absent: Some(Written {
+                value: cache::AbsentPart {
+                    absent: cache.absent,
+                },
+                written_unix_ms,
+            }),
+        }
+    }
+
+    /// Results with `timings`, every target cited at commit `aaaaaaa`.
     fn results(timings: HashMap<Key, Timing>) -> Results {
         Results {
-            run: run("joins", 0, "aaaaaaa000", false, RUSTC),
-            since_unix_ms: 0,
             timings,
-            memory_run: None,
             memory: HashMap::new(),
             cache: None,
+            cited: log(0, "aaaaaaa000", false)
+                .into_iter()
+                .map(|run| (run.target.clone(), run))
+                .collect(),
             allowed: Vec::new(),
         }
+    }
+
+    /// `results` with the cache measures, cited at `commit`.
+    fn with_cache(mut results: Results, commit: &str) -> Results {
+        results.cache = Some(cache());
+        for part in cache::PARTS {
+            results
+                .cited
+                .insert(part.to_owned(), run(part, 0, commit, false, RUSTC));
+        }
+        results
     }
 
     const STRICT: Options = Options {
@@ -2138,53 +2205,204 @@ mod tests {
     };
 
     #[test]
-    fn the_window_stops_at_a_different_commit_dirty_tree_or_rustc() {
-        let clean = |t, commit, rustc| run("joins", t, commit, false, rustc);
-        // A memory run in between neither joins nor breaks the window.
-        let runs = [
-            clean(1, "a", "1.98"),
-            clean(2, "b", "1.98"),
-            run("memory", 3, "c", true, "1.97"),
-            clean(4, "b", "1.98"),
-        ];
-        assert_eq!(starts(&window(&runs)), [2, 4]);
+    fn every_quoted_memory_number_has_a_claim() {
+        use std::collections::BTreeMap;
+        // The algorithms each table or fact quotes a peak or allocation count
+        // of, by the workload they ran on.
+        let mut quoted: BTreeMap<(&str, usize), Vec<Algorithm>> = BTreeMap::new();
+        let mut quote = |group: &'static str, algorithm: Algorithm, param: usize| {
+            quoted.entry((group, param)).or_default().push(algorithm);
+        };
+        for table in TABLES {
+            match &table.kind {
+                Kind::Profile { cases, .. } => {
+                    for (c, param) in *cases {
+                        quote(c.group, c.algorithm, *param);
+                    }
+                }
+                Kind::Grid {
+                    columns,
+                    metric: Metric::Peak,
+                    ..
+                } => {
+                    for c in *columns {
+                        for case in cases::group(c.group).cases() {
+                            if case.algorithm == c.algorithm {
+                                quote(c.group, c.algorithm, case.param);
+                            }
+                        }
+                    }
+                }
+                Kind::Grid { .. } => {}
+            }
+        }
+        for fact in FACTS {
+            let quantities = match &fact.value {
+                Value::Ratio(a, b) => vec![a, b],
+                Value::Drift => vec![],
+                Value::Single(a) => vec![a],
+                Value::Crossover { .. } => vec![],
+            };
+            for q in quantities {
+                if matches!(q.measure, Measure::Peak | Measure::Allocations) {
+                    quote(q.group, q.algorithm, q.param);
+                }
+            }
+        }
 
-        let runs = [
-            clean(1, "b", "1.98"),
-            run("joins", 2, "b", true, "1.98"),
-            clean(3, "b", "1.98"),
-        ];
-        assert_eq!(starts(&window(&runs)), [3]);
-
-        let runs = [clean(1, "b", "1.97"), clean(2, "b", "1.98")];
-        assert_eq!(starts(&window(&runs)), [2]);
-
-        assert!(window(&[run("memory", 1, "a", false, "1.98")]).is_empty());
+        for ((name, param), algorithms) in quoted {
+            let data = (cases::group(name).generate)(param, 0);
+            for alg in algorithms {
+                assert!(
+                    cases::memory_claim(alg, &data).is_some()
+                        || cases::REPORTED_ONLY.contains(&alg),
+                    "{name}/{}/{param} is quoted, but no claim checks it",
+                    alg.name()
+                );
+            }
+        }
     }
 
     #[test]
-    fn refuses_results_older_than_the_window() {
-        let since = 1_000;
-        let mut timings = every_timing(since + 1);
-        assert!(stale(&timings, since).is_empty());
+    fn a_target_is_out_of_date_until_the_binary_built_now_has_run() {
+        let evidence = evidence(log(1000, "aaaaaaa000", false), every_timing(1500), 1500);
+        let mut targets = targets();
+        for target in &targets {
+            let why = evidence::out_of_date(target, &evidence);
+            assert!(why.is_empty(), "{}: {why:?}", target.name);
+        }
+        // One group's definition changed, and one cache measure's code.
+        for name in ["small_side", "absent"] {
+            let rebuilt = targets.iter_mut().find(|t| t.name == name).unwrap();
+            rebuilt.binary = "rebuilt".to_owned();
+        }
+        let stale: Vec<&str> = targets
+            .iter()
+            .filter(|target| !evidence::out_of_date(target, &evidence).is_empty())
+            .map(|target| target.name.as_str())
+            .collect();
+        assert_eq!(stale, ["small_side", "absent"]);
+    }
 
-        let ids: Vec<Case> = cases::cases().collect();
-        timings.insert(key(&ids[1]), timing(since - 1));
-        timings.remove(&key(&ids[2]));
+    #[test]
+    fn refuses_timings_another_build_wrote() {
+        let group = cases::group("one_to_one");
+        let runs = vec![
+            of("one_to_one", 1000, "old"),
+            of("one_to_one", 2000, "now"),
+            // Another group's run doesn't write this one's timings.
+            of("small_side", 2200, "old"),
+            of("one_to_one", 3000, "old"),
+            of("one_to_one", 4000, "now"),
+        ];
+        let mut evidence = evidence(runs, every_timing(4500), 4500);
+        assert!(evidence.stale_timings(group, "now").is_empty());
+
+        let ids: Vec<Case> = group.cases().collect();
+        // Written by the first run of this build: still its results.
+        evidence.timings.insert(key(&ids[0]), timing(2500));
+        // Written by the other build, before any run, and not at all.
+        evidence.timings.insert(key(&ids[1]), timing(3500));
+        evidence.timings.insert(key(&ids[2]), timing(500));
+        evidence.timings.remove(&key(&ids[3]));
         assert_eq!(
-            stale(&timings, since),
-            [ids[1].to_string(), ids[2].to_string()]
+            evidence.stale_timings(group, "now"),
+            [ids[1].to_string(), ids[2].to_string(), ids[3].to_string()]
+        );
+    }
+
+    #[test]
+    fn a_commit_that_leaves_a_binary_alone_leaves_its_results_standing() {
+        // Everything ran at a. At b the absent probes' code changed, so that
+        // target rebuilt and reran alone, and a noisy timing was rerun.
+        let mut runs = log(1000, "aaaaaaa000", false);
+        runs.push(Run {
+            binary: "absent-rebuilt".to_owned(),
+            ..run("absent", 2000, "bbbbbbb000", false, RUSTC)
+        });
+        runs.push(run("one_to_one", 2100, "bbbbbbb000", false, RUSTC));
+        let mut timings = every_timing(1500);
+        let noisy = cases::group("one_to_one").cases().next().unwrap();
+        timings.insert(key(&noisy), timing(2500));
+        let mut evidence = evidence(runs, timings, 1500);
+        evidence.absent.as_mut().unwrap().written_unix_ms = 2500;
+        let mut targets = targets();
+        let absent = targets.iter_mut().find(|t| t.name == "absent").unwrap();
+        absent.binary = "absent-rebuilt".to_owned();
+
+        let (results, warnings) =
+            vouch(&STRICT, &targets, evidence).expect("every binary is the one built now");
+        assert!(warnings.is_empty(), "{warnings:?}");
+        let files: HashMap<String, String> = render(&results).into_iter().collect();
+        assert!(files["one_to_one.md"].contains("rust-algs aaaaaaa ·"));
+        assert!(files["binary_memory.md"].contains("rust-algs aaaaaaa ·"));
+        assert!(files["read_cost.md"].contains("rust-algs aaaaaaa ·"));
+        assert!(files["control_miss.md"].contains("rust-algs bbbbbbb ·"));
+        assert!(files["control_miss.md"].contains("rust-algs bbbbbbb."));
+    }
+
+    #[test]
+    fn a_table_of_two_groups_cites_the_later_of_their_commits() {
+        let mut results = results(every_timing(0));
+        results.cited.insert(
+            "multiway_sparse".to_owned(),
+            run("multiway_sparse", 86_400_000, "bbbbbbb000", false, RUSTC),
+        );
+        let files: HashMap<String, String> = render(&results).into_iter().collect();
+        assert!(files["heap_vs_scan.md"].contains("rust-algs bbbbbbb · 1970-01-02"));
+        assert!(files["selective.md"].contains("rust-algs aaaaaaa ·"));
+    }
+
+    #[test]
+    fn cites_the_oldest_clean_run_of_a_binary() {
+        let mut runs = vec![run("one_to_one", 500, "9999999000", true, RUSTC)];
+        runs.extend(log(1000, "bbbbbbb000", false));
+        runs.push(run("one_to_one", 3000, "ccccccc000", false, RUSTC));
+        let (results, _) = vouch(
+            &STRICT,
+            &targets(),
+            evidence(runs, every_timing(3500), 3500),
+        )
+        .expect("a clean tree ran each binary");
+        assert_eq!(results.cited["one_to_one"].commit, "bbbbbbb000");
+    }
+
+    #[test]
+    fn a_binary_only_dirty_trees_ran_cites_no_commit() {
+        let dirty = || evidence(log(1000, "aaaaaaa000", true), every_timing(1500), 1500);
+        let Err(refused) = vouch(&STRICT, &targets(), dirty()) else {
+            panic!("cited a commit for a dirty tree's binary");
+        };
+        assert!(refused.contains("only dirty trees have run"), "{refused}");
+        let allowed = Options {
+            allow_dirty: true,
+            ..STRICT
+        };
+        assert!(vouch(&allowed, &targets(), dirty()).is_ok());
+    }
+
+    #[test]
+    fn refuses_everything_when_nothing_has_run_and_says_how_to_run_it() {
+        let Err(refused) = vouch(&STRICT, &targets(), Evidence::default()) else {
+            panic!("vouched for nothing");
+        };
+        for (name, _) in names() {
+            assert!(refused.contains(&format!("{name}: ")), "{refused}");
+        }
+        assert!(
+            refused.contains("bench-report --release -- run"),
+            "{refused}"
         );
     }
 
     #[test]
     fn refuses_a_smoke_runs_timings_until_they_are_rerun() {
-        let joins = |t, args: &[&str]| Run {
+        let small: Vec<Case> = cases::group("small_side").cases().take(3).collect();
+        let small_side = |t, args: &[&str]| Run {
             args: args.iter().map(|arg| arg.to_string()).collect(),
-            ..run("joins", t, "aaaaaaa000", false, RUSTC)
+            ..run("small_side", t, "aaaaaaa000", false, RUSTC)
         };
-        let full = joins(1000, &["--bench"]);
-        let smoke = joins(
+        let smoke = small_side(
             2000,
             &[
                 "--warm-up-time",
@@ -2192,22 +2410,17 @@ mod tests {
                 "--measurement-time",
                 "0.2",
                 "small",
-                "--bench",
             ],
         );
-        let rerun = joins(3000, &["small_side", "--bench"]);
-        let profiles = || Some(memory(run("memory", 900, "aaaaaaa000", false, RUSTC)));
-        let measures = || Some(cache(run("cache", 900, "aaaaaaa000", false, RUSTC)));
-        let small: Vec<Case> = cases::group("small_side").cases().take(3).collect();
+        let rerun = small_side(3000, &["nested_loop"]);
 
+        let full = log(1000, "aaaaaaa000", false);
         let mut timings = every_timing(1500);
         assert!(
             vouch(
                 &STRICT,
-                std::slice::from_ref(&full),
-                timings.clone(),
-                profiles(),
-                measures()
+                &targets(),
+                evidence(full.clone(), timings.clone(), 1500)
             )
             .is_ok()
         );
@@ -2216,8 +2429,8 @@ mod tests {
         for case in &small {
             timings.insert(key(case), timing(2500));
         }
-        let runs = [full.clone(), smoke.clone()];
-        let Err(refused) = vouch(&STRICT, &runs, timings.clone(), profiles(), measures()) else {
+        let runs: Vec<Run> = full.iter().cloned().chain([smoke.clone()]).collect();
+        let Err(refused) = vouch(&STRICT, &targets(), evidence(runs, timings.clone(), 1500)) else {
             panic!("a smoke run's timings passed");
         };
         for case in &small {
@@ -2228,23 +2441,12 @@ mod tests {
         for case in &small {
             timings.insert(key(case), timing(3500));
         }
-        assert!(
-            vouch(
-                &STRICT,
-                &[full, smoke, rerun],
-                timings,
-                profiles(),
-                measures()
-            )
-            .is_ok()
-        );
+        let runs: Vec<Run> = full.into_iter().chain([smoke, rerun]).collect();
+        assert!(vouch(&STRICT, &targets(), evidence(runs, timings, 1500)).is_ok());
     }
 
     #[test]
     fn refuses_a_confidence_level_other_than_95_percent() {
-        let full = run("joins", 1000, "aaaaaaa000", false, RUSTC);
-        let profiles = Some(memory(run("memory", 900, "aaaaaaa000", false, RUSTC)));
-        let measures = Some(cache(run("cache", 900, "aaaaaaa000", false, RUSTC)));
         let mut timings = every_timing(1500);
         let case = cases::cases().next().unwrap();
         timings.insert(
@@ -2254,9 +2456,11 @@ mod tests {
                 ..timing(1500)
             },
         );
-        let Err(refused) = vouch(&STRICT, &[full], timings, profiles, measures) else {
+        let evidence = evidence(log(1000, "aaaaaaa000", false), timings, 1500);
+        let Err(refused) = vouch(&STRICT, &targets(), evidence) else {
             panic!("a 99% interval passed");
         };
+        assert!(refused.contains("other than 95%"), "{refused}");
         assert!(refused.contains(&case.to_string()), "{refused}");
     }
 
@@ -2314,7 +2518,10 @@ mod tests {
     #[test]
     fn memory_tables_cite_the_memory_run_and_every_file_its_flags() {
         let mut results = results(every_timing(0));
-        results.memory_run = Some(run("memory", 86_400_000, "bbbbbbb000", false, RUSTC));
+        results.cited.insert(
+            "memory".to_owned(),
+            run("memory", 86_400_000, "bbbbbbb000", false, RUSTC),
+        );
         results.allowed = vec!["--allow-stale"];
         let files: HashMap<String, String> = render(&results).into_iter().collect();
 
@@ -2346,8 +2553,7 @@ mod tests {
 
     #[test]
     fn cache_tables_cite_the_cache_run() {
-        let mut results = results(every_timing(0));
-        results.cache = Some(cache(run("cache", 0, "ccccccc000", false, RUSTC)));
+        let results = with_cache(results(every_timing(0)), "ccccccc000");
         let files = render(&results);
         for name in [
             "hash_phases",
@@ -2371,8 +2577,7 @@ mod tests {
 
     #[test]
     fn the_prediction_starts_at_the_flat_join_and_stays_in_its_band() {
-        let mut results = results(every_timing(0));
-        results.cache = Some(cache(run("cache", 0, "ccccccc000", false, RUSTC)));
+        let results = with_cache(results(every_timing(0)), "ccccccc000");
         let files = render(&results);
         let (_, page) = files
             .iter()
@@ -2389,8 +2594,7 @@ mod tests {
 
     #[test]
     fn the_hasher_tables_have_a_column_per_hashing() {
-        let mut results = results(every_timing(0));
-        results.cache = Some(cache(run("cache", 0, "ccccccc000", false, RUSTC)));
+        let results = with_cache(results(every_timing(0)), "ccccccc000");
         let files = render(&results);
         let page = |name: &str| {
             files
@@ -2416,8 +2620,7 @@ mod tests {
 
     #[test]
     fn the_work_and_control_tables_say_what_their_rows_run() {
-        let mut results = results(every_timing(0));
-        results.cache = Some(cache(run("cache", 0, "ccccccc000", false, RUSTC)));
+        let results = with_cache(results(every_timing(0)), "ccccccc000");
         let files = render(&results);
         let page = |name: &str| {
             files
@@ -2449,18 +2652,6 @@ mod tests {
             phases.contains("The build loop retires 56 instructions for each row it builds"),
             "{phases}"
         );
-    }
-
-    #[test]
-    fn refuses_cache_measures_from_another_commit() {
-        let joins = run("joins", 0, "aaaaaaa000", false, RUSTC);
-        let timings = every_timing(1);
-        let memory = memory(run("memory", 0, "aaaaaaa000", false, RUSTC));
-        let other = cache(run("cache", 0, "bbbbbbb000", false, RUSTC));
-        let Err(refused) = vouch(&STRICT, &[joins], timings, Some(memory), Some(other)) else {
-            panic!("accepted measures from another commit");
-        };
-        assert!(refused.contains("the cache measures ran at"), "{refused}");
     }
 
     #[test]
@@ -2504,7 +2695,7 @@ mod tests {
         let mut timings = every_timing(0);
         for case in cases::cases() {
             if matches!(case.group.workload, Workload::Dense | Workload::Sparse) {
-                timings.get_mut(&key(&case)).unwrap().input_rows = Some(cases::ROTATION_ROWS);
+                timings.get_mut(&key(&case)).unwrap().input_rows = Some(harness::ROTATION_ROWS);
             }
         }
         let files: HashMap<String, String> = render(&results(timings)).into_iter().collect();

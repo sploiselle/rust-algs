@@ -32,7 +32,10 @@ crates/algs/              the library
   src/merkle.rs           Merkle trees over a directory, for finding what changed
   examples/               programs to run against the library
 crates/diagrams/          figures drawn from the library (SVG, HTML and Mermaid)
-crates/bench/             timings (criterion) and memory profiles of the library
+crates/bench/             timings of the joins (criterion), one binary a group
+crates/bench-plan/        every benchmark group, and the joins' memory profiles
+crates/bench-cache/       why the hash join's cost per row climbs, one binary a measure
+crates/bench-report/      runs the benchmarks that are out of date, and writes the tables a post quotes
 figures/                  the rendered figures, generated and not committed
 ```
 
@@ -230,14 +233,20 @@ text at its set size and weight, so a bolder or larger font can collide.
 
 ## Benchmarks
 
-`crates/bench` times the joins with criterion, profiles their memory with a
-counting allocator, and turns the results into Markdown tables for a post to
-quote. Every case is checked before it's measured: its row count against a
-count made without any join, and a checksum every algorithm on the same input
-has to agree on, so a wrong join can't post a number. The memory harness also
-asserts the memory figures the post quotes, as closed forms, except the binary
-plans' peaks: those depend on where their intermediate results fall against
-the powers of two a Vec grows through, so they're reported, not asserted.
+Four crates time the joins, profile their memory, and turn the results into
+Markdown tables for a post to quote. Each benchmark group in
+`crates/bench/groups/` has a timing binary of its own, run by criterion.
+`crates/bench-plan` holds the plan of every group and profiles each case's
+memory with a counting allocator. `crates/bench-cache` measures why the hash
+join's cost per row climbs. `crates/bench-report` runs them and writes the
+tables.
+
+Every case is checked before it's measured: its row count against a count made
+without any join, and a checksum every join on the same input has to agree on,
+so a wrong join can't post a number. The memory harness also asserts the
+memory figures the post quotes, as closed forms, except the binary plans'
+peaks: those depend on where their intermediate results fall against the
+powers of two a Vec grows through, so they're reported, not asserted.
 
 A join called over and over on one input runs faster than on fresh input,
 because the branch predictor learns its comparisons. So a timed case rotates
@@ -250,38 +259,82 @@ about 32 MiB, as generated and sorted. Leapfrog reads only about 0.5% of
 in cache. Every instance is checked before it's timed; the memory harness
 profiles each case's first instance alone.
 
-A third target, `cache`, measures why the hash join's cost per row climbs: it
-times the join's two loops apart from 64K rows a side to 64M, and what a read
-costs across working sets to 2 GiB, one at a time and overlapped. The tables
-set those beside a model of how many of the join's reads reach DRAM. It also
-times the join with hashers that run more instructions, and with keys hashed
-in batches before their lookups, and counts the instructions each retires, to
-show why a slow hasher costs more past L2. It needs about 7 GiB free at its
-largest size.
+The cache measures are four targets: `phases` times the hash join's two loops
+apart from 64K rows a side to 64M; `reads` measures what a read costs across
+working sets to 2 GiB, one at a time, overlapped, and with unrelated work
+beside it; `hashers` times the join with hashers that run more instructions,
+and with keys hashed in batches before their lookups, and counts the
+instructions each retires; `absent` probes for keys the table doesn't hold,
+which reads control bytes alone. The tables set those beside a model of how
+many of the join's reads reach DRAM. The largest sizes need about 7 GiB free.
 
-The tables cite the commit they ran at, so commit first. Then, on AC power
-with other apps closed:
+### Running them
 
-```bash
-rm -rf target/criterion target/bench && cargo bench -p bench
-cargo run -p bench --release
-```
-
-That takes several minutes, and writes the tables into
-`target/bench/tables/` (pass `--out <dir>` to write somewhere else). The report
-refuses results from a dirty tree, from runs at another commit or rustc, or
-from a run with other criterion settings, such as a smoke test's shorter
-measurement; `--allow-dirty` and `--allow-stale` override it, and every table
-written under them says so. To rerun a noisy group at the same commit, which
-the report accepts:
+On AC power with other apps closed:
 
 ```bash
-cargo bench -p bench --bench joins -- <group>
+cargo run -p bench-report --release -- run
 ```
+
+```bash
+cargo run -p bench-report --release
+```
+
+The first runs every bench target that is out of date; the second writes the
+tables into `target/bench/tables/` (pass `--out <dir>` to write somewhere
+else). The tables cite the commit their numbers were measured at, so commit
+before running: results from a dirty tree cite no commit, and the tables
+refuse them.
+
+### What reruns
+
+Only what a change touched. The runner builds every target and hashes its
+executable, and a target whose results came from that same binary is left
+alone. Builds are reproducible, so the same hash means the same machine code,
+laid out the same way; a change that moves a byte of a binary, and so perhaps
+a loop, reruns it. Each binary links as little as it can, so:
+
+- a change to the tables, the runner or the run log reruns nothing;
+- a new group, or a change to one group's file, reruns that group and the
+  memory profiles;
+- a change to one join reruns the groups that time it, the memory profiles,
+  and the cache measures that call it;
+- a change to one workload's generator reruns the groups that use it;
+- a change to one cache measure's code reruns that measure;
+- a change to what every timing binary shares (`crates/bench/src/harness.rs`,
+  the sinks, `benches/support/timing.rs`) reruns them all.
+
+To see what would run without running it:
+
+```bash
+cargo run -p bench-report --release -- run --list
+```
+
+To rerun a target that is up to date, or one noisy case of it (anything after
+`--` goes to the target, so to criterion's filter):
+
+```bash
+cargo run -p bench-report --release -- run --only one_to_one -- hash/1048576
+```
+
+The tables say which results they refuse and why: a target rebuilt since it
+ran, a run with other criterion settings, such as a smoke test's shorter
+measurement, or a binary only a dirty tree has run. `--allow-stale` and
+`--allow-dirty` override it, and every table written under them says so.
+
+Keeping it that way takes two habits. A group's joins and workload are named
+only in its own file, never in code every binary links. And the bench targets
+hold no bookkeeping: the runner logs the commit and the binary's hash, so the
+log can change without changing what's measured. `cargo bench -p bench` still
+runs a group, but nothing logs that run, so the tables won't use it.
+
+To add a group: write `crates/bench/groups/<name>.rs`, copy another group's
+`crates/bench/benches/<name>.rs` and `[[bench]]` entry, and add the file to
+`GROUPS` in `crates/bench-plan/src/cases.rs`.
 
 Like the figures, everything the benchmarks write is generated, so it lands
 under `target/` and is never committed.
 
-criterion is slow to build, so plain `cargo test` and `cargo build` skip this
-crate. `cargo test --workspace` and `cargo clippy --workspace --all-targets`
-cover it.
+criterion is slow to build, so plain `cargo test` and `cargo build` skip these
+crates. `cargo test --workspace` and `cargo clippy --workspace --all-targets`
+cover them.

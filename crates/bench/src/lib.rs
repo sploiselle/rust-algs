@@ -1,21 +1,37 @@
-//! Timings and memory profiles of the [`algs::join`] implementations, and the
-//! Markdown tables a post quotes from them.
+//! Timings of the [`algs::join`] implementations: what the timing binaries
+//! run, and one binary a group to run it.
 //!
 //! ## Running
 //!
 //! ```text
-//! cargo bench -p bench                           # time every case, then profile its memory
-//! cargo bench -p bench --bench joins -- <group>  # rerun one group's timings
-//! cargo bench -p bench --bench memory            # only the memory profiles
-//! cargo bench -p bench --bench cache             # only the hash join's cache costs
-//! cargo run -p bench --release                   # the tables
+//! cargo run -p bench-report --release -- run     # run whatever is out of date
+//! cargo run -p bench-report --release            # the tables
 //! ```
 //!
-//! [`cases`] is the plan all three read: every workload, the parameters it
-//! runs at, and the algorithms run on it. Both bench targets check every case
-//! before they measure it, by its row count against an independent count and
-//! by a [`Checksum`] every algorithm on the same input must agree on, so a
-//! wrong join can't post a number.
+//! The runner builds every bench target, sees which have no results from the
+//! binary they build to now, and runs those. See `bench-report`.
+//!
+//! ## Why a binary a group, and four crates
+//!
+//! The report trusts a result for as long as the target that wrote it still
+//! builds to the same binary, byte for byte. A change to code a binary links
+//! can move its loops, and so its times, even when the change is to code it
+//! never runs; a change to code it doesn't link can't. So each binary links
+//! as little as it can:
+//!
+//! - each group in `groups/` has a timing binary of its own, which names only
+//!   that group's joins and workload. The joins are generic and the workload
+//!   generators inline, so only the named ones are compiled in;
+//! - the plan of every group, the memory profiles and their claims are in
+//!   `bench-plan`, the hash join's cache costs in `bench-cache`, and the
+//!   tables, the runner and the run log in `bench-report`. No timing binary
+//!   links any of them.
+//!
+//! Adding a group, or changing one, reruns that group. Changing a join reruns
+//! the groups that time it. Changing a table, the runner or the run log
+//! reruns nothing. Changing what every timing binary shares (the [`harness`],
+//! the sinks below, `benches/support/timing.rs`) reruns them all, as it
+//! should.
 //!
 //! ## What a timing includes
 //!
@@ -27,44 +43,33 @@
 //! far more to every timing than the Tally's XOR.
 //!
 //! The timed calls cycle through instances of each case's input, holding at
-//! least [`ROTATION_ROWS`](cases::ROTATION_ROWS) rows before one repeats, so
+//! least [`ROTATION_ROWS`](harness::ROTATION_ROWS) rows before one repeats, so
 //! the branch predictor learns little of any one. A cache that holds the
 //! 16 MiB a cycle reads still serves their rows.
+//!
+//! Every case is checked before it's timed, by its row count against an
+//! independent count and by a [`Checksum`] every join on the same input must
+//! agree on, so a wrong join can't post a number.
 //!
 //! ## Output
 //!
 //! Everything lands under `target/`, so nothing generated gets committed:
-//! criterion's results in `target/criterion/`, a [`record`] of every run
-//! in `target/bench/runs.jsonl`, the memory profiles in
-//! `target/bench/memory.json`, and the tables in `target/bench/tables/`. The
-//! [`report`] only accepts results from clean runs at one commit and one
-//! rustc.
+//! criterion's results in `target/criterion/`, and the rest under
+//! `target/bench/`.
 //!
-//! ## Why memory is a separate binary
-//!
-//! The memory harness counts every allocation with its own global allocator,
-//! [`CountingAlloc`](alloc::CountingAlloc). In the timing binary, that would
-//! add bookkeeping to every allocation the timed code makes, and count
-//! criterion's own. Nor does a peak fit criterion's model: it divides each
-//! sample by its iteration count, which suits a time and understates a peak,
-//! and allocation is deterministic, so its statistics have nothing to estimate.
-//!
-//! ## Why `cargo test` skips this crate
+//! ## Why `cargo test` skips these crates
 //!
 //! criterion is slow to build, so the workspace's default members are the
 //! library and the figures. `cargo test --workspace` and
-//! `cargo clippy --workspace --all-targets` include this crate.
+//! `cargo clippy --workspace --all-targets` include them.
 
 use std::hint::black_box;
 
 use serde::{Deserialize, Serialize};
 
-pub mod alloc;
 pub mod baseline;
-pub mod cache;
-pub mod cases;
-pub mod record;
-pub mod report;
+pub mod harness;
+pub mod joins;
 pub mod workload;
 
 /// A row: its key, and a payload. Payloads are random, never derived from the

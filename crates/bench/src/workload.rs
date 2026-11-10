@@ -5,10 +5,16 @@
 //! and a sorted copy holds exactly the rows of the input it was sorted from.
 //! Instances of a workload differ only in their seeds: other rows, in the same
 //! counts but for how [`sparse`] splits its rows between inputs. See
-//! [`cases::ROTATION_ROWS`]. Every payload is a fresh draw from the workload's
+//! [`harness::ROTATION_ROWS`]. Every payload is a fresh draw from the workload's
 //! generator, so none repeats.
 //!
-//! [`cases::ROTATION_ROWS`]: crate::cases::ROTATION_ROWS
+//! Each generator is `#[inline]`, and nothing in this crate calls one. So a
+//! generator's code is in a binary only if that binary's group uses it, and
+//! changing one workload, or adding one, leaves the other groups' binaries as
+//! they were. What the generators share (the generator of numbers, the
+//! structs, the sort and the count) is ordinary code in every binary.
+//!
+//! [`harness::ROTATION_ROWS`]: crate::harness::ROTATION_ROWS
 
 use crate::{Row, mix};
 
@@ -108,6 +114,7 @@ impl Multi {
 /// Two inputs of `n` rows that share half their keys: `n / 2` keys in both,
 /// and `n / 2` more in each alone, from `0..3n / 2`, each input shuffled. A
 /// shared key joins to one pair, so they join to `n / 2` pairs.
+#[inline]
 pub fn one_to_one(n: usize, instance: usize) -> Binary {
     let mut rng = Rng::instance(&format!("one_to_one/{n}"), instance);
     let (mut left, mut right) = two_sides(&mut rng, n, n / 2);
@@ -121,6 +128,7 @@ pub fn one_to_one(n: usize, instance: usize) -> Binary {
 /// `m` rows against 65,536, each of the `m` keys one of the 65,536, both
 /// sides shuffled: so few rows on one side that a nested loop compares each
 /// row of the other only `m` times, where a hash join looks each one up once.
+#[inline]
 pub fn small_side(m: usize, instance: usize) -> Binary {
     let mut rng = Rng::instance(&format!("small_side/{m}"), instance);
     let mut keys: Vec<u64> = (0..LARGE_SIDE as u64).collect();
@@ -134,6 +142,7 @@ pub fn small_side(m: usize, instance: usize) -> Binary {
 
 /// `k` inputs that each hold every key in `0..2^20 / k` once: every key is in
 /// every input, so every key joins.
+#[inline]
 pub fn dense(k: usize, instance: usize) -> Multi {
     let mut rng = Rng::instance(&format!("dense/{k}"), instance);
     let keys = (MULTIWAY_ROWS / k) as u64;
@@ -147,6 +156,7 @@ pub fn dense(k: usize, instance: usize) -> Multi {
 /// rest is in one input, drawn uniformly, so the inputs interleave and only
 /// 1,024 keys join. Each input's size is drawn too, so instances differ in
 /// how the rows split between inputs, but not in how many there are in all.
+#[inline]
 pub fn sparse(k: usize, instance: usize) -> Multi {
     let mut rng = Rng::instance(&format!("sparse/{k}"), instance);
     let mut inputs = vec![Vec::new(); k];
@@ -171,6 +181,7 @@ pub fn sparse(k: usize, instance: usize) -> Multi {
 /// Every size is exact rather than drawn, so where A⋈B falls against the
 /// powers of two a binary plan's Vecs grow through, halfway from `n / 2` to
 /// `n`, doesn't change from one `n` to the next.
+#[inline]
 pub fn selective(n: usize, instance: usize) -> Multi {
     let mut rng = Rng::instance(&format!("selective/{n}"), instance);
     let (a, b) = two_sides(&mut rng, n, 3 * n / 4);

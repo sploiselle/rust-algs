@@ -32,9 +32,21 @@
 //! hashing a batch of keys before their lookups, which keeps the hash's
 //! instructions out of the window those lookups wait in, once a batch's
 //! lookups are enough to fill it.
+//!
+//! ## One binary a measure
+//!
+//! Each of [`PARTS`] is a bench target, with a file of its own under
+//! `target/bench/cache/`. The functions one target alone runs are
+//! `#[inline]`, and nothing in this crate calls them, so their code is in that
+//! target's binary and no other: changing how the absent probes are timed
+//! rebuilds, and reruns, only `absent`. What they share (the types, the model,
+//! the instruction counter) is in all four. No timing binary links this
+//! crate.
 
 use std::hash::{BuildHasher, BuildHasherDefault, DefaultHasher, Hasher};
 use std::hint::black_box;
+use std::path::PathBuf;
+use std::process::Command;
 use std::time::{Duration, Instant};
 
 use algs::join::hash_join;
@@ -42,10 +54,9 @@ use foldhash::fast::{FixedState, FoldHasher};
 use hashbrown::hash_table::{Entry, HashTable};
 use serde::{Deserialize, Serialize};
 
-use crate::cases::{self, BUCKET, buckets};
-use crate::record::{self, Run};
-use crate::workload::{self, Rng};
-use crate::{Row, Sink, Tally};
+use bench::harness::{self, BUCKET, buckets};
+use bench::workload::{self, Rng};
+use bench::{Row, Sink, Tally};
 
 /// Rows a side [`time_phases`] runs at: 64K to 64M, by twos, finer than the
 /// main case so the knee shows, and past it so the flattening does.
@@ -180,17 +191,71 @@ pub struct HasherCost {
     pub instructions: f64,
 }
 
-/// What the cache harness wrote.
+/// The measures a target of this crate takes, each a binary and a file of
+/// its own, so changing one reruns only it.
+pub const PARTS: [&str; 4] = ["phases", "reads", "hashers", "absent"];
+
+/// What the `phases` target wrote.
 #[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct Cache {
-    pub run: Run,
+pub struct PhasesPart {
     pub l2_bytes: usize,
     pub line_bytes: usize,
     pub phases: Vec<Phases>,
+}
+
+/// What the `reads` target wrote.
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct ReadsPart {
+    pub line_bytes: usize,
     pub reads: Vec<ReadCost>,
-    pub hashers: Vec<HasherCost>,
     pub worked_reads: Vec<WorkedRead>,
+}
+
+/// What the `hashers` target wrote.
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct HashersPart {
+    pub hashers: Vec<HasherCost>,
+}
+
+/// What the `absent` target wrote.
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct AbsentPart {
     pub absent: Vec<AbsentProbe>,
+}
+
+/// Where the part called `name` is written: `target/bench/cache/<name>.json`.
+pub fn part_path(name: &str) -> PathBuf {
+    let target = match std::env::var_os("CARGO_TARGET_DIR") {
+        Some(dir) => PathBuf::from(dir),
+        None => std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .ancestors()
+            .nth(2)
+            .expect("crates/bench-cache sits two levels below the workspace")
+            .join("target"),
+    };
+    target.join("bench/cache").join(format!("{name}.json"))
+}
+
+/// Writes `part` to [`part_path`]`(name)`.
+///
+/// # Panics
+///
+/// If it can't be written.
+pub fn write_part(name: &str, part: &impl Serialize) {
+    let path = part_path(name);
+    let json = serde_json::to_string_pretty(part).expect("measures serialize");
+    let dir = path.parent().expect("a part has a directory");
+    std::fs::create_dir_all(dir)
+        .and_then(|()| std::fs::write(&path, json))
+        .unwrap_or_else(|err| panic!("writing {}: {err}", path.display()));
+    println!("wrote {}", path.display());
+}
+
+/// Whether cargo is benching: it passes `--bench`. Run without it, as
+/// `cargo test --benches` does, a target measures its smallest sizes and
+/// writes nothing.
+pub fn benching() -> bool {
+    std::env::args().any(|arg| arg == "--bench")
 }
 
 /// The hashings [`time_absent_probes`] probes with: foldhash, and foldhash
@@ -472,6 +537,7 @@ pub struct Loops {
 /// [`hash_join`](algs::join::hash_join) with a clock and a count of
 /// instructions between its two loops. A test holds it to the original. The
 /// counts are read outside both clocks.
+#[inline]
 pub fn timed_hash_join<S: Sink>(
     build: &[Row],
     probe: &[Row],
@@ -510,6 +576,7 @@ struct Sides {
 
 /// `probe`'s rows, those whose key `build` holds first, each part in its
 /// original order.
+#[inline]
 pub fn matches_first(build: &[Row], probe: &[Row]) -> Vec<Row> {
     let held: std::collections::HashSet<u64> = build.iter().map(|row| row.0).collect();
     let (mut first, rest): (Vec<Row>, Vec<Row>) =
@@ -526,8 +593,9 @@ pub fn matches_first(build: &[Row], probe: &[Row]) -> Vec<Row> {
 /// # Panics
 ///
 /// If a call emits the wrong number of pairs.
+#[inline]
 pub fn time_phases(rows_a_side: usize) -> Phases {
-    let instances = cases::rotation(2 * rows_a_side as u64);
+    let instances = harness::rotation(2 * rows_a_side as u64);
     // Only the sides, and the probe side reordered: at 64M rows a side the
     // sorted copies would hold 2 GiB more, enough to page.
     let inputs: Vec<_> = (0..instances)
@@ -590,7 +658,7 @@ pub fn time_phases(rows_a_side: usize) -> Phases {
     });
     let start = Instant::now();
     let mut samples = Vec::new();
-    while samples.len() < cases::SAMPLES || start.elapsed() < cases::MEASUREMENT {
+    while samples.len() < harness::SAMPLES || start.elapsed() < harness::MEASUREMENT {
         samples.push(call());
     }
     let per_row = |phase: usize| {
@@ -620,6 +688,7 @@ pub fn time_phases(rows_a_side: usize) -> Phases {
 /// # Panics
 ///
 /// If a probe finds a key.
+#[inline]
 pub fn time_absent_probes(rows_a_side: usize) -> Vec<AbsentProbe> {
     fn probe<S: BuildHasher + Default>(build: &[Row], absent: &[Row]) -> (f64, f64) {
         let mut table =
@@ -645,7 +714,7 @@ pub fn time_absent_probes(rows_a_side: usize) -> Vec<AbsentProbe> {
         call();
         let start = Instant::now();
         let mut samples = Vec::new();
-        while samples.len() < READ_SAMPLES || start.elapsed() < cases::MEASUREMENT {
+        while samples.len() < READ_SAMPLES || start.elapsed() < harness::MEASUREMENT {
             samples.push(call());
         }
         let (mut ns, mut counts): (Vec<f64>, Vec<f64>) = samples.into_iter().unzip();
@@ -682,8 +751,9 @@ pub fn time_absent_probes(rows_a_side: usize) -> Vec<AbsentProbe> {
 /// # Panics
 ///
 /// If a call emits the wrong number of pairs.
+#[inline]
 pub fn time_hashers(rows_a_side: usize) -> Vec<HasherCost> {
-    let instances = cases::rotation(2 * rows_a_side as u64);
+    let instances = harness::rotation(2 * rows_a_side as u64);
     let inputs: Vec<_> = (0..instances)
         .map(|i| workload::one_to_one(rows_a_side, i))
         .collect();
@@ -708,7 +778,7 @@ pub fn time_hashers(rows_a_side: usize) -> Vec<HasherCost> {
             });
             let start = Instant::now();
             let mut samples = Vec::new();
-            while samples.len() < cases::SAMPLES || start.elapsed() < cases::MEASUREMENT {
+            while samples.len() < harness::SAMPLES || start.elapsed() < harness::MEASUREMENT {
                 samples.push(call());
             }
             let (mut ns, mut counts): (Vec<f64>, Vec<f64>) = samples.into_iter().unzip();
@@ -725,6 +795,7 @@ pub fn time_hashers(rows_a_side: usize) -> Vec<HasherCost> {
 /// Reads `lines` one line apart in a random cycle, each read's address coming
 /// from the last, in indices rather than pointers, so a prefetcher that
 /// follows pointers can't help.
+#[inline]
 fn chase(cells: &mut [u32], lines: &[u32], rng: &mut Rng) -> f64 {
     // Sattolo's shuffle: one cycle through every line.
     let mut order = lines.to_vec();
@@ -754,6 +825,7 @@ fn chase(cells: &mut [u32], lines: &[u32], rng: &mut Rng) -> f64 {
 }
 
 /// Reads every line of `order`, none depending on the last.
+#[inline]
 fn sweep(cells: &[u32], order: &[u32]) -> f64 {
     let read = || {
         order
@@ -775,6 +847,7 @@ fn sweep(cells: &[u32], order: &[u32]) -> f64 {
 }
 
 /// What a read costs across `bytes`, with reads `line_bytes` apart.
+#[inline]
 pub fn time_reads(bytes: usize, line_bytes: usize) -> ReadCost {
     let cell = size_of::<u32>();
     let stride = line_bytes / cell;
@@ -823,6 +896,7 @@ fn work<const ROUNDS: usize>(line: u32) -> u64 {
 
 /// Reads every line of `order` as [`sweep`] does, with `ROUNDS` rounds of
 /// [`work`] beside each read: the ns and the instructions a read.
+#[inline]
 fn worked_sweep<const ROUNDS: usize>(cells: &[u32], order: &[u32]) -> (f64, f64) {
     let read = || {
         order.iter().fold(0u64, |sum, &line| {
@@ -850,6 +924,7 @@ fn worked_sweep<const ROUNDS: usize>(cells: &[u32], order: &[u32]) -> (f64, f64)
 /// work beside it, in L2 and past it, with reads `line_bytes` apart. A join's
 /// row hashes, compares and emits around its reads; this is a read with that
 /// much to carry, and nothing else changed.
+#[inline]
 pub fn time_worked_reads(line_bytes: usize) -> Vec<WorkedRead> {
     let cell = size_of::<u32>();
     let stride = line_bytes / cell;
@@ -892,45 +967,30 @@ pub fn time_worked_reads(line_bytes: usize) -> Vec<WorkedRead> {
 ///
 /// If the machine doesn't report it, since a cache this harness can't size
 /// can't be modelled.
-fn sysctl(name: &str) -> usize {
-    record::output("sysctl", &["-n", name])
-        .and_then(|value| value.parse().ok())
+pub fn sysctl(name: &str) -> usize {
+    Command::new("sysctl")
+        .args(["-n", name])
+        .output()
+        .ok()
+        .filter(|out| out.status.success())
+        .and_then(|out| String::from_utf8_lossy(&out.stdout).trim().parse().ok())
         .unwrap_or_else(|| panic!("sysctl {name} gave no number"))
 }
 
-/// Measures everything, for `run`, at `sizes`, `working_sets`,
-/// `hasher_sizes` and `absent_sizes`.
-pub fn measure(
-    run: Run,
-    sizes: &[usize],
-    working_sets: &[usize],
-    hasher_sizes: &[usize],
-    absent_sizes: &[usize],
-) -> Cache {
-    let line_bytes = sysctl("hw.cachelinesize");
-    let reads = working_sets
-        .iter()
-        .map(|&bytes| time_reads(bytes, line_bytes))
-        .collect();
-    Cache {
-        run,
-        l2_bytes: sysctl("hw.perflevel0.l2cachesize"),
-        line_bytes,
-        worked_reads: time_worked_reads(line_bytes),
-        phases: sizes.iter().map(|&n| time_phases(n)).collect(),
-        reads,
-        hashers: hasher_sizes.iter().flat_map(|&n| time_hashers(n)).collect(),
-        absent: absent_sizes
-            .iter()
-            .flat_map(|&n| time_absent_probes(n))
-            .collect(),
-    }
+/// A cache line, in bytes.
+pub fn line_bytes() -> usize {
+    sysctl("hw.cachelinesize")
+}
+
+/// The performance cores' L2, in bytes.
+pub fn l2_bytes() -> usize {
+    sysctl("hw.perflevel0.l2cachesize")
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Checksum;
+    use bench::Checksum;
 
     const L2: usize = 20 << 20;
     const LINE: usize = 128;

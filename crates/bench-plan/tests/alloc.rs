@@ -9,9 +9,9 @@ use algs::join::{
     hash_join, leapfrog_join, merge_join, multiway_merge_join, nested_loop_join, sort_merge_join,
 };
 use bench::Row;
-use bench::alloc::{CountingAlloc, Usage, installed, measure};
 use bench::baseline::multiway_merge_join_by_scan;
-use bench::cases::buckets;
+use bench::harness::buckets;
+use bench_plan::alloc::{CountingAlloc, Usage, installed, measure};
 use foldhash::fast::FixedState;
 
 #[global_allocator]

@@ -1,40 +1,48 @@
 [package]
 name = "bench"
 version = "0.1.0"
-description = "Benchmarks and memory profiles of the algs reference implementations"
+description = "Timings of the algs join implementations, one binary a group"
 edition.workspace = true
 publish.workspace = true
+# One target a group, each declared below: `benches/support/` isn't one.
+autobenches = false
 
 [lib]
-bench = false
-
-[[bin]]
-name = "bench"
-path = "src/main.rs"
 bench = false
 
 [dependencies]
 algs = { path = "../algs" }
 foldhash = "0.2"
-# HashTable takes a hash the caller computed, for the batched join.
-hashbrown = { version = "0.17", default-features = false, features = ["inline-more"] }
-# proc_pid_rusage, for the instructions a join retires.
-libc = "0.2"
 serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
 
 [dev-dependencies]
 # No plotters: the report reads criterion's JSON.
 criterion = { version = "0.8.2", default-features = false, features = ["rayon", "cargo_bench_support"] }
 
 [[bench]]
-name = "cache"
+name = "one_to_one"
 harness = false
 
 [[bench]]
-name = "joins"
+name = "small_side"
 harness = false
 
 [[bench]]
-name = "memory"
+name = "both_small"
+harness = false
+
+[[bench]]
+name = "hash_variants"
+harness = false
+
+[[bench]]
+name = "multiway_dense"
+harness = false
+
+[[bench]]
+name = "multiway_sparse"
+harness = false
+
+[[bench]]
+name = "multiway_selective"
 harness = false

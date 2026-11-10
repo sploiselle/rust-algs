@@ -1,5 +1,5 @@
 //! Profiles every case's memory with a counting allocator, asserts every
-//! [claim](bench::cases::memory_claim) about it, and writes the profiles to
+//! [claim](bench_plan::cases::memory_claim) about it, and writes the profiles to
 //! `target/bench/memory.json`. The binary plans' peaks have no claim: they are
 //! reported, not asserted.
 //!
@@ -16,10 +16,12 @@
 use std::collections::BTreeSet;
 
 use bench::Checksum;
-use bench::alloc::{self, CountingAlloc};
-use bench::cases::{self, Algorithm, Case, Data, GROUPS};
-use bench::record::{self, Memory, MemoryCase, Run};
-use bench::report::{bytes, count};
+use bench::harness::{self, Data};
+use bench_plan::alloc::{self, CountingAlloc};
+use bench_plan::cases::{self, Algorithm, Case, GROUPS};
+use bench_plan::fmt::{bytes, count};
+use bench_plan::paths;
+use bench_plan::profile::{Memory, MemoryCase};
 
 #[global_allocator]
 static ALLOC: CountingAlloc = CountingAlloc;
@@ -32,13 +34,8 @@ fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let benching = args.iter().any(|arg| arg == "--bench");
     let filter = args.iter().find(|arg| !arg.starts_with('-')).cloned();
-    let run = Run::now("memory");
-    if benching {
-        record::append(&run);
-    }
-
     let mut profiles = Vec::new();
-    for group in GROUPS.iter().filter(|group| !group.is_sentinel()) {
+    for group in GROUPS {
         for &param in group.params {
             let chosen: Vec<Case> = group
                 .cases_at(param)
@@ -47,7 +44,7 @@ fn main() {
             if chosen.is_empty() {
                 continue;
             }
-            let data = group.workload.generate(param, 0);
+            let data = (group.generate)(param, 0);
             let mut agreed = None;
             for case in chosen {
                 profiles.push(profile(&case, &data, &mut agreed));
@@ -71,7 +68,6 @@ fn main() {
     println!("{} cases profiled; every claim holds", profiles.len());
     if benching {
         write(Memory {
-            run,
             filter,
             cases: profiles,
         });
@@ -101,7 +97,7 @@ fn profile(case: &Case, data: &Data, agreed: &mut Option<Checksum>) -> MemoryCas
         usage.retained_bytes, 0,
         "{case} kept memory after returning"
     );
-    cases::verify(case, data, out, agreed);
+    harness::verify(case, data, out, agreed);
     if let Some(claim) = cases::memory_claim(case.algorithm, data) {
         claim
             .check(&usage)
@@ -137,9 +133,9 @@ fn flat_in_n(profiles: &[MemoryCase], group: &str, algorithms: &[Algorithm]) {
 
 /// Writes the profiles to `target/bench/memory.json`.
 fn write(memory: Memory) {
-    let path = record::memory_path();
+    let path = paths::memory_path();
     let json = serde_json::to_string_pretty(&memory).expect("profiles serialize");
-    std::fs::create_dir_all(record::bench_dir())
+    std::fs::create_dir_all(paths::bench_dir())
         .and_then(|()| std::fs::write(&path, json))
         .unwrap_or_else(|err| panic!("writing {}: {err}", path.display()));
     println!("wrote {}", path.display());

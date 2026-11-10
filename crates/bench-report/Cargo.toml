@@ -1,0 +1,23 @@
+[package]
+name = "bench-report"
+version = "0.1.0"
+description = "The Markdown tables a post quotes, from the bench crates' results"
+edition.workspace = true
+publish.workspace = true
+
+[lib]
+bench = false
+
+[[bin]]
+name = "bench-report"
+path = "src/main.rs"
+bench = false
+
+[dependencies]
+bench = { path = "../bench" }
+bench-plan = { path = "../bench-plan" }
+# A run records the hash of the binary it ran.
+sha2 = "0.10"
+bench-cache = { path = "../bench-cache" }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
