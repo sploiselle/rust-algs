@@ -2341,25 +2341,26 @@ mod tests {
         // Something else started reading memory while small_side ran: its
         // narrow sentinel, inside L2, never moved, and its wide one did.
         let [_, end] = evidence::sentinel_keys("small_side", Sentinel::Wide);
-        evidence.timings.insert(end, around(1100.0, 1500));
-        // both_small ran on a machine in use from start to finish.
+        evidence.timings.insert(end, around(1600.0, 1500));
+        // both_small ran beside heavy work from start to finish.
         for key in evidence::sentinel_keys("both_small", Sentinel::Wide) {
-            evidence.timings.insert(key, around(1130.0, 1500));
+            evidence.timings.insert(key, around(1700.0, 1500));
         }
-        // 4% is within what a quiet machine does; 2.5 times is a compile.
-        evidence.hashers.as_mut().unwrap().value.sentinels = steady(1000.0, 1040.0);
+        // A quarter is within what a quiet machine does; 2.5 times is a
+        // compile.
+        evidence.hashers.as_mut().unwrap().value.sentinels = steady(1000.0, 1250.0);
         evidence.absent.as_mut().unwrap().value.sentinels = steady(1000.0, 2500.0);
         assert_eq!(
             out_of_date(&evidence),
             ["small_side", "both_small", "absent"]
         );
         assert!(
-            why(&evidence, "small_side").contains("reads past L2 moved 10%"),
+            why(&evidence, "small_side").contains("reads past L2 moved 60%"),
             "{}",
             why(&evidence, "small_side")
         );
         assert!(
-            why(&evidence, "both_small").contains("1.13 times the fastest on record"),
+            why(&evidence, "both_small").contains("1.70 times the fastest on record"),
             "{}",
             why(&evidence, "both_small")
         );
@@ -2377,14 +2378,14 @@ mod tests {
         let mut evidence = evidence(log(1000, "aaaaaaa000", false), every_timing(1500), 1500);
         assert!(out_of_date(&evidence).is_empty());
 
-        // But an earlier run of one group read past L2 a tenth faster.
+        // But an earlier run of one group read past L2 in 0.6 of the time.
         let earlier = |cpu: &str, os: &str| Checked {
             target: "one_to_one".to_owned(),
             started_unix_ms: 500,
             cpu: cpu.to_owned(),
             os: os.to_owned(),
             narrow: (1000.0, 1000.0),
-            wide: (900.0, 900.0),
+            wide: (600.0, 600.0),
         };
         // On another machine, or this one under another system, it says
         // nothing about this one.
@@ -2400,7 +2401,7 @@ mod tests {
         let groups: Vec<String> = cases::GROUPS.iter().map(|g| g.name.to_owned()).collect();
         assert_eq!(out_of_date(&evidence), groups);
         assert!(
-            why(&evidence, "small_side").contains("1.11 times the fastest on record"),
+            why(&evidence, "small_side").contains("1.67 times the fastest on record"),
             "{}",
             why(&evidence, "small_side")
         );

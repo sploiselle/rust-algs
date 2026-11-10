@@ -7,3 +7,11 @@ default-members = ["crates/algs", "crates/diagrams"]
 [workspace.package]
 edition = "2024"
 publish = false
+
+# One codegen unit, so that a benchmark's machine code depends on its own
+# source and not on how rustc split the crate. With the default 16, adding a
+# struct to bench-cache changed what got inlined into the hash join's build
+# loop, in a function nothing had edited: 55.6 instructions a row became 70.6,
+# and the join past L2 ran 10 to 23% slower. With one, both commits build 55.6.
+[profile.bench]
+codegen-units = 1

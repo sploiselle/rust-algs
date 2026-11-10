@@ -290,25 +290,40 @@ refuse them.
 ### A quiet machine
 
 macOS can't pin a thread to a core or keep other work off the cores that
-share its L2, so the only isolation here is a machine doing nothing else, and
-the runner checks for it. Every target times two sentinels before its first
-measure and after its last: random reads across 8 MiB, which L2 holds, and
-across 32 MiB, which it doesn't. The narrow one moves with the clock: a core
-pushed to a slower mode takes two to six times as long. The wide one moves
-with what else is running. With an editor and a chat app open, the hash join
-past L2 ran 7 to 17% slower, the wide sentinel 9% and the narrow one 2%; while
-something compiled, the join and the wide sentinel took about 2.5 times as
-long and the narrow one didn't move. Left alone, the wide sentinel stays
-within about 1%.
+share its L2, so the only isolation here is a machine doing nothing else. Run
+it while you're away: with an editor and a chat app open, the hash join past
+L2 ran a tenth to a quarter slower, six runs in a row that agreed. Two
+runs on a machine left alone agreed to 0.3% at the median case and 1.4% at
+the ninetieth percentile.
 
-A target whose sentinel moved while it ran, or read slower than the fastest
+The runner checks for the grosser changes. Every target times two sentinels
+before its first measure and after its last: random reads across 8 MiB, which
+L2 holds, and across 32 MiB, which it doesn't. The narrow one moves with the
+clock: a core pushed to a slower mode takes two to six times as long. The
+wide one moves with heavy work on the other cores: while something compiled,
+it and the hash join took about 2.5 times as long and the narrow one didn't
+move. Neither sees the editor. The narrow one fits in L2 whatever else runs,
+and the wide one reads anywhere from 1.27 to 1.57 ns a read from one process
+to the next on a quiet machine, more than an open editor adds.
+
+A target whose narrow sentinel moved more than 3% while it ran, or whose wide
+one moved more than half, or which read that much slower than the fastest
 this machine has on record, is rerun, up to three times, and the tables
 refuse its results until a run passes. The record is
-`target/bench/sentinels.jsonl`, a line for every run, so a whole run on a
-busy machine is caught too, not only one target that differs from the rest.
-A filtered rerun times the sentinels like any other. If the machine itself
-changes speed for good, the record keeps only lines with the same CPU and
-macOS version; failing that, delete the file.
+`target/bench/sentinels.jsonl`, a line for every run. A filtered rerun times
+the sentinels like any other. If the machine itself changes speed for good,
+the record keeps only lines with the same CPU and macOS version; failing
+that, delete the file.
+
+### One codegen unit
+
+The workspace builds benchmarks with `codegen-units = 1`. With rustc's
+default of 16, how a crate is split decides what gets inlined, and an edit to
+one function moves the split under another. Adding a struct to `bench-cache`
+took the hash join's build loop, which nothing had edited, from 55.6
+instructions a row to 70.6, and the join past L2 ran 10 to 23% slower: a
+longer row leaves fewer of its reads in flight at once. With one unit, both
+commits build the 55.6.
 
 ### What reruns
 

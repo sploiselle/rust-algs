@@ -225,10 +225,12 @@ mod tests {
 /// The wide one reads across more than L2 holds, so its time is what the
 /// joins past L2 pay: it moves with how much of L2 this core has to itself
 /// and with what a read from memory costs while other cores are reading too.
-/// Sampled beside the hash join, reads across 32 MiB moved with it most
-/// closely: within about 1% on a machine left alone, 9% slower with an
-/// editor and a chat app open, and 2.6 times as long while something
-/// compiled, when the join took 2.4 times as long.
+/// It is a coarse measure. Sampled in one process beside the hash join,
+/// reads across 32 MiB took 2.6 times as long while something compiled,
+/// when the join took 2.4 times as long. But from one process to the next
+/// on a quiet machine it reads anywhere from 1.27 to 1.57 ns a read, so it
+/// can't tell an editor open, which costs the join about a tenth, from
+/// nothing open.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Sentinel {
     Narrow,

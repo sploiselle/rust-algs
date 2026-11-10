@@ -322,9 +322,13 @@ pub const SLOW_LIMIT: f64 = 0.50;
 
 /// How far a target's wide sentinel may move between its start and its end,
 /// and how much slower than the fastest of its kind it may be, before the
-/// machine is taken to have been busy with something else. A machine left
-/// alone holds it within about 1%, and one in use reads about 9% slower.
-pub const BUSY_LIMIT: f64 = 0.05;
+/// machine is taken to have been busy with something else. The limit is
+/// loose because the reading is: on a machine left alone, 49 targets read
+/// 1.27 to 1.57 ns a read, and one moved 10% between its start and its end,
+/// while their own results repeated to within 0.3%. A compile on the other
+/// cores takes it to 2.6 times. So this catches a machine doing heavy work,
+/// not one with an editor open, which nothing here can tell from a quiet one.
+pub const BUSY_LIMIT: f64 = 0.50;
 
 impl Evidence {
     /// `sentinel` as the target of `kind` called `name` last timed it:
