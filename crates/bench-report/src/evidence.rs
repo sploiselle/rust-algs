@@ -174,7 +174,8 @@ pub fn gather() -> Result<Evidence, String> {
     })
 }
 
-/// The JSON file at `path` and when it was written, if it exists.
+/// The JSON file at `path` and when it was written, if it exists and is in
+/// the shape this build writes.
 fn read_written<T: DeserializeOwned>(path: &Path) -> Result<Option<Written<T>>, String> {
     let json = match fs::read(path) {
         Ok(json) => json,
@@ -184,8 +185,15 @@ fn read_written<T: DeserializeOwned>(path: &Path) -> Result<Option<Written<T>>, 
     let written = fs::metadata(path)
         .and_then(|meta| meta.modified())
         .map_err(|err| format!("reading {}: {err}", path.display()))?;
-    let value = serde_json::from_slice(&json)
-        .map_err(|err| format!("parsing {}: {err}", path.display()))?;
+    // A file an earlier build's target wrote, in another shape, is no result
+    // of this one's: its target is out of date, and will write it again.
+    let Ok(value) = serde_json::from_slice(&json) else {
+        eprintln!(
+            "{} isn't in the shape this build writes: taking it as not run",
+            path.display()
+        );
+        return Ok(None);
+    };
     Ok(Some(Written {
         value,
         written_unix_ms: record::unix_ms(written),
