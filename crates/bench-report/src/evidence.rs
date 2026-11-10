@@ -22,7 +22,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use bench::harness::Sentinel;
-use bench_cache::{AbsentPart, HashersPart, PhasesPart, ReadsPart};
+use bench_cache::{AbsentPart, HashersPart, InliningPart, PhasesPart, ReadsPart};
 use bench_plan::cases::{self, Group};
 use bench_plan::paths;
 use bench_plan::profile::Memory;
@@ -167,6 +167,7 @@ pub struct Evidence {
     pub reads: Option<Written<ReadsPart>>,
     pub hashers: Option<Written<HashersPart>>,
     pub absent: Option<Written<AbsentPart>>,
+    pub inlining: Option<Written<InliningPart>>,
 }
 
 /// Reads the run log and every result.
@@ -194,6 +195,7 @@ pub fn gather() -> Result<Evidence, String> {
         reads: read_written(&bench_cache::part_path("reads"))?,
         hashers: read_written(&bench_cache::part_path("hashers"))?,
         absent: read_written(&bench_cache::part_path("absent"))?,
+        inlining: read_written(&bench_cache::part_path("inlining"))?,
     })
 }
 
@@ -286,6 +288,7 @@ impl Evidence {
             (Kind::Cache, "reads") => self.reads.as_ref().map(|w| w.written_unix_ms),
             (Kind::Cache, "hashers") => self.hashers.as_ref().map(|w| w.written_unix_ms),
             (Kind::Cache, "absent") => self.absent.as_ref().map(|w| w.written_unix_ms),
+            (Kind::Cache, "inlining") => self.inlining.as_ref().map(|w| w.written_unix_ms),
             _ => None,
         }
     }
@@ -350,6 +353,7 @@ impl Evidence {
             (Kind::Cache, "reads") => self.reads.as_ref().map(|w| part(w.value.sentinels)),
             (Kind::Cache, "hashers") => self.hashers.as_ref().map(|w| part(w.value.sentinels)),
             (Kind::Cache, "absent") => self.absent.as_ref().map(|w| part(w.value.sentinels)),
+            (Kind::Cache, "inlining") => self.inlining.as_ref().map(|w| part(w.value.sentinels)),
             _ => None,
         }
     }

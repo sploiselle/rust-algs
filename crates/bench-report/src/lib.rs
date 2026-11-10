@@ -123,6 +123,7 @@ pub struct Cache {
     pub worked_reads: Vec<cache::WorkedRead>,
     pub hashers: Vec<cache::HasherCost>,
     pub absent: Vec<cache::AbsentProbe>,
+    pub inlining: Vec<cache::Inlining>,
 }
 
 /// Everything the tables are made from.
@@ -313,8 +314,9 @@ pub fn vouch(
         &evidence.reads,
         &evidence.hashers,
         &evidence.absent,
+        &evidence.inlining,
     ) {
-        (Some(phases), Some(reads), Some(hashers), Some(absent)) => Some(Cache {
+        (Some(phases), Some(reads), Some(hashers), Some(absent), Some(inlining)) => Some(Cache {
             l2_bytes: phases.value.l2_bytes,
             line_bytes: phases.value.line_bytes,
             phases: phases.value.phases.clone(),
@@ -322,6 +324,7 @@ pub fn vouch(
             worked_reads: reads.value.worked_reads.clone(),
             hashers: hashers.value.hashers.clone(),
             absent: absent.value.absent.clone(),
+            inlining: inlining.value.inlining.clone(),
         }),
         _ => None,
     };
@@ -1029,6 +1032,27 @@ fn cache_tables(results: &Results, cache: &Cache) -> Vec<(String, String)> {
                 .map_or(MISSING.to_owned(), |a| format!("{:.0}", a.instructions))
         })
         .collect();
+    // The hash join both ways beside sort-merge, a row per size.
+    let inlining: Vec<Vec<String>> = cache
+        .inlining
+        .iter()
+        .map(|i| {
+            let cells = [i.sort_merge_ns, i.inlined_ns, i.called_ns].map(sig3);
+            [param_label(i.rows_a_side)]
+                .into_iter()
+                .chain(cells)
+                .collect()
+        })
+        .collect();
+    // What the build loop runs each way, at the smallest size: there the
+    // table's pages are the last call's, so the count is the loop's alone.
+    let insert_instructions = cache.inlining.first().map_or(String::new(), |i| {
+        format!(
+            " The build loop retires {:.0} instructions for each row it builds with the insert \
+             inlined, and {:.0} with it called.",
+            i.inlined_build_instructions, i.called_build_instructions
+        )
+    });
     // The loops' instructions a row, at the largest size.
     let loop_instructions = cache.phases.last().map_or(String::new(), |p| {
         format!(
@@ -1164,6 +1188,25 @@ fn cache_tables(results: &Results, cache: &Cache) -> Vec<(String, String)> {
                  foldhash + 16 or 32 rounds mixes each hash that many more times, adding \
                  instructions but not reads: a row retires {}, {} and {} instructions.",
                 absent_instructions[0], absent_instructions[1], absent_instructions[2]
+            ),
+        ),
+        file(
+            "hash_inlining",
+            &["inlining"],
+            &[
+                "rows a side",
+                "sort-merge",
+                "hash, insert inlined",
+                "hash, insert called",
+            ],
+            inlining,
+            format!(
+                "Median of at least 30 calls, in ns per input row, counting both sides \
+                 together, 2n. The hash join is timed twice: with the table's insert left to \
+                 the compiler, which inlines it into the build loop, and with it behind a \
+                 function the compiler may not inline, so each build row pays a call. Nothing \
+                 else differs, and each sample calls both.{insert_instructions} Sort-merge is \
+                 sampled on its own, on the same inputs."
             ),
         ),
         file(
@@ -2140,6 +2183,17 @@ mod tests {
                     })
                 })
                 .collect(),
+            inlining: [1 << 20, 1 << 26]
+                .into_iter()
+                .map(|rows_a_side| cache::Inlining {
+                    rows_a_side,
+                    sort_merge_ns: 15.0,
+                    inlined_ns: 14.0,
+                    called_ns: 16.0,
+                    inlined_build_instructions: 55.6,
+                    called_build_instructions: 69.5,
+                })
+                .collect(),
         }
     }
 
@@ -2201,6 +2255,13 @@ mod tests {
                 value: cache::AbsentPart {
                     sentinels,
                     absent: cache.absent,
+                },
+                written_unix_ms,
+            }),
+            inlining: Some(Written {
+                value: cache::InliningPart {
+                    sentinels,
+                    inlining: cache.inlining,
                 },
                 written_unix_ms,
             }),
@@ -2766,6 +2827,7 @@ mod tests {
             "read_cost",
             "read_work",
             "control_miss",
+            "hash_inlining",
             "hash_reads",
             "hash_predicted",
             "hash_hashers",

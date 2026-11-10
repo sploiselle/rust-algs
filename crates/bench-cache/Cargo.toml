@@ -34,3 +34,7 @@ harness = false
 [[bench]]
 name = "absent"
 harness = false
+
+[[bench]]
+name = "inlining"
+harness = false

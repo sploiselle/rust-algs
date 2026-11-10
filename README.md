@@ -259,14 +259,16 @@ about 32 MiB, as generated and sorted. Leapfrog reads only about 0.5% of
 in cache. Every instance is checked before it's timed; the memory harness
 profiles each case's first instance alone.
 
-The cache measures are four targets: `phases` times the hash join's two loops
+The cache measures are five targets: `phases` times the hash join's two loops
 apart from 64K rows a side to 64M; `reads` measures what a read costs across
 working sets to 2 GiB, one at a time, overlapped, and with unrelated work
 beside it; `hashers` times the join with hashers that run more instructions,
 and with keys hashed in batches before their lookups, and counts the
 instructions each retires; `absent` probes for keys the table doesn't hold,
-which reads control bytes alone. The tables set those beside a model of how
-many of the join's reads reach DRAM. The largest sizes need about 7 GiB free.
+which reads control bytes alone; `inlining` times the hash join with the
+table's insert inlined into its build loop and with it called, beside
+sort-merge. The tables set those beside a model of how many of the join's reads
+reach DRAM. The largest sizes need about 7 GiB free.
 
 ### Running them
 
@@ -320,10 +322,17 @@ that, delete the file.
 The workspace builds benchmarks with `codegen-units = 1`. With rustc's
 default of 16, how a crate is split decides what gets inlined, and an edit to
 one function moves the split under another. Adding a struct to `bench-cache`
-took the hash join's build loop, which nothing had edited, from 55.6
-instructions a row to 70.6, and the join past L2 ran 10 to 23% slower: a
-longer row leaves fewer of its reads in flight at once. With one unit, both
-commits build the 55.6.
+took the hash join's build loop, which nothing had edited, from 56
+instructions a row to 71: the compiler stopped inlining the table's insert.
+With one unit, both commits build the 56.
+
+One unit doesn't settle it for every binary. The compiler inlines a function
+called from one place far more readily than one called from several, so the
+same join gets the insert inlined in `phases`, which holds one copy of it, and
+called in `one_to_one`, which holds four. `inlining` measures what that is
+worth: it times the join both ways in one binary and counts each build loop's
+instructions, and it panics rather than write a result if the two counts say
+the compiler inlined both or neither.
 
 ### What reruns
 
@@ -339,7 +348,10 @@ a loop, reruns it. Each binary links as little as it can, so:
 - a change to one join reruns the groups that time it, the memory profiles,
   and the cache measures that call it;
 - a change to one workload's generator reruns the groups that use it;
-- a change to one cache measure's code reruns that measure;
+- a change to one cache measure's code reruns that measure, if it moves no
+  line of another's: a panic's line number is in the binary, so code added
+  above a measure reruns it, and `inlining` is a module declared at the end
+  of its crate for that reason;
 - a change to what every timing binary shares (`crates/bench/src/harness.rs`,
   the sinks, `benches/support/timing.rs`) reruns them all.
 

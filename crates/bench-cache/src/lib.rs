@@ -193,7 +193,7 @@ pub struct HasherCost {
 
 /// The measures a target of this crate takes, each a binary and a file of
 /// its own, so changing one reruns only it.
-pub const PARTS: [&str; 4] = ["phases", "reads", "hashers", "absent"];
+pub const PARTS: [&str; 5] = ["phases", "reads", "hashers", "absent", "inlining"];
 
 /// One sentinel, timed before a target measured anything and after it
 /// finished, each the median in ns a call.
@@ -1259,3 +1259,9 @@ mod tests {
         assert_eq!(seen, lines);
     }
 }
+
+mod inlining;
+pub use inlining::{
+    Apart, CALL_INSTRUCTIONS, INLINING_SIZES, Inlining, InliningPart, hash_join_inserting,
+    time_inlining,
+};
