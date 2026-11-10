@@ -703,6 +703,20 @@ pub const TABLES: &[Table] = {
                 columns: &[
                     column("small_side", NestedLoop, "nested loop"),
                     column("small_side", Hash, "hash"),
+                    column("small_side", HashSipHash, "hash, SipHash"),
+                ],
+            },
+        },
+        Table {
+            file: "both_small.md",
+            note: None,
+            kind: Kind::Grid {
+                rows: "rows a side",
+                metric: Metric::Time,
+                columns: &[
+                    column("both_small", NestedLoop, "nested loop"),
+                    column("both_small", Hash, "hash"),
+                    column("both_small", HashSipHash, "hash, SipHash"),
                 ],
             },
         },
@@ -1490,6 +1504,30 @@ pub const FACTS: &[Fact] = {
             Value::Crossover {
                 group: "small_side",
                 faster: Hash,
+                slower: NestedLoop,
+            },
+        ),
+        fact(
+            "siphash_nested_crossover_small_m",
+            Value::Crossover {
+                group: "small_side",
+                faster: HashSipHash,
+                slower: NestedLoop,
+            },
+        ),
+        fact(
+            "hash_nested_crossover_both_small_n",
+            Value::Crossover {
+                group: "both_small",
+                faster: Hash,
+                slower: NestedLoop,
+            },
+        ),
+        fact(
+            "siphash_nested_crossover_both_small_n",
+            Value::Crossover {
+                group: "both_small",
+                faster: HashSipHash,
                 slower: NestedLoop,
             },
         ),

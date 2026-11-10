@@ -8,7 +8,15 @@
 //! - `one_to_one` is the main case: two inputs of the same size that share
 //!   half their keys, from 1K to 64M rows a side. Leapfrog runs on it too, on
 //!   the sorted inputs, to set it beside the merge join at two.
-//! - `small_side` is the one regime where a nested loop can win.
+//! - `small_side` and `both_small` are the two regimes where a nested loop can
+//!   win, and they ask different questions. With a few rows on one side and
+//!   65,536 on the other, the hash join's table is built once and probed
+//!   65,536 times, so the nested loop wins only while its few comparisons a
+//!   row cost less than one lookup. With a few rows on both sides, every call
+//!   allocates and fills a table for a handful of probes, so the nested loop
+//!   wins until its quadratic comparisons outgrow that fixed cost. Both run
+//!   the hash join with each hasher, since where it overtakes the nested loop
+//!   depends on what a hash costs.
 //! - `hash_variants` shows what the hasher costs.
 //! - `multiway_dense` against `multiway_sparse` shows when a heap pays against
 //!   a scan of every input's next key.
@@ -78,6 +86,8 @@ pub const SAMPLES: usize = 30;
 /// cycle reads: a binary workload keeps every row twice, as generated and
 /// sorted, so a small binary case's hold about 32 MiB, where one instance at
 /// 1K rows a side holds 64 KiB; the selective workload's hold about 16 MiB.
+/// At a few rows a side an instance's four Vecs outweigh its rows, so a cycle
+/// of `both_small`'s spans more still.
 ///
 /// Leapfrog reads about 0.5% of the selective workload's rows, so a cycle
 /// reads only 5K to 12K of them, on about 1 MiB of cache lines or less, which
@@ -317,7 +327,7 @@ const SENTINEL: usize = 1 << 18;
 /// The numbers of inputs the n-way groups join.
 const KS: &[usize] = &[2, 4, 8, 16, 32, 64];
 
-/// Every group, in run order: 123 cases.
+/// Every group, in run order: 155 cases.
 pub const GROUPS: &[Group] = {
     use Algorithm::*;
     use Workload::*;
@@ -337,8 +347,14 @@ pub const GROUPS: &[Group] = {
         Group {
             name: "small_side",
             workload: SmallSide,
-            params: &[1, 2, 4, 16, 64],
-            algorithms: &[NestedLoop, Hash],
+            params: &[1, 2, 4, 8, 16, 32, 64],
+            algorithms: &[NestedLoop, Hash, HashSipHash],
+        },
+        Group {
+            name: "both_small",
+            workload: OneToOne,
+            params: &[2, 4, 8, 16, 32, 64, 128],
+            algorithms: &[NestedLoop, Hash, HashSipHash],
         },
         Group {
             name: "hash_variants",
@@ -760,7 +776,7 @@ mod tests {
     #[test]
     fn ids_are_unique() {
         let ids: Vec<String> = cases().map(|case| case.to_string()).collect();
-        assert_eq!(ids.len(), 123);
+        assert_eq!(ids.len(), 155);
         assert_eq!(ids.iter().collect::<HashSet<_>>().len(), ids.len());
     }
 
