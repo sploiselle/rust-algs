@@ -1,8 +1,11 @@
 //! Times the hash join with each hashing: see [`bench_cache::time_hashers`].
 
-use bench_cache::{HASHER_SIZES, HashersPart, benching, time_hashers, write_part};
+use bench_cache::{
+    HASHER_SIZES, HashersPart, Sentinel, benching, sentinel_ns, time_hashers, write_part,
+};
 
 fn main() {
+    let start_ns = sentinel_ns();
     let sizes = if benching() {
         &HASHER_SIZES[..]
     } else {
@@ -15,7 +18,16 @@ fn main() {
             h.rows_a_side, h.hashing, h.ns, h.instructions
         );
     }
+    let sentinel = Sentinel {
+        start_ns,
+        end_ns: sentinel_ns(),
+    };
+    println!(
+        "sentinel: {:.1} µs before, {:.1} µs after",
+        sentinel.start_ns / 1e3,
+        sentinel.end_ns / 1e3
+    );
     if benching() {
-        write_part("hashers", &HashersPart { hashers });
+        write_part("hashers", &HashersPart { sentinel, hashers });
     }
 }

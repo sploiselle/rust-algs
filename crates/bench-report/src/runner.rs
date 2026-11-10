@@ -10,6 +10,11 @@
 //! The bench targets hold no bookkeeping, so the runner logs each run itself,
 //! before it starts: the commit, whether the tree was dirty, and the binary's
 //! hash.
+//!
+//! It also keeps the machine awake while a target runs, and reruns a target
+//! whose sentinel says the machine changed speed under it: an unattended Mac
+//! can push a long job to a slower mode for minutes at a time, and timings
+//! taken then are no use.
 
 use std::process::Command;
 
@@ -79,7 +84,30 @@ pub fn run(request: &Request) -> Result<(), String> {
         return Ok(());
     }
     for target in queue {
-        start(target, &request.args)?;
+        steadily(target, &request.args)?;
+    }
+    Ok(())
+}
+
+/// How many times a target is run before the runner gives up on a steady
+/// machine.
+const ATTEMPTS: usize = 3;
+
+/// Runs `target` until the machine was steady while it ran, at most
+/// [`ATTEMPTS`] times: see [`evidence::Evidence::unsteady`].
+fn steadily(target: &Target, args: &[String]) -> Result<(), String> {
+    for attempt in 1..=ATTEMPTS {
+        start(target, args)?;
+        let evidence = evidence::gather()?;
+        let Some(why) = evidence.unsteady(target.kind, &target.name) else {
+            return Ok(());
+        };
+        let next = if attempt < ATTEMPTS {
+            "running it again"
+        } else {
+            "giving up on it: the tables will refuse its results until it reruns"
+        };
+        println!("{}: {why}; {next}", target.name);
     }
     Ok(())
 }
@@ -102,7 +130,11 @@ fn start(target: &Target, args: &[String]) -> Result<(), String> {
         Kind::Memory => "crates/bench-plan",
         Kind::Cache => "crates/bench-cache",
     };
-    let status = Command::new(&target.executable)
+    // caffeinate holds the display and the system awake while the target
+    // runs: an idle Mac dims, sleeps and slows what's still running.
+    let status = Command::new("caffeinate")
+        .arg("-dims")
+        .arg(&target.executable)
         .arg("--bench")
         .args(args)
         .current_dir(paths::workspace().join(directory))

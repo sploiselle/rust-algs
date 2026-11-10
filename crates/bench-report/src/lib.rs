@@ -63,8 +63,7 @@ use record::Run;
 /// The criterion version the timings were taken with, for captions.
 const CRITERION: &str = "criterion 0.8.2";
 
-/// Sentinel drift above this suggests the machine's speed changed mid-run.
-pub const DRIFT_LIMIT: f64 = 0.03;
+pub use evidence::DRIFT_LIMIT;
 
 /// What the report CLI was asked to do.
 pub struct Options {
@@ -2135,6 +2134,11 @@ mod tests {
     /// `written_unix_ms`.
     fn evidence(runs: Vec<Run>, timings: HashMap<Key, Timing>, written_unix_ms: u64) -> Evidence {
         let cache = cache();
+        // As steady as the timings' sentinels, which `timing` makes 1,000 ns.
+        let sentinel = cache::Sentinel {
+            start_ns: 1000.0,
+            end_ns: 1000.0,
+        };
         Evidence {
             runs,
             timings,
@@ -2144,6 +2148,7 @@ mod tests {
             }),
             phases: Some(Written {
                 value: cache::PhasesPart {
+                    sentinel,
                     l2_bytes: cache.l2_bytes,
                     line_bytes: cache.line_bytes,
                     phases: cache.phases,
@@ -2152,6 +2157,7 @@ mod tests {
             }),
             reads: Some(Written {
                 value: cache::ReadsPart {
+                    sentinel,
                     line_bytes: cache.line_bytes,
                     reads: cache.reads,
                     worked_reads: cache.worked_reads,
@@ -2160,12 +2166,14 @@ mod tests {
             }),
             hashers: Some(Written {
                 value: cache::HashersPart {
+                    sentinel,
                     hashers: cache.hashers,
                 },
                 written_unix_ms,
             }),
             absent: Some(Written {
                 value: cache::AbsentPart {
+                    sentinel,
                     absent: cache.absent,
                 },
                 written_unix_ms,
@@ -2282,6 +2290,56 @@ mod tests {
             .map(|target| target.name.as_str())
             .collect();
         assert_eq!(stale, ["small_side", "absent"]);
+    }
+
+    #[test]
+    fn a_target_that_ran_on_an_unsteady_machine_is_out_of_date() {
+        let mut evidence = evidence(log(1000, "aaaaaaa000", false), every_timing(1500), 1500);
+        let unsteady = |evidence: &Evidence| -> Vec<String> {
+            targets()
+                .iter()
+                .filter(|target| !evidence::out_of_date(target, evidence).is_empty())
+                .map(|target| target.name.clone())
+                .collect()
+        };
+        assert!(unsteady(&evidence).is_empty());
+
+        // The machine slowed while one_to_one ran: its sentinel ends slower.
+        let [_, end] = evidence::sentinel_keys("one_to_one");
+        evidence.timings.insert(end, around(1900.0, 1500));
+        // multiway_dense ran slow from start to finish: no drift of its own,
+        // but six times the other groups' sentinels.
+        for key in evidence::sentinel_keys("multiway_dense") {
+            evidence.timings.insert(key, around(6000.0, 1500));
+        }
+        // A cache measure 8% slower than the others is within what a steady
+        // machine does; one 20% slower isn't.
+        evidence.hashers.as_mut().unwrap().value.sentinel = cache::Sentinel {
+            start_ns: 1080.0,
+            end_ns: 1080.0,
+        };
+        evidence.absent.as_mut().unwrap().value.sentinel = cache::Sentinel {
+            start_ns: 1200.0,
+            end_ns: 1200.0,
+        };
+        assert_eq!(
+            unsteady(&evidence),
+            ["one_to_one", "multiway_dense", "absent"]
+        );
+        let why = |name: &str| {
+            let target = targets().into_iter().find(|t| t.name == name).unwrap();
+            evidence::out_of_date(&target, &evidence).join("; ")
+        };
+        assert!(
+            why("one_to_one").contains("speed moved 90%"),
+            "{}",
+            why("one_to_one")
+        );
+        assert!(
+            why("multiway_dense").contains("6.00 times"),
+            "{}",
+            why("multiway_dense")
+        );
     }
 
     #[test]

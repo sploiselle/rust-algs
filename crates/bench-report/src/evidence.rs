@@ -6,6 +6,13 @@
 //! [`gather`] reads the results and the run log; [`out_of_date`] says what a
 //! target lacks. The runner runs what's out of date, and the tables refuse
 //! it.
+//!
+//! A result also has to come from a steady machine. Every timing binary and
+//! every cache measure times a sentinel, work that is none of theirs, before
+//! it starts and after it ends. If the two differ, or both are slow beside
+//! the other targets', the machine changed speed, and what the target
+//! measured is some other machine's: [`Evidence::unsteady`]. Such a target
+//! counts as out of date.
 
 use std::collections::HashMap;
 use std::fs;
@@ -246,6 +253,92 @@ impl Evidence {
     }
 }
 
+/// How far a target's sentinel may move between its start and its end before
+/// the machine's speed is taken to have changed while it ran.
+pub const DRIFT_LIMIT: f64 = 0.03;
+
+/// How much slower than the fastest sentinel of its kind a target's may be.
+/// The timing binaries' sentinels are criterion's medians and the cache
+/// measures' are timed by hand, so each kind is set beside its own.
+pub const SPREAD_LIMIT: f64 = 0.10;
+
+/// How much slower than the fastest sentinel of any kind a target's may be.
+/// The two kinds read within about a tenth of each other, and a core pushed
+/// to a slower mode takes two to six times as long.
+pub const SLOW_LIMIT: f64 = 0.50;
+
+impl Evidence {
+    /// `target`'s sentinel: the same work timed before it measured anything
+    /// and after it finished, in ns. `None` if it has none, as the memory
+    /// profiles don't, or one of the two hasn't been timed.
+    pub fn sentinel(&self, kind: Kind, name: &str) -> Option<(f64, f64)> {
+        let part = |sentinel: bench_cache::Sentinel| (sentinel.start_ns, sentinel.end_ns);
+        match (kind, name) {
+            (Kind::Timing, group) => {
+                let [start, end] = sentinel_keys(group);
+                let median = |key: &Key| Some(self.timings.get(key)?.median_ns);
+                Some((median(&start)?, median(&end)?))
+            }
+            (Kind::Cache, "phases") => self.phases.as_ref().map(|w| part(w.value.sentinel)),
+            (Kind::Cache, "reads") => self.reads.as_ref().map(|w| part(w.value.sentinel)),
+            (Kind::Cache, "hashers") => self.hashers.as_ref().map(|w| part(w.value.sentinel)),
+            (Kind::Cache, "absent") => self.absent.as_ref().map(|w| part(w.value.sentinel)),
+            _ => None,
+        }
+    }
+
+    /// Every sentinel of `kind`, by target.
+    fn sentinels(&self, kind: Kind) -> Vec<(f64, f64)> {
+        let names: Vec<&str> = match kind {
+            Kind::Timing => cases::GROUPS.iter().map(|group| group.name).collect(),
+            Kind::Cache => bench_cache::PARTS.to_vec(),
+            Kind::Memory => Vec::new(),
+        };
+        names
+            .into_iter()
+            .filter_map(|name| self.sentinel(kind, name))
+            .collect()
+    }
+
+    /// Why the machine wasn't steady while the target of `kind` called `name`
+    /// ran, if it wasn't: its sentinel moved between its start and its end,
+    /// or was slow beside other targets'. A target that ran while the machine
+    /// was slow has timings of some other machine.
+    pub fn unsteady(&self, kind: Kind, name: &str) -> Option<String> {
+        let (start, end) = self.sentinel(kind, name)?;
+        let drift = (end / start - 1.0).abs();
+        if drift > DRIFT_LIMIT {
+            return Some(format!(
+                "the machine's speed moved {:.0}% while it ran",
+                drift * 100.0
+            ));
+        }
+        let fastest = |sentinels: Vec<(f64, f64)>| {
+            sentinels
+                .into_iter()
+                .map(|(start, end)| start.min(end))
+                .min_by(f64::total_cmp)
+        };
+        let slowest = start.max(end);
+        let of_kind = fastest(self.sentinels(kind))?;
+        let of_any = fastest([self.sentinels(Kind::Timing), self.sentinels(Kind::Cache)].concat())?;
+        let slow = |fastest: f64, limit: f64| slowest > fastest * (1.0 + limit);
+        if slow(of_kind, SPREAD_LIMIT) || slow(of_any, SLOW_LIMIT) {
+            let beside = if slow(of_kind, SPREAD_LIMIT) {
+                of_kind
+            } else {
+                of_any
+            };
+            return Some(format!(
+                "the machine was slow while it ran: its sentinel took {:.2} times the fastest \
+                 target's",
+                slowest / beside
+            ));
+        }
+        None
+    }
+}
+
 /// Up to five of `ids`, and how many more there are.
 pub fn some(ids: &[String]) -> String {
     let shown = ids.iter().take(5).cloned().collect::<Vec<_>>().join(", ");
@@ -280,6 +373,10 @@ pub fn out_of_date(target: &Target, evidence: &Evidence) -> Vec<String> {
                 }
             }
         },
+    }
+    // Only of results this build wrote: another build's are being replaced anyway.
+    if why.is_empty() {
+        why.extend(evidence.unsteady(target.kind, &target.name));
     }
     if let (Kind::Memory, Some(memory)) = (target.kind, &evidence.memory) {
         if let Some(filter) = &memory.value.filter {
