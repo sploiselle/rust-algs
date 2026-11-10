@@ -937,7 +937,8 @@ impl Table {
 }
 
 /// The tables on why the hash join's cost per row climbs: its loops, what it
-/// reads, what a read costs, how many reach DRAM, and what those predict.
+/// reads, what a read costs, how many reach DRAM, what those predict, and
+/// where a read costs more than that prediction charges.
 fn cache_tables(results: &Results, cache: &Cache) -> Vec<(String, String)> {
     let run = &cache.run;
     let from = format!(
@@ -971,6 +972,46 @@ fn cache_tables(results: &Results, cache: &Cache) -> Vec<(String, String)> {
     let costs = cache.reads.iter().map(|r| {
         let cells = [r.chased_ns, r.overlapped_ns, r.paged_ns].map(sig3);
         [vec![param_label(r.bytes)], cells.to_vec()].concat()
+    });
+    let worked = cache.worked_reads.iter().map(|w| {
+        let cells = [w.l2_ns, w.dram_ns, w.dram_ns - w.l2_ns].map(sig3);
+        [vec![format!("{:.0}", w.instructions)], cells.to_vec()].concat()
+    });
+    // A row per size the absent probes ran at, a column per hashing.
+    let absent_hashings = cache::ABSENT_HASHINGS.map(cache::Hashing::label);
+    let mut absent_sizes: Vec<usize> = cache.absent.iter().map(|a| a.rows_a_side).collect();
+    absent_sizes.dedup();
+    let absent: Vec<Vec<String>> = absent_sizes
+        .iter()
+        .map(|&n| {
+            let cells = absent_hashings.iter().map(|&hashing| {
+                cache
+                    .absent
+                    .iter()
+                    .find(|a| a.rows_a_side == n && a.hashing == hashing)
+                    .map_or(MISSING.to_owned(), |a| sig3(a.ns))
+            });
+            [param_label(n)].into_iter().chain(cells).collect()
+        })
+        .collect();
+    // What each column's rows run, at the largest size: it doesn't move with size.
+    let absent_instructions: Vec<String> = absent_hashings
+        .iter()
+        .map(|&hashing| {
+            cache
+                .absent
+                .iter()
+                .rfind(|a| a.hashing == hashing)
+                .map_or(MISSING.to_owned(), |a| format!("{:.0}", a.instructions))
+        })
+        .collect();
+    // The loops' instructions a row, at the largest size.
+    let loop_instructions = cache.phases.last().map_or(String::new(), |p| {
+        format!(
+            " The build loop retires {:.0} instructions for each row it builds, and the probe \
+             loop {:.0} for each row it probes with.",
+            p.build_instructions, p.probe_instructions
+        )
     });
     let dram = modelled().map(|p| {
         let r = reads(p);
@@ -1028,11 +1069,13 @@ fn cache_tables(results: &Results, cache: &Cache) -> Vec<(String, String)> {
                 "whole join",
             ],
             phases.collect(),
-            "Median of at least 30 calls, in ns per input row, counting both sides together, \
-             2n. A clock reads between the hash join's two loops; the whole join also allocates \
-             and frees its table. Probe, matches first, is the probe loop of a second call, on \
-             the same rows with those that match moved to the front."
-                .to_owned(),
+            format!(
+                "Median of at least 30 calls, in ns per input row, counting both sides \
+                 together, 2n. A clock reads between the hash join's two loops; the whole join \
+                 also allocates and frees its table. Probe, matches first, is the probe loop of \
+                 a second call, on the same rows with those that match moved to the \
+                 front.{loop_instructions}"
+            ),
         ),
         file(
             "hash_footprint",
@@ -1063,6 +1106,35 @@ fn cache_tables(results: &Results, cache: &Cache) -> Vec<(String, String)> {
                  order. One at a time, each read's address comes from the last. Overlapped, \
                  addresses come from a list, so the core runs as many as it can at once. Few \
                  pages reads the same lines 1 MiB at a time, so hardly a read misses the TLB."
+            ),
+        ),
+        file(
+            "read_work",
+            &["instructions a read", "in L2", "past L2", "added past L2"],
+            worked.collect(),
+            format!(
+                "Median of five runs, in ns per read of a {line}-byte cache line in random \
+                 order, overlapped. Beside each read the loop does 0, 4, 8, 12 or 16 rounds of \
+                 arithmetic on its own counter, which read nothing and which no read waits on; \
+                 instructions a read are what the kernel counts retired. In L2, the lines span \
+                 4 MiB; past it, 1 GiB."
+            ),
+        ),
+        file(
+            "control_miss",
+            &[
+                "rows a side",
+                absent_hashings[0],
+                absent_hashings[1],
+                absent_hashings[2],
+            ],
+            absent,
+            format!(
+                "Median of at least five calls, in ns per probe row, of the probe loop alone on \
+                 keys the table doesn't hold, so a row reads control bytes and nothing else. \
+                 foldhash + 16 or 32 rounds mixes each hash that many more times, adding \
+                 instructions but not reads: a row retires {}, {} and {} instructions.",
+                absent_instructions[0], absent_instructions[1], absent_instructions[2]
             ),
         ),
         file(
@@ -1989,6 +2061,8 @@ mod tests {
             probe_ns: whole_ns * 2.0 / 3.0,
             grouped_probe_ns: whole_ns / 2.0,
             whole_ns,
+            build_instructions: 56.0,
+            probe_instructions: 29.0,
         };
         let cost = |bytes, ns| cache::ReadCost {
             bytes,
@@ -2014,6 +2088,31 @@ mod tests {
                         hashing: hashing.label().to_owned(),
                         ns: 10.0,
                         instructions: 40.0,
+                    })
+                })
+                .collect(),
+            worked_reads: vec![
+                cache::WorkedRead {
+                    rounds: 0,
+                    instructions: 7.2,
+                    l2_ns: 1.0,
+                    dram_ns: 5.0,
+                },
+                cache::WorkedRead {
+                    rounds: 8,
+                    instructions: 48.4,
+                    l2_ns: 2.0,
+                    dram_ns: 9.5,
+                },
+            ],
+            absent: [1 << 20, 1 << 26]
+                .into_iter()
+                .flat_map(|rows_a_side| {
+                    cache::ABSENT_HASHINGS.map(|hashing| cache::AbsentProbe {
+                        rows_a_side,
+                        hashing: hashing.label().to_owned(),
+                        ns: 3.0,
+                        instructions: 23.4,
                     })
                 })
                 .collect(),
@@ -2254,6 +2353,8 @@ mod tests {
             "hash_phases",
             "hash_footprint",
             "read_cost",
+            "read_work",
+            "control_miss",
             "hash_reads",
             "hash_predicted",
             "hash_hashers",
@@ -2311,6 +2412,43 @@ mod tests {
         assert!(times.contains("| 4M | 10.0 |"), "{times}");
         assert!(page("hash_instructions").contains("| 4M | 40.0 |"));
         assert!(page("hash_per_instruction").contains("| 4M | 0.250 |"));
+    }
+
+    #[test]
+    fn the_work_and_control_tables_say_what_their_rows_run() {
+        let mut results = results(every_timing(0));
+        results.cache = Some(cache(run("cache", 0, "ccccccc000", false, RUSTC)));
+        let files = render(&results);
+        let page = |name: &str| {
+            files
+                .iter()
+                .find(|(file, _)| file == &format!("{name}.md"))
+                .map(|(_, page)| page.clone())
+                .unwrap_or_else(|| panic!("no {name}"))
+        };
+        let work = page("read_work");
+        assert!(work.contains("| 7 | 1.00 | 5.00 | 4.00 |"), "{work}");
+        assert!(work.contains("| 48 | 2.00 | 9.50 | 7.50 |"), "{work}");
+        let control = page("control_miss");
+        assert!(
+            control.contains(
+                "| rows a side | foldhash | foldhash + 16 rounds | foldhash + 32 rounds |"
+            ),
+            "{control}"
+        );
+        assert!(
+            control.contains("| 64M | 3.00 | 3.00 | 3.00 |"),
+            "{control}"
+        );
+        assert!(
+            control.contains("a row retires 23, 23 and 23 instructions"),
+            "{control}"
+        );
+        let phases = page("hash_phases");
+        assert!(
+            phases.contains("The build loop retires 56 instructions for each row it builds"),
+            "{phases}"
+        );
     }
 
     #[test]

@@ -5,22 +5,46 @@
 //! cargo passes `--bench`. Run without it, as `cargo test --benches` does, it
 //! measures the smallest sizes and writes nothing.
 
-use bench::cache::{self, HASHER_SIZES, SIZES, WORKING_SETS};
+use bench::cache::{self, ABSENT_SIZES, HASHER_SIZES, SIZES, WORKING_SETS};
 use bench::record::{self, Run};
 
 fn main() {
     let benching = std::env::args().any(|arg| arg == "--bench");
     let run = Run::now("cache");
     if !benching {
-        cache::measure(run, &SIZES[..1], &WORKING_SETS[..1], &HASHER_SIZES[..1]);
+        cache::measure(
+            run,
+            &SIZES[..1],
+            &WORKING_SETS[..1],
+            &HASHER_SIZES[..1],
+            &ABSENT_SIZES[..1],
+        );
         return;
     }
     record::append(&run);
-    let measured = cache::measure(run, &SIZES, &WORKING_SETS, &HASHER_SIZES);
+    let measured = cache::measure(run, &SIZES, &WORKING_SETS, &HASHER_SIZES, &ABSENT_SIZES);
     for p in &measured.phases {
         println!(
-            "{:>9} rows a side: build {:5.2}, probe {:5.2} ({:5.2} matches first), whole {:5.2} ns per input row",
-            p.rows_a_side, p.build_ns, p.probe_ns, p.grouped_probe_ns, p.whole_ns
+            "{:>9} rows a side: build {:5.2}, probe {:5.2} ({:5.2} matches first), whole {:5.2} ns per input row; {:.1} and {:.1} instructions a row",
+            p.rows_a_side,
+            p.build_ns,
+            p.probe_ns,
+            p.grouped_probe_ns,
+            p.whole_ns,
+            p.build_instructions,
+            p.probe_instructions
+        );
+    }
+    for w in &measured.worked_reads {
+        println!(
+            "{:>2} rounds of work, {:5.1} instructions a read: {:5.2} ns in L2, {:5.2} past it",
+            w.rounds, w.instructions, w.l2_ns, w.dram_ns
+        );
+    }
+    for a in &measured.absent {
+        println!(
+            "{:>9} rows a side, absent keys: {:>22} {:6.2} ns, {:6.1} instructions per probe row",
+            a.rows_a_side, a.hashing, a.ns, a.instructions
         );
     }
     for r in &measured.reads {

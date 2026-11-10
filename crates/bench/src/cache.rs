@@ -7,11 +7,22 @@
 //! them the larger the structures are:
 //!
 //! - [`time_phases`] times the join's build and probe loops apart, and the
-//!   probe loop again with its matching rows first;
+//!   probe loop again with its matching rows first, and counts the
+//!   instructions each loop retires;
 //! - [`time_reads`] measures what a read costs, one at a time and overlapped;
 //! - [`dram_reads`] models how many reads reach DRAM at each size.
 //!
 //! The report multiplies the last two, and sets that beside the first.
+//!
+//! That product prices every read alike, at what it costs in a loop that
+//! does nothing but read. Two more measures say where that price is wrong:
+//!
+//! - [`time_worked_reads`] gives each read unrelated work, as a join's row
+//!   has, and measures what the read then costs: the more instructions a read
+//!   comes with, the fewer reads fit in flight;
+//! - [`time_absent_probes`] probes for keys the table doesn't hold, which
+//!   reads control bytes and nothing else, with hashers that add
+//!   instructions: the same control-byte misses in a longer row.
 //!
 //! [`time_hashers`] asks why a slow hasher costs more past L2 rather than
 //! less. While a row waits on DRAM, the core works ahead on the rows behind
@@ -83,6 +94,23 @@ const WINDOW: usize = 1 << 20;
 /// Samples of each read cost, and the fewest of each join.
 const READ_SAMPLES: usize = 5;
 
+/// Rounds of unrelated work [`time_worked_reads`] gives each read. Past 16
+/// the compiler stops unrolling the rounds, and the instructions a read jump.
+pub const WORK_ROUNDS: [usize; 5] = [0, 4, 8, 12, 16];
+
+/// Bytes [`time_worked_reads`] reads across: 4 MiB, which L2 holds, and
+/// 1 GiB, of which it holds a fiftieth.
+const WORKED_IN_L2: usize = 1 << 22;
+const WORKED_PAST_L2: usize = 1 << 30;
+
+/// Rows a side [`time_absent_probes`] runs at: 1M, where L2 holds the control
+/// bytes, to 64M, where it holds a sixth of them.
+pub const ABSENT_SIZES: [usize; 6] = [1 << 20, 1 << 22, 1 << 23, 1 << 24, 1 << 25, 1 << 26];
+
+/// What [`time_absent_probes`] adds to every key, so the table holds none of
+/// them: the workloads' keys are below 2^28.
+const ABSENT: u64 = 1 << 40;
+
 /// One size's times, each the median in ns per input row, both sides counted.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Phases {
@@ -96,6 +124,36 @@ pub struct Phases {
     pub grouped_probe_ns: f64,
     /// The whole call, with allocating and freeing its table.
     pub whole_ns: f64,
+    /// Instructions the build loop retires for each row it builds, as the
+    /// kernel counts them.
+    pub build_instructions: f64,
+    /// Instructions the probe loop retires for each row it probes with.
+    pub probe_instructions: f64,
+}
+
+/// What a read costs when each read comes with unrelated work, each the
+/// median per read.
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct WorkedRead {
+    /// Rounds of work a read: one of [`WORK_ROUNDS`].
+    pub rounds: usize,
+    /// Instructions retired a read, the work's among them.
+    pub instructions: f64,
+    /// Across [`WORKED_IN_L2`] bytes.
+    pub l2_ns: f64,
+    /// Across [`WORKED_PAST_L2`] bytes.
+    pub dram_ns: f64,
+}
+
+/// A probe for keys the table doesn't hold, with one hashing at one size,
+/// each the median per probe row.
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct AbsentProbe {
+    pub rows_a_side: usize,
+    /// The [`Hashing`]'s label.
+    pub hashing: String,
+    pub ns: f64,
+    pub instructions: f64,
 }
 
 /// What a read costs across `bytes`, each the median in ns per read.
@@ -131,7 +189,13 @@ pub struct Cache {
     pub phases: Vec<Phases>,
     pub reads: Vec<ReadCost>,
     pub hashers: Vec<HasherCost>,
+    pub worked_reads: Vec<WorkedRead>,
+    pub absent: Vec<AbsentProbe>,
 }
+
+/// The hashings [`time_absent_probes`] probes with: foldhash, and foldhash
+/// with instructions added and no reads.
+pub const ABSENT_HASHINGS: [Hashing; 3] = [Hashing::Fold, Hashing::Padded16, Hashing::Padded32];
 
 /// How [`time_hashers`] hashes the join's keys.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -395,26 +459,46 @@ fn median(samples: &mut [f64]) -> f64 {
     samples[samples.len() / 2]
 }
 
-/// [`hash_join`](algs::join::hash_join) with a clock between its two loops. A test holds it to the
-/// original.
+/// What [`timed_hash_join`] measured of each loop.
+#[derive(Clone, Copy, Debug)]
+pub struct Loops {
+    pub build: Duration,
+    pub probe: Duration,
+    /// Instructions retired while building, allocating the table among them.
+    pub build_instructions: u64,
+    pub probe_instructions: u64,
+}
+
+/// [`hash_join`](algs::join::hash_join) with a clock and a count of
+/// instructions between its two loops. A test holds it to the original. The
+/// counts are read outside both clocks.
 pub fn timed_hash_join<S: Sink>(
     build: &[Row],
     probe: &[Row],
     hasher: impl BuildHasher,
     out: &mut S,
-) -> (Duration, Duration) {
+) -> Loops {
+    let before = instructions();
     let start = Instant::now();
     let mut table = std::collections::HashMap::with_capacity_and_hasher(build.len(), hasher);
     for row in build {
         table.insert(&row.0, row);
     }
-    let built = Instant::now();
+    let build_time = start.elapsed();
+    let built = instructions();
+    let start = Instant::now();
     for row in probe {
         if let Some(found) = table.get(&row.0) {
             out.pair(found, row);
         }
     }
-    (built - start, built.elapsed())
+    let probe_time = start.elapsed();
+    Loops {
+        build: build_time,
+        probe: probe_time,
+        build_instructions: built - before,
+        probe_instructions: instructions() - built,
+    }
 }
 
 /// A join's two sides and how many pairs it emits.
@@ -470,7 +554,7 @@ pub fn time_phases(rows_a_side: usize) -> Phases {
         let (input, grouped) = next.next().expect("a case has an instance");
         let mut tally = Tally::default();
         let start = Instant::now();
-        let (build, probe) = timed_hash_join(
+        let loops = timed_hash_join(
             black_box(&input.left),
             black_box(&input.right),
             FixedState::default(),
@@ -479,17 +563,27 @@ pub fn time_phases(rows_a_side: usize) -> Phases {
         let whole = start.elapsed();
         assert_eq!(tally.tuples, input.expected, "at {rows_a_side} rows a side");
         let mut tally = Tally::default();
-        let (_, grouped_probe) = timed_hash_join(
+        let grouped_probe = timed_hash_join(
             black_box(&input.left),
             black_box(grouped),
             FixedState::default(),
             &mut tally,
-        );
+        )
+        .probe;
         assert_eq!(
             tally.tuples, input.expected,
             "at {rows_a_side} rows a side, matches first"
         );
-        [build, probe, whole, grouped_probe].map(|time| time.as_nanos() as f64)
+        let [build, probe, whole, grouped_probe] =
+            [loops.build, loops.probe, whole, grouped_probe].map(|time| time.as_nanos() as f64);
+        [
+            build,
+            probe,
+            whole,
+            grouped_probe,
+            loops.build_instructions as f64,
+            loops.probe_instructions as f64,
+        ]
     };
     (0..instances).for_each(|_| {
         call();
@@ -503,13 +597,82 @@ pub fn time_phases(rows_a_side: usize) -> Phases {
         let mut times: Vec<f64> = samples.iter().map(|s| s[phase]).collect();
         median(&mut times) / (2 * rows_a_side) as f64
     };
+    // Each loop's instructions over its own rows, not both sides'.
+    let instructions = |phase: usize| 2.0 * per_row(phase);
     Phases {
         rows_a_side,
         build_ns: per_row(0),
         probe_ns: per_row(1),
         grouped_probe_ns: per_row(3),
         whole_ns: per_row(2),
+        build_instructions: instructions(4),
+        probe_instructions: instructions(5),
     }
+}
+
+/// Times the probe loop alone at `rows_a_side`, on the main case's first
+/// input with [`ABSENT`] added to every probe key, with each of
+/// [`ABSENT_HASHINGS`]. The table holds none of those keys, so a probe row
+/// reads a group of control bytes and, but for the one probe in thirty whose
+/// group holds a matching tag, nothing else: what the control bytes cost,
+/// apart from the buckets and the build rows.
+///
+/// # Panics
+///
+/// If a probe finds a key.
+pub fn time_absent_probes(rows_a_side: usize) -> Vec<AbsentProbe> {
+    fn probe<S: BuildHasher + Default>(build: &[Row], absent: &[Row]) -> (f64, f64) {
+        let mut table =
+            std::collections::HashMap::with_capacity_and_hasher(build.len(), S::default());
+        for row in build {
+            table.insert(&row.0, row);
+        }
+        let call = || {
+            let mut tally = Tally::default();
+            let counted = instructions();
+            let start = Instant::now();
+            for row in black_box(absent) {
+                if let Some(found) = table.get(&row.0) {
+                    tally.pair(found, row);
+                }
+            }
+            let elapsed = start.elapsed();
+            let retired = instructions() - counted;
+            assert_eq!(tally.tuples, 0, "the table holds an absent key");
+            let rows = absent.len() as f64;
+            (elapsed.as_nanos() as f64 / rows, retired as f64 / rows)
+        };
+        call();
+        let start = Instant::now();
+        let mut samples = Vec::new();
+        while samples.len() < READ_SAMPLES || start.elapsed() < cases::MEASUREMENT {
+            samples.push(call());
+        }
+        let (mut ns, mut counts): (Vec<f64>, Vec<f64>) = samples.into_iter().unzip();
+        (median(&mut ns), median(&mut counts))
+    }
+
+    // Only the sides: see `time_phases`.
+    let workload::Binary { left, right, .. } = workload::one_to_one(rows_a_side, 0);
+    let absent: Vec<Row> = right.iter().map(|row| (row.0 + ABSENT, row.1)).collect();
+    drop(right);
+    ABSENT_HASHINGS
+        .iter()
+        .map(|&hashing| {
+            let (ns, instructions) = match hashing {
+                Hashing::Fold => probe::<FixedState>(&left, &absent),
+                Hashing::Padded16 => probe::<Padded<16>>(&left, &absent),
+                Hashing::Padded32 => probe::<Padded<32>>(&left, &absent),
+                other => unreachable!("{other:?} isn't an absent hashing"),
+            };
+            AbsentProbe {
+                rows_a_side,
+                hashing: hashing.label().to_owned(),
+                ns,
+                instructions,
+            }
+        })
+        .collect()
 }
 
 /// Times and counts the instructions of each of [`HASHINGS`] at
@@ -637,6 +800,92 @@ pub fn time_reads(bytes: usize, line_bytes: usize) -> ReadCost {
     }
 }
 
+/// `ROUNDS` rounds of arithmetic on `line`, each a multiply, a rotate, a shift
+/// and three more: instructions that read nothing, and that nothing waits on
+/// but the sum they're folded into. The rounds don't feed each other, so the
+/// core can run them side by side.
+#[inline(always)]
+fn work<const ROUNDS: usize>(line: u32) -> u64 {
+    const ODD: [u64; 4] = [
+        0x9E37_79B9_7F4A_7C15,
+        0xBF58_476D_1CE4_E5B9,
+        0x94D0_49BB_1331_11EB,
+        0xD6E8_FEB8_6659_FD93,
+    ];
+    let x = u64::from(line) | 1;
+    let mut folded = 0u64;
+    for round in 0..ROUNDS {
+        let mixed = x.wrapping_mul(ODD[round % 4]).rotate_left(round as u32 + 1);
+        folded ^= (mixed ^ (mixed >> 29)).wrapping_add(ODD[(round + 3) % 4]);
+    }
+    folded
+}
+
+/// Reads every line of `order` as [`sweep`] does, with `ROUNDS` rounds of
+/// [`work`] beside each read: the ns and the instructions a read.
+fn worked_sweep<const ROUNDS: usize>(cells: &[u32], order: &[u32]) -> (f64, f64) {
+    let read = || {
+        order.iter().fold(0u64, |sum, &line| {
+            sum.wrapping_add(u64::from(cells[line as usize])) ^ work::<ROUNDS>(line)
+        })
+    };
+    black_box(read());
+    let passes = ((1 << 23) / order.len()).max(1);
+    let reads = (passes * order.len()) as f64;
+    let samples = (0..READ_SAMPLES).map(|_| {
+        let counted = instructions();
+        let start = Instant::now();
+        for _ in 0..passes {
+            black_box(read());
+        }
+        let elapsed = start.elapsed();
+        let retired = instructions() - counted;
+        (elapsed.as_nanos() as f64 / reads, retired as f64 / reads)
+    });
+    let (mut ns, mut counts): (Vec<f64>, Vec<f64>) = samples.unzip();
+    (median(&mut ns), median(&mut counts))
+}
+
+/// What an overlapped read costs with each of [`WORK_ROUNDS`] of unrelated
+/// work beside it, in L2 and past it, with reads `line_bytes` apart. A join's
+/// row hashes, compares and emits around its reads; this is a read with that
+/// much to carry, and nothing else changed.
+pub fn time_worked_reads(line_bytes: usize) -> Vec<WorkedRead> {
+    let cell = size_of::<u32>();
+    let stride = line_bytes / cell;
+    let shuffled = |bytes: usize| {
+        let mut rng = Rng::seeded(&format!("worked reads/{bytes}"));
+        let mut order: Vec<u32> = (0..bytes / line_bytes)
+            .map(|line| (line * stride) as u32)
+            .collect();
+        rng.shuffle(&mut order);
+        (vec![1u32; bytes / cell], order)
+    };
+    let (small, small_order) = shuffled(WORKED_IN_L2);
+    let (large, large_order) = shuffled(WORKED_PAST_L2);
+    let sweep = |rounds: usize, cells: &[u32], order: &[u32]| match rounds {
+        0 => worked_sweep::<0>(cells, order),
+        4 => worked_sweep::<4>(cells, order),
+        8 => worked_sweep::<8>(cells, order),
+        12 => worked_sweep::<12>(cells, order),
+        16 => worked_sweep::<16>(cells, order),
+        other => unreachable!("{other} isn't one of WORK_ROUNDS"),
+    };
+    WORK_ROUNDS
+        .iter()
+        .map(|&rounds| {
+            let (l2_ns, _) = sweep(rounds, &small, &small_order);
+            let (dram_ns, instructions) = sweep(rounds, &large, &large_order);
+            WorkedRead {
+                rounds,
+                instructions,
+                l2_ns,
+                dram_ns,
+            }
+        })
+        .collect()
+}
+
 /// `name`, from sysctl.
 ///
 /// # Panics
@@ -649,9 +898,15 @@ fn sysctl(name: &str) -> usize {
         .unwrap_or_else(|| panic!("sysctl {name} gave no number"))
 }
 
-/// Measures everything, for `run`, at `sizes`, `working_sets` and
-/// `hasher_sizes`.
-pub fn measure(run: Run, sizes: &[usize], working_sets: &[usize], hasher_sizes: &[usize]) -> Cache {
+/// Measures everything, for `run`, at `sizes`, `working_sets`,
+/// `hasher_sizes` and `absent_sizes`.
+pub fn measure(
+    run: Run,
+    sizes: &[usize],
+    working_sets: &[usize],
+    hasher_sizes: &[usize],
+    absent_sizes: &[usize],
+) -> Cache {
     let line_bytes = sysctl("hw.cachelinesize");
     let reads = working_sets
         .iter()
@@ -661,9 +916,14 @@ pub fn measure(run: Run, sizes: &[usize], working_sets: &[usize], hasher_sizes: 
         run,
         l2_bytes: sysctl("hw.perflevel0.l2cachesize"),
         line_bytes,
+        worked_reads: time_worked_reads(line_bytes),
         phases: sizes.iter().map(|&n| time_phases(n)).collect(),
         reads,
         hashers: hasher_sizes.iter().flat_map(|&n| time_hashers(n)).collect(),
+        absent: absent_sizes
+            .iter()
+            .flat_map(|&n| time_absent_probes(n))
+            .collect(),
     }
 }
 
@@ -707,6 +967,27 @@ mod tests {
             &mut clocked,
         );
         assert_eq!(joined, clocked);
+    }
+
+    // The counts a sweep reports are the whole process's, and the tests share
+    // one, so this checks the work itself; the run reports its instructions.
+    #[test]
+    fn no_rounds_of_work_leave_a_sweep_as_it_was() {
+        assert_eq!(work::<0>(12_345), 0);
+        assert_ne!(work::<4>(12_345), 0);
+        assert_ne!(work::<8>(12_345), work::<16>(12_345));
+        let lines: Vec<u32> = (0..1 << 10).collect();
+        let cells = vec![1u32; 1 << 10];
+        let (ns, instructions) = worked_sweep::<4>(&cells, &lines);
+        assert!(ns > 0.0 && instructions > 0.0);
+    }
+
+    #[test]
+    fn an_absent_probe_finds_nothing_with_each_hashing() {
+        let probes = time_absent_probes(1 << 10);
+        let labels: Vec<&str> = probes.iter().map(|p| p.hashing.as_str()).collect();
+        assert_eq!(labels, ABSENT_HASHINGS.map(Hashing::label));
+        assert!(probes.iter().all(|p| p.ns > 0.0 && p.instructions > 0.0));
     }
 
     #[test]
