@@ -1,0 +1,23 @@
+[package]
+name = "bench-joins-plan"
+version = "0.1.0"
+description = "The joins' plan: every case that's measured, and the memory profile of each"
+edition.workspace = true
+publish.workspace = true
+autobenches = false
+
+[lib]
+bench = false
+
+[dependencies]
+algs = { path = "../../algs" }
+bench-joins = { path = "../joins" }
+foldhash = "0.2"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Every case's memory profile.
+[[bench]]
+name = "memory"
+path = "benches/memory.rs"
+harness = false

@@ -33,8 +33,9 @@ crates/algs/              the library
   examples/               programs to run against the library
 crates/diagrams/          figures drawn from the library (SVG, HTML and Mermaid)
 crates/bench/             the benchmarks: see its README
-  joins/                  what's measured about the joins, and their bench targets
-  report/                 the plan, the runner, and the tables a post quotes
+  joins/                  what's timed about the joins, and their bench targets
+  joins-plan/             every case that's measured, and its memory profile
+  report/                 the runner, and the tables a post quotes
 figures/                  the rendered figures, generated and not committed
 ```
 

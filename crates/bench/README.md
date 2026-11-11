@@ -7,7 +7,7 @@ results become Markdown tables for a post to quote.
 ## Layout
 
 ```text
-joins/                    package bench-joins: what's measured about the joins
+joins/                    package bench-joins: what's timed
   src/                    what every measure shares
     lib.rs                rows, and the sinks a join emits into
     workload.rs           the inputs
@@ -21,6 +21,12 @@ joins/                    package bench-joins: what's measured about the joins
       <group>.rs          a bench target: mod.rs, then its group
       groups/<group>.rs   the group: its workload, sizes and joins
     cache/<measure>.rs    a bench target for each cache measure
+joins-plan/               package bench-joins-plan: every case, and its memory
+  src/
+    cases.rs              the plan: every group, its sizes and its joins
+    profile.rs            a memory profile
+    alloc.rs              the allocator that counts
+  benches/memory.rs       a bench target: every case's memory profile
 report/                   package bench: runs them, and writes the tables
   src/
     main.rs               the command line
@@ -30,33 +36,29 @@ report/                   package bench: runs them, and writes the tables
     runner.rs             runs what's out of date; keeps what an edit didn't touch
     subject.rs            what the runner asks of a subject
     joins/                the joins, as a subject
-      cases.rs            the plan: every group, its sizes and its joins
-      profile.rs          a memory profile
-      evidence.rs         the joins' results on disk, and the machine's steadiness
+      evidence.rs         their results on disk, and the machine's steadiness
       model.rs            a model of the hash join's reads
       report/             the tables and the facts
-  benches/memory.rs       every case's memory profile
 ```
 
-There are two packages for one reason: nothing measured links the report. A
-bench target's machine code depends on every crate it links, so a table that
-shared a crate with a join could move the join's loops when it changed. The
-plan, the runner and the tables link `bench-joins`, and it links none of
-them.
+Each package links the one above it and none below. A bench target's machine
+code depends on every crate it links, so a table that shared a crate with a
+join could move the join's loops when it changed. Split this way, it can't:
 
-The memory profile is the report's because it profiles every case in the
-plan. That costs nothing: an allocation count is the same however the code is
-laid out.
+- nothing that's timed links the plan or the report, so neither can move a
+  join's machine code;
+- the memory profile links the plan and not the report, so a change to a
+  table leaves it as it was.
 
-To benchmark something else, give it a package beside `joins/`, a module
-beside `report/src/joins/` that implements `Subject` for it, and a line in
+To benchmark something else, give it packages beside these, a module beside
+`report/src/joins/` that implements `Subject` for it, and a line in
 `subjects()` in `report/src/lib.rs`. The runner refuses a bench target no
 subject claims.
 
 ## What's measured
 
 Each benchmark group in `joins/benches/timing/groups/` has a timing binary of
-its own, run by criterion. `report/benches/memory.rs` profiles each case's
+its own, run by criterion. `joins-plan/benches/memory.rs` profiles each case's
 memory with a counting allocator. `joins/benches/cache/` has a binary for each
 cache measure.
 
@@ -171,8 +173,10 @@ hash:
 The runner logs that hash, and the binary's, with every run. A result stands
 if its target is built from the same source now, or to the same binary. So:
 
-- a change to the plan, a table, the runner or the logs reruns nothing: no
-  bench target links them;
+- a change to a table, the runner or the logs reruns nothing: no bench
+  target links them;
+- a change to the plan reruns the memory profiles, which take half a minute,
+  and no timing;
 - moving or renaming a file reruns nothing by itself: a file is told by its
   contents. If the move needs an edit to a measured file, such as the line
   that names the file moved, keep the results, as below;
@@ -239,11 +243,11 @@ hashes, so the logs can change without changing what's measured.
 
 To add a group: write `joins/benches/timing/groups/<name>.rs`, copy another
 group's `joins/benches/timing/<name>.rs` and its `[[bench]]` entry, and add
-the file to `GROUPS` in `report/src/joins/cases.rs`.
+the file to `GROUPS` in `joins-plan/src/cases.rs`.
 
 Like the figures, everything the benchmarks write is generated, so it lands
 under `target/` and is never committed.
 
-criterion is slow to build, so plain `cargo test` and `cargo build` skip both
+criterion is slow to build, so plain `cargo test` and `cargo build` skip these
 packages. `cargo test --workspace` and
 `cargo clippy --workspace --all-targets` cover them.

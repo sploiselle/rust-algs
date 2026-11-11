@@ -1,8 +1,8 @@
 use super::*;
-use crate::alloc::Usage;
 use crate::joins::profile::Memory;
 use crate::record::Kept;
 use crate::vouch::Log;
+use bench_joins_plan::alloc::Usage;
 use evidence::{Checked, Kind as TargetKind, Written};
 
 const RUSTC: &str = "rustc 1.98.1 (48a229cea 2026-09-01)";

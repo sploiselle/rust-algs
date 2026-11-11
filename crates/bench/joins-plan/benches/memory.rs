@@ -1,5 +1,5 @@
 //! Profiles every case's memory with a counting allocator, asserts every
-//! [claim](bench::joins::cases::memory_claim) about it, and writes the profiles to
+//! [claim](bench_joins_plan::cases::memory_claim) about it, and writes the profiles to
 //! `target/bench/memory.json`. The binary plans' peaks have no claim: they are
 //! reported, not asserted.
 //!
@@ -23,13 +23,13 @@
 
 use std::collections::BTreeSet;
 
-use bench::alloc::{self, CountingAlloc};
-use bench::fmt::{bytes, count};
-use bench::joins::cases::{self, Algorithm, Case, GROUPS};
-use bench::joins::profile::{Memory, MemoryCase, memory_path};
-use bench::paths;
 use bench_joins::Checksum;
 use bench_joins::harness::{self, Data};
+use bench_joins_plan::alloc::{self, CountingAlloc};
+use bench_joins_plan::cases::{self, Algorithm, Case, GROUPS};
+use bench_joins_plan::fmt::{bytes, count};
+use bench_joins_plan::paths;
+use bench_joins_plan::profile::{Memory, MemoryCase, memory_path};
 
 #[global_allocator]
 static ALLOC: CountingAlloc = CountingAlloc;

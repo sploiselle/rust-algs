@@ -1,7 +1,7 @@
 [package]
 name = "bench"
 version = "0.1.0"
-description = "Runs the benchmarks that are out of date, and writes the tables a post quotes"
+description = "Runs the benchmarks that are out of date, and writes the tables a post quotes: no bench target links it"
 edition.workspace = true
 publish.workspace = true
 autobenches = false
@@ -15,17 +15,9 @@ path = "src/main.rs"
 bench = false
 
 [dependencies]
-algs = { path = "../../algs" }
 bench-joins = { path = "../joins" }
-foldhash = "0.2"
+bench-joins-plan = { path = "../joins-plan" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 # A run records the hash of the binary it ran, and of the source it was built from.
 sha2 = "0.10"
-
-# The joins' memory profiles. It's here, not with the joins' other targets,
-# because it profiles every case in the plan, and the plan is this package's.
-[[bench]]
-name = "memory"
-path = "benches/memory.rs"
-harness = false

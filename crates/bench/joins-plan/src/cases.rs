@@ -216,13 +216,13 @@ macro_rules! group {
 
 /// Every group, in the order the runner runs them: 153 cases.
 pub const GROUPS: &[Group] = &[
-    include!("../../../joins/benches/timing/groups/one_to_one.rs"),
-    include!("../../../joins/benches/timing/groups/small_side.rs"),
-    include!("../../../joins/benches/timing/groups/both_small.rs"),
-    include!("../../../joins/benches/timing/groups/hash_variants.rs"),
-    include!("../../../joins/benches/timing/groups/multiway_dense.rs"),
-    include!("../../../joins/benches/timing/groups/multiway_sparse.rs"),
-    include!("../../../joins/benches/timing/groups/multiway_selective.rs"),
+    include!("../../joins/benches/timing/groups/one_to_one.rs"),
+    include!("../../joins/benches/timing/groups/small_side.rs"),
+    include!("../../joins/benches/timing/groups/both_small.rs"),
+    include!("../../joins/benches/timing/groups/hash_variants.rs"),
+    include!("../../joins/benches/timing/groups/multiway_dense.rs"),
+    include!("../../joins/benches/timing/groups/multiway_sparse.rs"),
+    include!("../../joins/benches/timing/groups/multiway_selective.rs"),
 ];
 
 impl Group {
@@ -449,7 +449,7 @@ mod tests {
     #[test]
     fn every_group_has_a_timing_binary_of_its_own() {
         // The runner finds a group's timings by the bench target named for it.
-        let manifest = include_str!("../../../joins/Cargo.toml");
+        let manifest = include_str!("../../joins/Cargo.toml");
         for group in GROUPS {
             assert!(
                 manifest.contains(&format!("[[bench]]\nname = \"{}\"\n", group.name)),

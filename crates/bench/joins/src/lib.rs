@@ -2,9 +2,10 @@
 //! takes, and why the hash join's cost per row climbs.
 //!
 //! This package is what a join's bench target links, and nothing else is:
-//! the plan, the runner and the tables are `crates/bench/report`, which
-//! links this and which nothing here links. So a change there can't move a
-//! join's machine code, and can't make a result here stale.
+//! the plan is `crates/bench/joins-plan` and the runner and the tables are
+//! `crates/bench/report`, which link this and which nothing here links. So a
+//! change there can't move a join's machine code, and can't make a result
+//! here stale.
 //!
 //! ## What's here
 //!

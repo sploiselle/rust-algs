@@ -8,10 +8,10 @@ use std::thread;
 use algs::join::{
     hash_join, leapfrog_join, merge_join, multiway_merge_join, nested_loop_join, sort_merge_join,
 };
-use bench::alloc::{CountingAlloc, Usage, installed, measure};
 use bench_joins::Row;
 use bench_joins::baseline::multiway_merge_join_by_scan;
 use bench_joins::harness::buckets;
+use bench_joins_plan::alloc::{CountingAlloc, Usage, installed, measure};
 use foldhash::fast::FixedState;
 
 #[global_allocator]

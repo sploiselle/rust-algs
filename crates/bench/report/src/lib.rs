@@ -17,19 +17,16 @@
 //!   which results on disk they vouch for;
 //! - [`runner`]: runs what's out of date, and keeps what an edit didn't
 //!   touch;
-//! - [`paths`], [`fmt`] and [`alloc`]: where things are written, how numbers
-//!   are, and a counting allocator.
+//! - [`paths`] and [`fmt`]: where things are written, and how numbers are.
 
-pub mod alloc;
-pub mod fmt;
 pub mod joins;
-pub mod paths;
 pub mod record;
 pub mod runner;
 pub mod subject;
 pub mod targets;
 pub mod vouch;
 
+pub use bench_joins_plan::{fmt, paths};
 pub use subject::Subject;
 
 /// Everything that's benchmarked.

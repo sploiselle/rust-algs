@@ -1,11 +1,10 @@
 //! The joins, as a [`Subject`]: their plan, what their results on disk were
 //! measured from, and their tables.
 //!
-//! What's measured is `crates/bench/joins`, a package of its own, so that
-//! nothing here can change a join's machine code. The memory profiles are
-//! the exception: `benches/memory.rs` is this package's, because it profiles
-//! every case in the [plan](cases), and allocation counts are the same
-//! however the compiler lays the code out.
+//! What's measured is `crates/bench/joins`, and the [plan](cases) of it with
+//! the memory profiles is `crates/bench/joins-plan`: packages of their own,
+//! which this one links and which don't link it. So nothing here can change
+//! a join's machine code, or make a result stale.
 
 use bench_joins::cache;
 use bench_joins::harness::Sentinel;
@@ -13,11 +12,11 @@ use bench_joins::harness::Sentinel;
 use crate::subject::{Options, Results, Subject};
 use crate::targets::Target;
 
-pub mod cases;
 pub mod evidence;
 pub mod model;
-pub mod profile;
 pub mod report;
+
+pub use bench_joins_plan::{cases, profile};
 
 /// The joins.
 pub struct Joins;
@@ -28,7 +27,7 @@ impl Subject for Joins {
     }
 
     fn packages(&self) -> &'static [&'static str] {
-        &["bench-joins", "bench"]
+        &["bench-joins", "bench-joins-plan"]
     }
 
     /// The plan's groups, the memory profiles, then the cache measures.

@@ -17,7 +17,7 @@ pub fn workspace() -> &'static Path {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .ancestors()
         .nth(3)
-        .expect("crates/bench/report sits three levels below the workspace")
+        .expect("crates/bench/joins-plan sits three levels below the workspace")
 }
 
 /// Where criterion writes its results.
