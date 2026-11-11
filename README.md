@@ -32,10 +32,16 @@ crates/algs/              the library
   src/merkle.rs           Merkle trees over a directory, for finding what changed
   examples/               programs to run against the library
 crates/diagrams/          figures drawn from the library (SVG, HTML and Mermaid)
-crates/bench/             timings of the joins (criterion), one binary a group
-crates/bench-plan/        every benchmark group, and the joins' memory profiles
-crates/bench-cache/       why the hash join's cost per row climbs, one binary a measure
-crates/bench-report/      runs the benchmarks that are out of date, and writes the tables a post quotes
+crates/bench/             every benchmark, and what runs and reports them
+  src/joins/              what the joins' benchmarks measure with, and their report
+    cases.rs              the plan: every group, its sizes and its joins
+    cache/                why the hash join's cost per row climbs
+    report/               the runner, and the tables a post quotes
+  benches/joins/          the joins' bench targets
+    <group>.rs            a timing binary for each group (criterion)
+    groups/               each group's definition
+    memory.rs             every case's memory profile
+    cache/                a binary for each cache measure
 figures/                  the rendered figures, generated and not committed
 ```
 
@@ -233,13 +239,16 @@ text at its set size and weight, so a bolder or larger font can collide.
 
 ## Benchmarks
 
-Four crates time the joins, profile their memory, and turn the results into
-Markdown tables for a post to quote. Each benchmark group in
-`crates/bench/groups/` has a timing binary of its own, run by criterion.
-`crates/bench-plan` holds the plan of every group and profiles each case's
-memory with a counting allocator. `crates/bench-cache` measures why the hash
-join's cost per row climbs. `crates/bench-report` runs them and writes the
-tables.
+`crates/bench` holds every benchmark: a module in `src/` and a directory of
+bench targets in `benches/` for each subject that's measured. So far that's
+the joins. Their targets time them, profile their memory, and measure why the
+hash join's cost per row climbs, and their report turns the results into
+Markdown tables for a post to quote.
+
+Each benchmark group in `benches/joins/groups/` has a timing binary of its
+own, run by criterion. `benches/joins/memory.rs` profiles each case's memory
+with a counting allocator. `benches/joins/cache/` has a binary for each cache
+measure. `src/joins/report/` runs them and writes the tables.
 
 Every case is checked before it's measured: its row count against a count made
 without any join, and a checksum every join on the same input has to agree on,
@@ -276,11 +285,11 @@ On AC power, with other apps closed, and away from the machine: start it and
 leave, or from a terminal rather than an app that redraws as it runs.
 
 ```bash
-cargo run -p bench-report --release -- run
+cargo run -p bench --release -- run
 ```
 
 ```bash
-cargo run -p bench-report --release
+cargo run -p bench --release
 ```
 
 The first runs every bench target that is out of date; the second writes the
@@ -321,8 +330,8 @@ that, delete the file.
 
 The workspace builds benchmarks with `codegen-units = 1`. With rustc's
 default of 16, how a crate is split decides what gets inlined, and an edit to
-one function moves the split under another. Adding a struct to `bench-cache`
-took the hash join's build loop, which nothing had edited, from 56
+one function moves the split under another. Adding a struct beside the cache
+measures took the hash join's build loop, which nothing had edited, from 56
 instructions a row to 71: the compiler stopped inlining the table's insert.
 With one unit, both commits build the 56.
 
@@ -336,56 +345,76 @@ the compiler inlined both or neither.
 
 ### What reruns
 
-Only what a change touched. The runner builds every target and hashes its
-executable, and a target whose results came from that same binary is left
-alone. Builds are reproducible, so the same hash means the same machine code,
-laid out the same way; a change that moves a byte of a binary, and so perhaps
-a loop, reruns it. Each binary links as little as it can, so:
+Only what a change touched. A result stands for as long as its target is
+built from the source it was measured from. The runner hashes that source:
+the files the target measures with, by their contents, with the compiler,
+the workspace's profiles and lockfile, and the package's dependencies. It
+logs the hash with every run, and a target whose results were taken from the
+source it's built from now is left alone. So:
 
-- a change to the tables, the runner or the run log reruns nothing;
+- moving or renaming a file reruns nothing: a file is told by its contents;
+- a change to the tables, the runner or the logs reruns nothing;
 - a new group, or a change to one group's file, reruns that group and the
   memory profiles;
-- a change to one join reruns the groups that time it, the memory profiles,
-  and the cache measures that call it;
-- a change to one workload's generator reruns the groups that use it;
-- a change to one cache measure's code reruns that measure, if it moves no
-  line of another's: a panic's line number is in the binary, so code added
-  above a measure reruns it, and `inlining` is a module declared at the end
-  of its crate for that reason;
-- a change to what every timing binary shares (`crates/bench/src/harness.rs`,
-  the sinks, `benches/support/timing.rs`) reruns them all.
+- a change to the cache measures' code reruns the cache measures;
+- a change to what every target shares (the joins, the harness, the
+  workloads, the sinks) reruns them all.
+
+Which files each target measures with is a list in
+`src/joins/report/evidence.rs`, and a test fails if a file in `crates/bench`
+is in no target's list and isn't named as unmeasured.
+
+The hash is of the source, not of what it means, so an edit that leaves what's
+measured alone still changes it: an import, a name, a comment. Then keep the
+results, and say why:
+
+```bash
+cargo run -p bench --release -- keep --because "renamed a module"
+```
+
+That runs nothing. It records, in `target/bench/kept.jsonl`, that the results
+on disk stand for the source as it is now, at this commit, for the reason
+given. The tables go on citing the commit the results were measured at.
+`--list` says what would be kept, and `--only` keeps the named targets'.
+Nothing checks the claim, so it's for a change you'd stake the numbers on.
+
+The same source can still build to other machine code: see One codegen unit,
+above. A result is what its commit measured, and the `inlining` measure says
+how far a build can move the hash join.
 
 To see what would run without running it:
 
 ```bash
-cargo run -p bench-report --release -- run --list
+cargo run -p bench --release -- run --list
 ```
 
 To rerun a target that is up to date, or one noisy case of it (anything after
 `--` goes to the target, so to criterion's filter):
 
 ```bash
-cargo run -p bench-report --release -- run --only one_to_one -- hash/1048576
+cargo run -p bench --release -- run --only one_to_one -- hash/1048576
 ```
 
-The tables say which results they refuse and why: a target rebuilt since it
-ran, a run with other criterion settings, such as a smoke test's shorter
-measurement, or a binary only a dirty tree has run. `--allow-stale` and
+The tables say which results they refuse and why: a target whose source has
+changed since it ran, a run with other criterion settings, such as a smoke
+test's shorter measurement, or results only a dirty tree has taken. `--allow-stale` and
 `--allow-dirty` override it, and every table written under them says so.
 
-Keeping it that way takes two habits. A group's joins and workload are named
-only in its own file, never in code every binary links. And the bench targets
-hold no bookkeeping: the runner logs the commit and the binary's hash, so the
-log can change without changing what's measured. `cargo bench -p bench` still
-runs a group, but nothing logs that run, so the tables won't use it.
+The bench targets hold no bookkeeping: the runner logs the commit and the
+hashes, so the logs can change without changing what's measured.
+`cargo bench -p bench` still runs a target, but nothing logs that run, so the
+tables won't use it.
 
-To add a group: write `crates/bench/groups/<name>.rs`, copy another group's
-`crates/bench/benches/<name>.rs` and `[[bench]]` entry, and add the file to
-`GROUPS` in `crates/bench-plan/src/cases.rs`.
+To add a group: write `crates/bench/benches/joins/groups/<name>.rs`, copy
+another group's `benches/joins/<name>.rs` and `[[bench]]` entry, and add the
+file to `GROUPS` in `crates/bench/src/joins/cases.rs`.
+
+To benchmark something other than the joins, give it a module beside
+`src/joins/` and a directory beside `benches/joins/`.
 
 Like the figures, everything the benchmarks write is generated, so it lands
 under `target/` and is never committed.
 
-criterion is slow to build, so plain `cargo test` and `cargo build` skip these
-crates. `cargo test --workspace` and `cargo clippy --workspace --all-targets`
+criterion is slow to build, so plain `cargo test` and `cargo build` skip
+`crates/bench`. `cargo test --workspace` and `cargo clippy --workspace --all-targets`
 cover them.

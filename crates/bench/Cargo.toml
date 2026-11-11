@@ -1,10 +1,11 @@
 [package]
 name = "bench"
 version = "0.1.0"
-description = "Timings of the algs join implementations, one binary a group"
+description = "Every benchmark: what's measured, the runner that measures what's out of date, and the tables a post quotes"
 edition.workspace = true
 publish.workspace = true
-# One target a group, each declared below: `benches/support/` isn't one.
+# Each bench target is declared below, under its subject's directory in
+# `benches/`: the files beside them that they include aren't targets.
 autobenches = false
 
 [lib]
@@ -13,36 +14,83 @@ bench = false
 [dependencies]
 algs = { path = "../algs" }
 foldhash = "0.2"
+# HashTable takes a hash the caller computed, for the batched join.
+hashbrown = { version = "0.17", default-features = false, features = ["inline-more"] }
+# proc_pid_rusage, for the instructions a join retires.
+libc = "0.2"
 serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+# A run records the hash of the binary it ran.
+sha2 = "0.10"
 
 [dev-dependencies]
 # No plotters: the report reads criterion's JSON.
 criterion = { version = "0.8.2", default-features = false, features = ["rayon", "cargo_bench_support"] }
 
+# The joins' timings, one binary a group.
 [[bench]]
 name = "one_to_one"
+path = "benches/joins/one_to_one.rs"
 harness = false
 
 [[bench]]
 name = "small_side"
+path = "benches/joins/small_side.rs"
 harness = false
 
 [[bench]]
 name = "both_small"
+path = "benches/joins/both_small.rs"
 harness = false
 
 [[bench]]
 name = "hash_variants"
+path = "benches/joins/hash_variants.rs"
 harness = false
 
 [[bench]]
 name = "multiway_dense"
+path = "benches/joins/multiway_dense.rs"
 harness = false
 
 [[bench]]
 name = "multiway_sparse"
+path = "benches/joins/multiway_sparse.rs"
 harness = false
 
 [[bench]]
 name = "multiway_selective"
+path = "benches/joins/multiway_selective.rs"
+harness = false
+
+# The joins' memory profiles.
+[[bench]]
+name = "memory"
+path = "benches/joins/memory.rs"
+harness = false
+
+# The hash join's cache measures, one binary each.
+[[bench]]
+name = "phases"
+path = "benches/joins/cache/phases.rs"
+harness = false
+
+[[bench]]
+name = "reads"
+path = "benches/joins/cache/reads.rs"
+harness = false
+
+[[bench]]
+name = "hashers"
+path = "benches/joins/cache/hashers.rs"
+harness = false
+
+[[bench]]
+name = "absent"
+path = "benches/joins/cache/absent.rs"
+harness = false
+
+[[bench]]
+name = "inlining"
+path = "benches/joins/cache/inlining.rs"
 harness = false

@@ -79,40 +79,8 @@ dependencies = [
  "algs",
  "criterion",
  "foldhash",
- "serde",
-]
-
-[[package]]
-name = "bench-cache"
-version = "0.1.0"
-dependencies = [
- "algs",
- "bench",
- "foldhash",
  "hashbrown",
  "libc",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "bench-plan"
-version = "0.1.0"
-dependencies = [
- "algs",
- "bench",
- "foldhash",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "bench-report"
-version = "0.1.0"
-dependencies = [
- "bench",
- "bench-cache",
- "bench-plan",
  "serde",
  "serde_json",
  "sha2",
