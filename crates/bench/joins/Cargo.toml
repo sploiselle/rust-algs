@@ -86,3 +86,8 @@ harness = false
 name = "inlining"
 path = "benches/cache/inlining.rs"
 harness = false
+
+[[bench]]
+name = "order"
+path = "benches/cache/order.rs"
+harness = false

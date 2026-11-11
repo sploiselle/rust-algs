@@ -67,7 +67,7 @@ use crate::workload::{self, Rng};
 use crate::{Row, Sink, Tally};
 
 /// The cache measures, each a bench target and a file of its own.
-pub const PARTS: [&str; 5] = ["phases", "reads", "hashers", "absent", "inlining"];
+pub const PARTS: [&str; 6] = ["phases", "reads", "hashers", "absent", "inlining", "order"];
 
 /// One sentinel, timed before a target measured anything and after it
 /// finished, each the median in ns a call.
@@ -275,3 +275,6 @@ pub use inlining::{
     Apart, CALL_INSTRUCTIONS, INLINING_SIZES, Inlining, InliningPart, hash_join_inserting,
     time_inlining,
 };
+
+mod order;
+pub use order::{ORDER_SIZES, Order, OrderPart, in_table_order, time_order};

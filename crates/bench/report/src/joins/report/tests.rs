@@ -185,6 +185,16 @@ fn cache() -> Cache {
                 called_build_instructions: 69.5,
             })
             .collect(),
+        order: [1 << 16, 1 << 26]
+            .into_iter()
+            .map(|rows_a_side| cache::Order {
+                rows_a_side,
+                random_ns: 15.0,
+                ordered_ns: 5.0,
+                random_instructions: 44.0,
+                ordered_instructions: 45.0,
+            })
+            .collect(),
     }
 }
 
@@ -255,6 +265,13 @@ fn evidence(runs: Vec<Run>, timings: HashMap<Key, Timing>, written_unix_ms: u64)
             value: cache::InliningPart {
                 sentinels,
                 inlining: cache.inlining,
+            },
+            written_unix_ms,
+        }),
+        order: Some(Written {
+            value: cache::OrderPart {
+                sentinels,
+                order: cache.order,
             },
             written_unix_ms,
         }),
@@ -958,6 +975,7 @@ fn cache_tables_cite_the_cache_run() {
         "read_work",
         "control_miss",
         "hash_inlining",
+        "hash_order",
         "hash_reads",
         "hash_predicted",
         "hash_hashers",

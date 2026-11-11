@@ -89,6 +89,24 @@ pub(super) fn cache_tables(results: &Results, cache: &Cache) -> Vec<(String, Str
                 .collect()
         })
         .collect();
+    // The hash join on the same rows in two orders, a row per size.
+    let order: Vec<Vec<String>> = cache
+        .order
+        .iter()
+        .map(|o| {
+            let cells = [
+                o.random_ns,
+                o.ordered_ns,
+                o.random_instructions,
+                o.ordered_instructions,
+            ]
+            .map(sig3);
+            [param_label(o.rows_a_side)]
+                .into_iter()
+                .chain(cells)
+                .collect()
+        })
+        .collect();
     // What the build loop runs each way, at the smallest size: there the
     // table's pages are the last call's, so the count is the loop's alone.
     let insert_instructions = cache.inlining.first().map_or(String::new(), |i| {
@@ -253,6 +271,25 @@ pub(super) fn cache_tables(results: &Results, cache: &Cache) -> Vec<(String, Str
                  else differs, and each sample calls both.{insert_instructions} Sort-merge is \
                  sampled on its own, on the same inputs."
             ),
+        ),
+        file(
+            "hash_order",
+            &["order"],
+            &[
+                "rows a side",
+                "no order",
+                "table order",
+                "instructions, no order",
+                "instructions, table order",
+            ],
+            order,
+            "Median of at least 30 calls, in ns per input row, counting both sides together, \
+             2n. The same join on the same rows twice: as the workload generates them, where \
+             every lookup lands somewhere else in the table, and with both inputs sorted by \
+             the bucket each key's lookup starts at, so the table is filled and read from one \
+             end to the other. Instructions are what the kernel counts the join retiring for \
+             each input row."
+                .to_owned(),
         ),
         file(
             "hash_reads",

@@ -53,6 +53,7 @@ pub struct Cache {
     pub hashers: Vec<cache::HasherCost>,
     pub absent: Vec<cache::AbsentProbe>,
     pub inlining: Vec<cache::Inlining>,
+    pub order: Vec<cache::Order>,
 }
 
 /// Everything the tables are made from.
@@ -259,17 +260,21 @@ pub fn vouch(
         &evidence.hashers,
         &evidence.absent,
         &evidence.inlining,
+        &evidence.order,
     ) {
-        (Some(phases), Some(reads), Some(hashers), Some(absent), Some(inlining)) => Some(Cache {
-            l2_bytes: phases.value.l2_bytes,
-            line_bytes: phases.value.line_bytes,
-            phases: phases.value.phases.clone(),
-            reads: reads.value.reads.clone(),
-            worked_reads: reads.value.worked_reads.clone(),
-            hashers: hashers.value.hashers.clone(),
-            absent: absent.value.absent.clone(),
-            inlining: inlining.value.inlining.clone(),
-        }),
+        (Some(phases), Some(reads), Some(hashers), Some(absent), Some(inlining), Some(order)) => {
+            Some(Cache {
+                l2_bytes: phases.value.l2_bytes,
+                line_bytes: phases.value.line_bytes,
+                phases: phases.value.phases.clone(),
+                reads: reads.value.reads.clone(),
+                worked_reads: reads.value.worked_reads.clone(),
+                hashers: hashers.value.hashers.clone(),
+                absent: absent.value.absent.clone(),
+                inlining: inlining.value.inlining.clone(),
+                order: order.value.order.clone(),
+            })
+        }
         _ => None,
     };
     let memory = evidence
