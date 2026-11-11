@@ -280,7 +280,7 @@ pub use inlining::{
 };
 
 mod order;
-pub use order::{ORDER_SIZES, Order, OrderPart, in_table_order, time_order};
+pub use order::{ORDER_SIZES, Order, OrderPart, in_line_order, in_table_order, time_order};
 
 mod chains;
 pub use chains::{CHAINS_BYTES, CHASES, Chained, ChainsPart, time_chains};

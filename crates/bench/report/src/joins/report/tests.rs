@@ -191,8 +191,10 @@ fn cache() -> Cache {
                 rows_a_side,
                 random_ns: 15.0,
                 ordered_ns: 5.0,
+                lined_ns: 7.0,
                 random_instructions: 44.0,
                 ordered_instructions: 45.0,
+                lined_instructions: 45.0,
             })
             .collect(),
         chains_bytes: 1 << 31,

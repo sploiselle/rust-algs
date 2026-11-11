@@ -95,15 +95,17 @@ pub(super) fn cache_tables(results: &Results, cache: &Cache) -> Vec<(String, Str
                 .collect()
         })
         .collect();
-    // The hash join on the same rows in two orders, a row per size.
+    // The hash join on the same rows in three orders, a row per size.
     let order: Vec<Vec<String>> = cache
         .order
         .iter()
         .map(|o| {
             let cells = [
                 o.random_ns,
+                o.lined_ns,
                 o.ordered_ns,
                 o.random_instructions,
+                o.lined_instructions,
                 o.ordered_instructions,
             ]
             .map(sig3);
@@ -298,18 +300,24 @@ pub(super) fn cache_tables(results: &Results, cache: &Cache) -> Vec<(String, Str
             &[
                 "rows a side",
                 "no order",
+                "line order",
                 "table order",
                 "instructions, no order",
+                "instructions, line order",
                 "instructions, table order",
             ],
             order,
-            "Median of at least 30 calls, in ns per input row, counting both sides together, \
-             2n. The same join on the same rows twice: as the workload generates them, where \
-             every lookup lands somewhere else in the table, and with both inputs sorted by \
-             the bucket each key's lookup starts at, so the table is filled and read from one \
-             end to the other. Instructions are what the kernel counts the join retiring for \
-             each input row."
-                .to_owned(),
+            format!(
+                "Median of at least 30 calls, in ns per input row, counting both sides \
+                 together, 2n. The same join on the same rows three times: as the workload \
+                 generates them, where every lookup lands somewhere else in the table; in \
+                 table order, with both inputs sorted by the bucket each key's lookup starts \
+                 at, so the table is filled and read from one end to the other; and in line \
+                 order, which keeps together the rows whose lookups start in one {line}-byte \
+                 line of buckets, and the lines of buckets under one line of control bytes, \
+                 and shuffles both kinds of line. Instructions are what the kernel counts the \
+                 join retiring for each input row."
+            ),
         ),
         file(
             "hash_reads",
