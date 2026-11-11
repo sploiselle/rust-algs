@@ -352,7 +352,9 @@ the workspace's profiles and lockfile, and the package's dependencies. It
 logs the hash with every run, and a target whose results were taken from the
 source it's built from now is left alone. So:
 
-- moving or renaming a file reruns nothing: a file is told by its contents;
+- moving or renaming a file reruns nothing by itself: a file is told by its
+  contents. If the move needs an edit to a measured file, such as the line
+  that names the file moved, keep the results, as below;
 - a change to the tables, the runner or the logs reruns nothing;
 - a new group, or a change to one group's file, reruns that group and the
   memory profiles;
