@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/*"]
+members = ["crates/algs", "crates/diagrams", "crates/bench/joins", "crates/bench/report"]
 # cargo test/build skip crates/bench (criterion is slow to build); use --workspace
 default-members = ["crates/algs", "crates/diagrams"]
 

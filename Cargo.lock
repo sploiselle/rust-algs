@@ -77,13 +77,24 @@ name = "bench"
 version = "0.1.0"
 dependencies = [
  "algs",
+ "bench-joins",
+ "foldhash",
+ "serde",
+ "serde_json",
+ "sha2",
+]
+
+[[package]]
+name = "bench-joins"
+version = "0.1.0"
+dependencies = [
+ "algs",
  "criterion",
  "foldhash",
  "hashbrown",
  "libc",
  "serde",
  "serde_json",
- "sha2",
 ]
 
 [[package]]

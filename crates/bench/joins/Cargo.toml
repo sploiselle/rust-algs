@@ -1,0 +1,88 @@
+[package]
+name = "bench-joins"
+version = "0.1.0"
+description = "What's measured about the joins: their timings, and why the hash join's cost per row climbs"
+edition.workspace = true
+publish.workspace = true
+# Each bench target is declared below: the files beside them that they
+# include aren't targets.
+autobenches = false
+
+[lib]
+bench = false
+
+[dependencies]
+algs = { path = "../../algs" }
+foldhash = "0.2"
+# HashTable takes a hash the caller computed, for the batched join.
+hashbrown = { version = "0.17", default-features = false, features = ["inline-more"] }
+# proc_pid_rusage, for the instructions a join retires.
+libc = "0.2"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+[dev-dependencies]
+# No plotters: the report reads criterion's JSON.
+criterion = { version = "0.8.2", default-features = false, features = ["rayon", "cargo_bench_support"] }
+
+# The timings, one binary a group.
+[[bench]]
+name = "one_to_one"
+path = "benches/timing/one_to_one.rs"
+harness = false
+
+[[bench]]
+name = "small_side"
+path = "benches/timing/small_side.rs"
+harness = false
+
+[[bench]]
+name = "both_small"
+path = "benches/timing/both_small.rs"
+harness = false
+
+[[bench]]
+name = "hash_variants"
+path = "benches/timing/hash_variants.rs"
+harness = false
+
+[[bench]]
+name = "multiway_dense"
+path = "benches/timing/multiway_dense.rs"
+harness = false
+
+[[bench]]
+name = "multiway_sparse"
+path = "benches/timing/multiway_sparse.rs"
+harness = false
+
+[[bench]]
+name = "multiway_selective"
+path = "benches/timing/multiway_selective.rs"
+harness = false
+
+# The hash join's cache measures, one binary each.
+[[bench]]
+name = "phases"
+path = "benches/cache/phases.rs"
+harness = false
+
+[[bench]]
+name = "reads"
+path = "benches/cache/reads.rs"
+harness = false
+
+[[bench]]
+name = "hashers"
+path = "benches/cache/hashers.rs"
+harness = false
+
+[[bench]]
+name = "absent"
+path = "benches/cache/absent.rs"
+harness = false
+
+[[bench]]
+name = "inlining"
+path = "benches/cache/inlining.rs"
+harness = false
