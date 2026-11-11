@@ -49,6 +49,12 @@ pub(super) fn cache_tables(results: &Results, cache: &Cache) -> Vec<(String, Str
         let cells = [w.l2_ns, w.dram_ns, w.dram_ns - w.l2_ns].map(sig3);
         [vec![format!("{:.0}", w.instructions)], cells.to_vec()].concat()
     });
+    // Chases at once, each beside how many times one chase's rate it reads at.
+    let alone = cache.chained.first().map_or(f64::NAN, |c| c.ns);
+    let chained = cache.chained.iter().map(|c| {
+        let cells = [c.ns, alone / c.ns].map(sig3);
+        [vec![c.chases.to_string()], cells.to_vec()].concat()
+    });
     // A row per size the absent probes ran at, a column per hashing.
     let absent_hashings = cache::ABSENT_HASHINGS.map(cache::Hashing::label);
     let mut absent_sizes: Vec<usize> = cache.absent.iter().map(|a| a.rows_a_side).collect();
@@ -233,6 +239,20 @@ pub(super) fn cache_tables(results: &Results, cache: &Cache) -> Vec<(String, Str
                  arithmetic on its own counter, which read nothing and which no read waits on; \
                  instructions a read are what the kernel counts retired. In L2, the lines span \
                  4 MiB; past it, 1 GiB."
+            ),
+        ),
+        file(
+            "read_chains",
+            &["chains"],
+            &["chases at once", "ns per read", "× one chase"],
+            chained.collect(),
+            format!(
+                "Median of five runs, in ns per read of a {line}-byte cache line, across {} of \
+                 lines linked in one random cycle. Each count of chases follows the cycle from \
+                 points spread evenly round it, a read from each chase in turn, so a read waits \
+                 on the last read of its own chase and on no other's. × one chase is one \
+                 chase's time over the row's.",
+                bytes(cache.chains_bytes as u64)
             ),
         ),
         file(

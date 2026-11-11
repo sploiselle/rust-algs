@@ -22,7 +22,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use bench_joins::cache::{
-    self, AbsentPart, HashersPart, InliningPart, OrderPart, PhasesPart, ReadsPart,
+    self, AbsentPart, ChainsPart, HashersPart, InliningPart, OrderPart, PhasesPart, ReadsPart,
 };
 use bench_joins::harness::Sentinel;
 use serde::de::DeserializeOwned;
@@ -75,6 +75,7 @@ pub struct Evidence {
     pub absent: Option<Written<AbsentPart>>,
     pub inlining: Option<Written<InliningPart>>,
     pub order: Option<Written<OrderPart>>,
+    pub chains: Option<Written<ChainsPart>>,
 }
 
 /// Reads the run log and every result.
@@ -96,6 +97,7 @@ pub fn gather() -> Result<Evidence, String> {
         absent: read_written(&cache::part_path("absent"))?,
         inlining: read_written(&cache::part_path("inlining"))?,
         order: read_written(&cache::part_path("order"))?,
+        chains: read_written(&cache::part_path("chains"))?,
     })
 }
 
@@ -215,6 +217,7 @@ impl Evidence {
             (Kind::Cache, "absent") => self.absent.as_ref().map(|w| w.written_unix_ms),
             (Kind::Cache, "inlining") => self.inlining.as_ref().map(|w| w.written_unix_ms),
             (Kind::Cache, "order") => self.order.as_ref().map(|w| w.written_unix_ms),
+            (Kind::Cache, "chains") => self.chains.as_ref().map(|w| w.written_unix_ms),
             _ => None,
         }
     }
@@ -320,6 +323,7 @@ impl Evidence {
             (Kind::Cache, "absent") => self.absent.as_ref().map(|w| part(w.value.sentinels)),
             (Kind::Cache, "inlining") => self.inlining.as_ref().map(|w| part(w.value.sentinels)),
             (Kind::Cache, "order") => self.order.as_ref().map(|w| part(w.value.sentinels)),
+            (Kind::Cache, "chains") => self.chains.as_ref().map(|w| part(w.value.sentinels)),
             _ => None,
         }
     }

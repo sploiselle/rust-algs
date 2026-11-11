@@ -91,3 +91,8 @@ harness = false
 name = "order"
 path = "benches/cache/order.rs"
 harness = false
+
+[[bench]]
+name = "chains"
+path = "benches/cache/chains.rs"
+harness = false

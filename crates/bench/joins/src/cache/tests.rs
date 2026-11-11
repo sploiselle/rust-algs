@@ -118,6 +118,24 @@ fn padding_runs_more_instructions() {
 }
 
 #[test]
+fn chases_at_once_follow_one_cycle_through_every_line() {
+    let mut cells = vec![0u32; 1 << 10];
+    let order = chains::link(&mut cells, 128, &mut Rng::seeded("test"));
+    let mut lines = order.clone();
+    lines.sort_unstable();
+    assert_eq!(lines, (0..32).map(|line| line * 32).collect::<Vec<u32>>());
+    for (i, &line) in order.iter().enumerate() {
+        assert_eq!(cells[line as usize], order[(i + 1) % order.len()]);
+    }
+    // Any number of chases reads only those lines, and is timed.
+    for counts in [[1, 2], [4, 8]] {
+        for timed in time_chains(1 << 12, 128, &counts) {
+            assert!(timed.ns > 0.0, "{timed:?}");
+        }
+    }
+}
+
+#[test]
 fn a_chase_visits_every_line_once_a_cycle() {
     let mut cells = vec![0u32; 1 << 10];
     let lines: Vec<u32> = (0..16).map(|line| line * 32).collect();

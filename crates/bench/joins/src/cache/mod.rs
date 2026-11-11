@@ -10,6 +10,7 @@
 //!   probe loop again with its matching rows first, and counts the
 //!   instructions each loop retires;
 //! - [`time_reads`] measures what a read costs, one at a time and overlapped;
+//! - [`time_chains`] measures it with a set number of reads able to overlap;
 //! - the report models how many reads reach DRAM at each size (its
 //!   `joins::model`).
 //!
@@ -67,7 +68,9 @@ use crate::workload::{self, Rng};
 use crate::{Row, Sink, Tally};
 
 /// The cache measures, each a bench target and a file of its own.
-pub const PARTS: [&str; 6] = ["phases", "reads", "hashers", "absent", "inlining", "order"];
+pub const PARTS: [&str; 7] = [
+    "phases", "reads", "hashers", "absent", "inlining", "order", "chains",
+];
 
 /// One sentinel, timed before a target measured anything and after it
 /// finished, each the median in ns a call.
@@ -278,3 +281,6 @@ pub use inlining::{
 
 mod order;
 pub use order::{ORDER_SIZES, Order, OrderPart, in_table_order, time_order};
+
+mod chains;
+pub use chains::{CHAINS_BYTES, CHASES, Chained, ChainsPart, time_chains};

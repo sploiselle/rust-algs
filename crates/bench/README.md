@@ -80,7 +80,7 @@ about 32 MiB, as generated and sorted. Leapfrog reads only about 0.5% of
 in cache. Every instance is checked before it's timed; the memory harness
 profiles each case's first instance alone.
 
-The cache measures are six targets: `phases` times the hash join's two loops
+The cache measures are seven targets: `phases` times the hash join's two loops
 apart from 64K rows a side to 64M; `reads` measures what a read costs across
 working sets to 2 GiB, one at a time, overlapped, and with unrelated work
 beside it; `hashers` times the join with hashers that run more instructions,
@@ -89,7 +89,9 @@ instructions each retires; `absent` probes for keys the table doesn't hold,
 which reads control bytes alone; `inlining` times the hash join with the
 table's insert inlined into its build loop and with it called, beside
 sort-merge; `order` times it on the same rows in no order and in its table's
-order, where every read is the next one along. The tables set those beside a model of how many of the join's reads
+order, where every read is the next one along; `chains` follows from 1 to 64
+pointer chases at once across 2 GiB, which sets how many reads can be in flight.
+The tables set those beside a model of how many of the join's reads
 reach DRAM. The largest sizes need about 7 GiB free.
 
 ## Running them

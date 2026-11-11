@@ -195,6 +195,11 @@ fn cache() -> Cache {
                 ordered_instructions: 45.0,
             })
             .collect(),
+        chains_bytes: 1 << 31,
+        chained: [(1, 90.0), (2, 45.0), (32, 5.0)]
+            .into_iter()
+            .map(|(chases, ns)| cache::Chained { chases, ns })
+            .collect(),
     }
 }
 
@@ -272,6 +277,15 @@ fn evidence(runs: Vec<Run>, timings: HashMap<Key, Timing>, written_unix_ms: u64)
             value: cache::OrderPart {
                 sentinels,
                 order: cache.order,
+            },
+            written_unix_ms,
+        }),
+        chains: Some(Written {
+            value: cache::ChainsPart {
+                sentinels,
+                line_bytes: cache.line_bytes,
+                bytes: cache.chains_bytes,
+                chained: cache.chained,
             },
             written_unix_ms,
         }),
@@ -973,6 +987,7 @@ fn cache_tables_cite_the_cache_run() {
         "hash_footprint",
         "read_cost",
         "read_work",
+        "read_chains",
         "control_miss",
         "hash_inlining",
         "hash_order",
