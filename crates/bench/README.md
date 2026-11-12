@@ -89,9 +89,9 @@ instructions each retires; `absent` probes for keys the table doesn't hold,
 which reads control bytes alone; `inlining` times the hash join with the
 table's insert inlined into its build loop and with it called, beside
 sort-merge; `order` times it on the same rows in no order, in its table's
-order, where every read is the next one along, and a line of the table at a
-time with the lines shuffled, which keeps what the table's order gives a cache
-and not what it gives a prefetcher; `chains` follows from 1 to 64
+order, a line of control bytes at a time from the first to the last, and with
+those lines shuffled, which keeps what the table's order gives a cache and not
+what it gives a prefetcher; `chains` follows from 1 to 64
 pointer chases at once across 2 GiB, which sets how many reads can be in flight.
 The tables set those beside a model of how many of the join's reads
 reach DRAM. The largest sizes need about 7 GiB free.

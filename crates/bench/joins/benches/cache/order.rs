@@ -1,5 +1,5 @@
 //! Times the hash join on rows in no order, in its table's order and a line
-//! of its table at a time: see
+//! of its table's control bytes at a time: see
 //! [`bench_joins::cache::time_order`].
 
 use bench_joins::cache::{

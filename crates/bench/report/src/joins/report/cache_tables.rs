@@ -311,12 +311,13 @@ pub(super) fn cache_tables(results: &Results, cache: &Cache) -> Vec<(String, Str
                 "Median of at least 30 calls, in ns per input row, counting both sides \
                  together, 2n. The same join on the same rows three times: as the workload \
                  generates them, where every lookup lands somewhere else in the table; in \
-                 table order, with both inputs sorted by the bucket each key's lookup starts \
-                 at, so the table is filled and read from one end to the other; and in line \
-                 order, which keeps together the rows whose lookups start in one {line}-byte \
-                 line of buckets, and the lines of buckets under one line of control bytes, \
-                 and shuffles both kinds of line. Instructions are what the kernel counts the \
-                 join retiring for each input row."
+                 table order, with both inputs sorted by the {line}-byte line of control \
+                 bytes each key's lookup starts in, so the table is filled and read from one \
+                 end to the other; and in line order, which keeps each line's rows together \
+                 and shuffles the lines, each input its own way. Under one line of control \
+                 bytes both orders take the rows in eight passes, every eighth row a pass, \
+                 which keeps an insert from waiting on the one before it. Instructions are \
+                 what the kernel counts the join retiring for each input row."
             ),
         ),
         file(
