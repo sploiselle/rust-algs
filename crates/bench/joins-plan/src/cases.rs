@@ -397,7 +397,7 @@ pub fn memory_claim(alg: Algorithm, data: &Data) -> Option<Claim> {
         (SortMerge, Data::Binary(w)) => exact(size_of::<Row>() * (w.left.len() + w.right.len()), 2),
         // Plus the heap of (next key, input): 40 B an input.
         (Heap, Data::Multi(w)) => {
-            exact(w.inputs.len() * (per_input + size_of::<(&u64, usize)>()), 3)
+            exact(w.inputs.len() * (per_input + size_of::<(u64, usize)>()), 3)
         }
         // Plus the inputs' order in the cycle: 32 B an input.
         (Leapfrog, Data::Multi(w)) => exact(w.inputs.len() * (per_input + size_of::<usize>()), 3),

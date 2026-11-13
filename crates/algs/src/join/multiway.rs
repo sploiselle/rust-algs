@@ -17,7 +17,16 @@ use super::merge::merge_join;
 /// inputs lose matches. An input that repeats a key can also put its second
 /// row at that key in another input's slot, emitting a tuple that isn't a
 /// match. Debug builds panic on either, in the rows the merge reads.
-pub fn multiway_merge_join<K: Ord, V>(inputs: &[&[(K, V)]], mut emit: impl FnMut(&[&(K, V)])) {
+///
+/// The heap holds a clone of each input's next key, not a reference to it. A
+/// sift compares its way down the heap, and each comparison's outcome picks
+/// the next entry to read. Through a reference, every one of those steps
+/// reads the entry and then the key it points to; with the key in the entry,
+/// it reads the entry alone. So it suits keys that are cheap to clone.
+pub fn multiway_merge_join<K: Ord + Clone, V>(
+    inputs: &[&[(K, V)]],
+    mut emit: impl FnMut(&[&(K, V)]),
+) {
     let k = inputs.len();
     let mut rest = inputs.to_vec();
     let mut picked = Vec::with_capacity(k);
@@ -25,27 +34,27 @@ pub fn multiway_merge_join<K: Ord, V>(inputs: &[&[(K, V)]], mut emit: impl FnMut
     let mut heads = BinaryHeap::with_capacity(k);
     for (i, rows) in rest.iter().enumerate() {
         if let Some((key, _)) = rows.first() {
-            heads.push(Reverse((key, i)));
+            heads.push(Reverse((key.clone(), i)));
         }
     }
     // Once any input runs out, no later key is in all of them.
     while k > 0 && heads.len() == k {
-        let Reverse((key, _)) = *heads.peek().unwrap();
+        let key = heads.peek().unwrap().0.0.clone();
         // Take the row at `key` from each input whose next key it is. Ties on
         // the key come off the heap by input, so `picked` is in input order.
         picked.clear();
         while let Some(mut top) = heads.peek_mut()
-            && let Reverse((head, i)) = *top
-            && head == key
+            && top.0.0 == key
         {
+            let i = top.0.1;
             let rows = rest[i];
             picked.push(&rows[0]);
             rest[i] = &rows[1..];
             match rest[i].first() {
                 Some((next, _)) => {
-                    debug_assert!(next > key, "input {i}'s keys don't strictly increase");
+                    debug_assert!(*next > key, "input {i}'s keys don't strictly increase");
                     // Replace the top in place: one sift down, when `top` drops.
-                    *top = Reverse((next, i));
+                    *top = Reverse((next.clone(), i));
                 }
                 None => drop(PeekMut::pop(top)),
             }

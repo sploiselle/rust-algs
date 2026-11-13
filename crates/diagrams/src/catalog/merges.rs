@@ -291,9 +291,12 @@ pub(super) fn heap_merge() -> Figure {
     let k = inputs.len();
     let rows = logged::rows(&inputs);
     let slices: Vec<&[_]> = rows.iter().map(Vec::as_slice).collect();
-    let log = logged::record(|| {
+    let mut log = logged::record(|| {
         multiway_merge_join(&slices, |tuple| logged::emitted(tuple.iter().copied()));
     });
+    // The heap holds a clone of each key it compares. The figure draws the
+    // comparisons, which name the row a key is a clone of.
+    log.retain(|entry| !matches!(entry, Logged::Clone(_)));
     let entry = |at: At| -> Entry { (inputs[at.input][at.row], at.input) };
     // The heap's comparisons from `i` up to the next `==` or emit, leaving
     // out any with a row in `left`, rows that have left the heap: debug
