@@ -187,8 +187,14 @@ pub const TABLES: &[Table] = {
                 rows: "inputs",
                 metric: Metric::Time,
                 columns: &[
-                    column("multiway_dense", Heap, "heap"),
-                    column("multiway_dense", CascadeUnplanned, "binary plan"),
+                    column("multiway_dense", Heap, "dense heap"),
+                    column("multiway_dense", CascadeUnplanned, "dense binary plan"),
+                    column("multiway_half_shared", Heap, "half-shared heap"),
+                    column(
+                        "multiway_half_shared",
+                        CascadeUnplanned,
+                        "half-shared binary plan",
+                    ),
                 ],
             },
         },

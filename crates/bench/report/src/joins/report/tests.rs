@@ -1125,7 +1125,10 @@ fn a_timing_caption_says_whether_its_cases_rotated() {
     // every other case here holds 1,000.
     let mut timings = every_timing(0);
     for case in cases::cases() {
-        if matches!(case.group.workload, Workload::Dense | Workload::Sparse) {
+        if matches!(
+            case.group.workload,
+            Workload::Dense | Workload::Sparse | Workload::HalfShared
+        ) {
             timings.get_mut(&key(&case)).unwrap().input_rows = Some(harness::ROTATION_ROWS);
         }
     }
@@ -1135,7 +1138,7 @@ fn a_timing_caption_says_whether_its_cases_rotated() {
     for file in ["one_to_one.md", "selective.md", "all.md", "facts.md"] {
         assert!(rotated(file) && !same(file), "{file}");
     }
-    for file in ["heap_vs_scan.md", "leapfrog.md"] {
+    for file in ["heap_vs_scan.md", "heap_vs_plan.md", "leapfrog.md"] {
         assert!(same(file) && !rotated(file), "{file}");
     }
     let skips = |file: &str| files[file].contains(LEAPFROG_SELECTIVE);

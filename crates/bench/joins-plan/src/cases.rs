@@ -157,6 +157,8 @@ pub enum Workload {
     Dense,
     /// [`workload::sparse`], at `k` inputs.
     Sparse,
+    /// [`workload::half_shared`], at `k` inputs.
+    HalfShared,
     /// [`workload::selective`], at `n` rows in each of the two large inputs.
     Selective,
 }
@@ -168,7 +170,9 @@ impl Workload {
         match self {
             Workload::OneToOne => "both sides together, 2n",
             Workload::SmallSide => "both sides together, m + 65,536",
-            Workload::Dense | Workload::Sparse => "every input's rows together",
+            Workload::Dense | Workload::Sparse | Workload::HalfShared => {
+                "every input's rows together"
+            }
             Workload::Selective => "A, B and C together, a little over 2n",
         }
     }
@@ -178,7 +182,7 @@ impl Workload {
         match self {
             Workload::OneToOne | Workload::Selective => "n",
             Workload::SmallSide => "m",
-            Workload::Dense | Workload::Sparse => "k",
+            Workload::Dense | Workload::Sparse | Workload::HalfShared => "k",
         }
     }
 }
@@ -214,7 +218,7 @@ macro_rules! group {
     };
 }
 
-/// Every group, in the order the runner runs them: 159 cases.
+/// Every group, in the order the runner runs them: 171 cases.
 pub const GROUPS: &[Group] = &[
     include!("../../joins/benches/timing/groups/one_to_one.rs"),
     include!("../../joins/benches/timing/groups/small_side.rs"),
@@ -222,6 +226,7 @@ pub const GROUPS: &[Group] = &[
     include!("../../joins/benches/timing/groups/hash_variants.rs"),
     include!("../../joins/benches/timing/groups/multiway_dense.rs"),
     include!("../../joins/benches/timing/groups/multiway_sparse.rs"),
+    include!("../../joins/benches/timing/groups/multiway_half_shared.rs"),
     include!("../../joins/benches/timing/groups/multiway_selective.rs"),
 ];
 
@@ -442,7 +447,7 @@ mod tests {
     #[test]
     fn ids_are_unique() {
         let ids: Vec<String> = cases().map(|case| case.to_string()).collect();
-        assert_eq!(ids.len(), 159);
+        assert_eq!(ids.len(), 171);
         assert_eq!(ids.iter().collect::<HashSet<_>>().len(), ids.len());
     }
 

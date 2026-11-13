@@ -57,6 +57,11 @@ path = "benches/timing/multiway_sparse.rs"
 harness = false
 
 [[bench]]
+name = "multiway_half_shared"
+path = "benches/timing/multiway_half_shared.rs"
+harness = false
+
+[[bench]]
 name = "multiway_selective"
 path = "benches/timing/multiway_selective.rs"
 harness = false

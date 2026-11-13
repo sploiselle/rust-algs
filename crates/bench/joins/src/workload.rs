@@ -18,7 +18,8 @@
 use crate::{Row, mix};
 
 /// The keys [`dense`] and [`sparse`] spread across their inputs, about one row
-/// each, so the input size stays put as `k` grows.
+/// each, so the input size stays put as `k` grows. [`half_shared`] spreads as
+/// many rows.
 pub const MULTIWAY_ROWS: usize = 1 << 20;
 
 /// Rows on the large side of [`small_side`], however many the small side has.
@@ -169,6 +170,30 @@ pub fn sparse(k: usize, instance: usize) -> Multi {
             inputs[input].push((key, rng.next_u64()));
         }
     }
+    Multi::new(inputs)
+}
+
+/// `k` inputs of `2^20 / k` rows each. Half of an input's keys are in every
+/// input and the other half are its own: [`one_to_one`], for `k` inputs. So
+/// every join of them keeps half an input's rows, and they join to
+/// `2^19 / k` tuples. The keys are `0..`, shuffled: the shared ones, then
+/// each input's own.
+///
+/// Every size is exact rather than drawn, as [`selective`]'s are, so a
+/// binary plan's Vecs grow the same way in every instance.
+#[inline]
+pub fn half_shared(k: usize, instance: usize) -> Multi {
+    let mut rng = Rng::instance(&format!("half_shared/{k}"), instance);
+    let rows = MULTIWAY_ROWS / k;
+    let shared = rows / 2;
+    let own = rows - shared;
+    let mut keys: Vec<u64> = (0..(shared + k * own) as u64).collect();
+    rng.shuffle(&mut keys);
+    let (both, rest) = keys.split_at(shared);
+    let inputs = rest
+        .chunks(own)
+        .map(|own| sorted(with_payloads(&mut rng, [both, own].concat())))
+        .collect();
     Multi::new(inputs)
 }
 
@@ -339,6 +364,28 @@ mod tests {
                 .all(|rows| unique(rows) && keys(rows) == all)
         );
         assert_eq!(w.expected, MULTIWAY_ROWS as u64 / 4);
+    }
+
+    #[test]
+    fn half_shared_inputs_share_half_of_each_inputs_keys() {
+        let w = half_shared(4, 0);
+        let rows = MULTIWAY_ROWS / 4;
+        assert!(
+            w.inputs
+                .iter()
+                .all(|input| unique(input) && input.len() == rows)
+        );
+        let shared = shared(&w.inputs);
+        assert_eq!(shared.len(), rows / 2);
+        assert_eq!(w.expected, rows as u64 / 2);
+        // A key that isn't in every input is in one.
+        let mut own = BTreeSet::new();
+        for input in &w.inputs {
+            for key in keys(input).difference(&shared) {
+                assert!(own.insert(*key), "{key} is in two inputs, not all");
+            }
+        }
+        assert_ne!(half_shared(4, 0), half_shared(4, 1));
     }
 
     #[test]
