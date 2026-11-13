@@ -214,7 +214,7 @@ macro_rules! group {
     };
 }
 
-/// Every group, in the order the runner runs them: 153 cases.
+/// Every group, in the order the runner runs them: 159 cases.
 pub const GROUPS: &[Group] = &[
     include!("../../joins/benches/timing/groups/one_to_one.rs"),
     include!("../../joins/benches/timing/groups/small_side.rs"),
@@ -442,7 +442,7 @@ mod tests {
     #[test]
     fn ids_are_unique() {
         let ids: Vec<String> = cases().map(|case| case.to_string()).collect();
-        assert_eq!(ids.len(), 153);
+        assert_eq!(ids.len(), 159);
         assert_eq!(ids.iter().collect::<HashSet<_>>().len(), ids.len());
     }
 

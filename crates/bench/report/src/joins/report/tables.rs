@@ -181,6 +181,18 @@ pub const TABLES: &[Table] = {
             },
         },
         Table {
+            file: "heap_vs_plan.md",
+            note: None,
+            kind: Kind::Grid {
+                rows: "inputs",
+                metric: Metric::Time,
+                columns: &[
+                    column("multiway_dense", Heap, "heap"),
+                    column("multiway_dense", CascadeUnplanned, "binary plan"),
+                ],
+            },
+        },
+        Table {
             file: "leapfrog.md",
             note: None,
             kind: Kind::Grid {
