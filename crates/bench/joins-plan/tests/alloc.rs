@@ -184,6 +184,25 @@ fn multiway_memory_follows_k_not_rows() {
     }
 }
 
+/// The heap clones each key into one it already holds, so keys that own
+/// memory are allocated once an input and once more for the round's key,
+/// however many rows there are.
+#[test]
+fn the_heap_reuses_keys_that_own_memory() {
+    for n in [1 << 6, 1 << 10] {
+        let rows: Vec<(String, u64)> = (0..n).map(|i| (format!("{i:08}"), i)).collect();
+        for k in [2, 3, 8] {
+            let inputs = vec![rows.as_slice(); k];
+            let (usage, ()) = measure(|| {
+                multiway_merge_join(&inputs, |t| {
+                    black_box(t);
+                });
+            });
+            assert_eq!(usage.allocations, 3 + k + 1, "k = {k}, n = {n}");
+        }
+    }
+}
+
 #[test]
 fn installed_detects_the_allocator() {
     assert!(installed());

@@ -22,7 +22,9 @@ use super::merge::merge_join;
 /// sift compares its way down the heap, and each comparison's outcome picks
 /// the next entry to read. Through a reference, every one of those steps
 /// reads the entry and then the key it points to; with the key in the entry,
-/// it reads the entry alone. So it suits keys that are cheap to clone.
+/// it reads the entry alone. Each clone is made into a key that's already
+/// there, so a key that owns memory, such as a `String`, reuses it: the join
+/// allocates for `k` keys and one more, however many rows it reads.
 pub fn multiway_merge_join<K: Ord + Clone, V>(
     inputs: &[&[(K, V)]],
     mut emit: impl FnMut(&[&(K, V)]),
@@ -37,9 +39,13 @@ pub fn multiway_merge_join<K: Ord + Clone, V>(
             heads.push(Reverse((key.clone(), i)));
         }
     }
+    // The key each round takes rows at: one key, cloned into every round.
+    let Some(mut key) = heads.peek().map(|top| top.0.0.clone()) else {
+        return;
+    };
     // Once any input runs out, no later key is in all of them.
-    while k > 0 && heads.len() == k {
-        let key = heads.peek().unwrap().0.0.clone();
+    while heads.len() == k {
+        key.clone_from(&heads.peek().unwrap().0.0);
         // Take the row at `key` from each input whose next key it is. Ties on
         // the key come off the heap by input, so `picked` is in input order.
         picked.clear();
@@ -53,8 +59,9 @@ pub fn multiway_merge_join<K: Ord + Clone, V>(
             match rest[i].first() {
                 Some((next, _)) => {
                     debug_assert!(*next > key, "input {i}'s keys don't strictly increase");
-                    // Replace the top in place: one sift down, when `top` drops.
-                    *top = Reverse((next.clone(), i));
+                    // Replace the top's key in place: one sift down, when
+                    // `top` drops.
+                    top.0.0.clone_from(next);
                 }
                 None => drop(PeekMut::pop(top)),
             }
